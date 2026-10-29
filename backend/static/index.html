@@ -1227,6 +1227,32 @@
         </div>
       </form>
     </div>
+  <!-- Modal: Danger Action Confirmation (Destroy Pool / Destroy Dataset) -->
+  <div class="modal-backdrop" id="modal-danger-confirm">
+    <div class="modal-box" style="max-width: 480px; border-top: 4px solid var(--danger-color, #c9190b);">
+      <div class="modal-header">
+        <h3 id="danger-modal-title" style="color: #ff6b6b; display: flex; align-items: center; gap: 0.5rem; margin: 0; font-size: 1.1rem;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Confirm Permanent Destruction
+        </h3>
+        <button class="modal-close" id="btn-close-danger-confirm">&times;</button>
+      </div>
+      <form id="form-danger-confirm">
+        <div style="background: rgba(201, 25, 11, 0.1); border: 1px solid rgba(201, 25, 11, 0.3); border-radius: 4px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.85rem; line-height: 1.4;">
+          <p id="danger-modal-warning" style="margin: 0; color: #ff9999;">
+            This action is <strong>irreversible</strong>. All data, datasets, and snapshots residing on this target will be wiped permanently.
+          </p>
+        </div>
+        <div class="form-group">
+          <label id="danger-modal-label" style="font-size: 0.85rem;">Type the exact name <strong id="danger-target-display" style="color: #ff6b6b; user-select: all;"></strong> to confirm:</label>
+          <input type="text" id="input-danger-confirm" class="form-control" autocomplete="off" placeholder="Type name here..." required style="margin-top: 0.35rem;">
+        </div>
+        <div class="modal-actions" style="margin-top: 1.25rem;">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-danger-confirm">Cancel</button>
+          <button type="submit" class="btn btn-danger" id="btn-submit-danger-confirm">Permanently Destroy</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <div class="toast-container" id="toast-container"></div>

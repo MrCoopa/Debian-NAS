@@ -1555,53 +1555,92 @@ window.exportPool = async function (pool) {
   }
 };
 
-window.destroyPool = async function (pool) {
-  const confirmName = prompt(`DANGER: Destroying pool "${pool}" will permanently erase all data.\n\nType the pool name "${pool}" to confirm:`);
-  if (!confirmName || confirmName.trim() !== pool) {
-    if (confirmName !== null) {
-      showToast('Pool name did not match. Deletion cancelled.', 'info');
+let dangerActionContext = null;
+
+window.destroyPool = function (pool) {
+  openDangerConfirmModal('pool', pool);
+};
+
+window.destroyDataset = function (name) {
+  openDangerConfirmModal('dataset', name);
+};
+
+function openDangerConfirmModal(type, targetName) {
+  dangerActionContext = { type, targetName };
+  const modal = document.getElementById('modal-danger-confirm');
+  const title = document.getElementById('danger-modal-title');
+  const targetDisplay = document.getElementById('danger-target-display');
+  const input = document.getElementById('input-danger-confirm');
+  const warning = document.getElementById('danger-modal-warning');
+
+  if (!modal) {
+    if (confirm(`DANGER: Destroy ${type} "${targetName}"? This will permanently delete all data!`)) {
+      executeDirectDestroy(type, targetName);
     }
     return;
   }
-  try {
-    const res = await fetch(`${API_BASE}/zfs/pools?name=${encodeURIComponent(pool)}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: pool, pool }),
-    });
-    if (res.ok) {
-      showToast(`Pool ${pool} destroyed`, 'info');
-      audit(`PERMANENT ACTION: ZFS pool destroyed: ${pool}`);
-      refreshAll();
-    } else {
-      const err = await res.json().catch(() => ({}));
-      showToast(`Failed to destroy pool: ${err.error || res.statusText}`, 'error');
-    }
-  } catch (err) {
-    showToast(`Failed to destroy pool: ${err.message}`, 'error');
-  }
-};
 
-window.destroyDataset = async function (name) {
-  if (!confirm(`Destroy dataset "${name}" and all its child filesystems?`)) return;
-  try {
-    const res = await fetch(`${API_BASE}/zfs/datasets?name=${encodeURIComponent(name)}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, dataset: name }),
-    });
-    if (res.ok) {
-      showToast(`Dataset ${name} destroyed`, 'info');
-      audit(`Destroyed ZFS dataset: ${name}`);
-      refreshAll();
-    } else {
-      const err = await res.json().catch(() => ({}));
-      showToast(`Failed to destroy dataset: ${err.error || res.statusText}`, 'error');
-    }
-  } catch (err) {
-    showToast(`Failed to destroy dataset: ${err.message}`, 'error');
+  if (type === 'pool') {
+    title.innerHTML = `
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Destroy Storage Pool "${targetName}"
+    `;
+    warning.innerHTML = `Destroying storage pool <strong>${targetName}</strong> will unmount and permanently erase ALL datasets, zvols, and snapshots residing on it. This action cannot be undone.`;
+  } else {
+    title.innerHTML = `
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Destroy Dataset "${targetName}"
+    `;
+    warning.innerHTML = `Destroying dataset <strong>${targetName}</strong> will permanently delete this filesystem and any child snapshots/datasets.`;
   }
-};
+
+  if (targetDisplay) targetDisplay.textContent = targetName;
+  if (input) input.value = '';
+  modal.classList.add('open');
+  setTimeout(() => { if (input) input.focus(); }, 60);
+}
+
+async function executeDirectDestroy(type, targetName) {
+  if (type === 'pool') {
+    try {
+      showToast(`Destroying pool ${targetName}...`, 'info');
+      const res = await fetch(`${API_BASE}/zfs/pools?name=${encodeURIComponent(targetName)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: targetName, pool: targetName }),
+      });
+      if (res.ok) {
+        showToast(`Pool ${targetName} permanently destroyed`, 'info');
+        audit(`PERMANENT ACTION: ZFS pool destroyed: ${targetName}`);
+        refreshAll();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(`Failed to destroy pool: ${err.error || res.statusText}`, 'error');
+      }
+    } catch (err) {
+      showToast(`Failed to destroy pool: ${err.message}`, 'error');
+    }
+  } else if (type === 'dataset') {
+    try {
+      showToast(`Destroying dataset ${targetName}...`, 'info');
+      const res = await fetch(`${API_BASE}/zfs/datasets?name=${encodeURIComponent(targetName)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: targetName, dataset: targetName }),
+      });
+      if (res.ok) {
+        showToast(`Dataset ${targetName} destroyed`, 'info');
+        audit(`Destroyed ZFS dataset: ${targetName}`);
+        refreshAll();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(`Failed to destroy dataset: ${err.error || res.statusText}`, 'error');
+      }
+    } catch (err) {
+      showToast(`Failed to destroy dataset: ${err.message}`, 'error');
+    }
+  }
+}
 
 // ==============================================================================
 // 11. Modals & Forms Setup
@@ -2373,6 +2412,37 @@ function setupModals() {
       } catch (err) {
         showToast('Error cloning snapshot', 'error');
       }
+    });
+  }
+
+  // Modal: Danger Action Confirmation (Destroy Pool / Destroy Dataset)
+  const modalDanger = document.getElementById('modal-danger-confirm');
+  const formDanger = document.getElementById('form-danger-confirm');
+  const btnCloseDanger = document.getElementById('btn-close-danger-confirm');
+  const btnCancelDanger = document.getElementById('btn-cancel-danger-confirm');
+  const inputDanger = document.getElementById('input-danger-confirm');
+
+  if (modalDanger && formDanger) {
+    const closeDanger = () => {
+      modalDanger.classList.remove('open');
+      dangerActionContext = null;
+    };
+    if (btnCloseDanger) btnCloseDanger.addEventListener('click', closeDanger);
+    if (btnCancelDanger) btnCancelDanger.addEventListener('click', closeDanger);
+
+    formDanger.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!dangerActionContext) return;
+      const { type, targetName } = dangerActionContext;
+      const typed = inputDanger ? inputDanger.value.trim() : '';
+
+      if (typed !== targetName) {
+        showToast(`Name did not match "${targetName}". Deletion cancelled.`, 'error');
+        return;
+      }
+
+      closeDanger();
+      executeDirectDestroy(type, targetName);
     });
   }
 }
