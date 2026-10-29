@@ -853,6 +853,12 @@ func (m *Manager) DestroyPool(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	name = strings.TrimSpace(name)
+	name = strings.TrimPrefix(name, "/dev/")
+	if name == "" {
+		return fmt.Errorf("pool name is required")
+	}
+
 	if m.mockMode {
 		delete(m.mockPools, name)
 		for ds := range m.mockDS {
@@ -862,6 +868,9 @@ func (m *Manager) DestroyPool(name string) error {
 		}
 		return nil
 	}
+
+	// Unmount filesystems first to prevent busy lockouts
+	_ = exec.Command("zfs", "unmount", "-f", name).Run()
 
 	cmd := exec.Command("zpool", "destroy", "-f", name)
 	out, err := cmd.CombinedOutput()

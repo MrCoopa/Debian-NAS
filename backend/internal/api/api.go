@@ -278,33 +278,61 @@ func (s *Server) handleCreatePool(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDestroyPool(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name string `json:"name"`
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		name = strings.TrimSpace(r.URL.Query().Get("pool"))
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+	if r.Body != nil {
+		var req struct {
+			Name string `json:"name"`
+			Pool string `json:"pool"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			if req.Name != "" {
+				name = strings.TrimSpace(req.Name)
+			} else if req.Pool != "" {
+				name = strings.TrimSpace(req.Pool)
+			}
+		}
+	}
+	if name == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Pool name required")
 		return
 	}
-	if err := s.zfs.DestroyPool(req.Name); err != nil {
+	if err := s.zfs.DestroyPool(name); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "pool destroyed", "name": req.Name})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "pool destroyed", "name": name})
 }
 
 func (s *Server) handleExportPool(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name string `json:"name"`
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		name = strings.TrimSpace(r.URL.Query().Get("pool"))
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+	if r.Body != nil {
+		var req struct {
+			Name string `json:"name"`
+			Pool string `json:"pool"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			if req.Name != "" {
+				name = strings.TrimSpace(req.Name)
+			} else if req.Pool != "" {
+				name = strings.TrimSpace(req.Pool)
+			}
+		}
+	}
+	if name == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Pool name required")
 		return
 	}
-	if err := s.zfs.ExportPool(req.Name); err != nil {
+	if err := s.zfs.ExportPool(name); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "pool exported", "name": req.Name})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "pool exported", "name": name})
 }
 
 func (s *Server) handleListImportablePools(w http.ResponseWriter, r *http.Request) {
@@ -339,33 +367,61 @@ func (s *Server) handleImportPool(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTrimPool(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Pool string `json:"pool"`
+	pool := strings.TrimSpace(r.URL.Query().Get("pool"))
+	if pool == "" {
+		pool = strings.TrimSpace(r.URL.Query().Get("name"))
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+	if r.Body != nil {
+		var req struct {
+			Pool string `json:"pool"`
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			if req.Pool != "" {
+				pool = strings.TrimSpace(req.Pool)
+			} else if req.Name != "" {
+				pool = strings.TrimSpace(req.Name)
+			}
+		}
+	}
+	if pool == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Pool name required")
 		return
 	}
-	if err := s.zfs.TrimPool(req.Pool); err != nil {
+	if err := s.zfs.TrimPool(pool); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "trim started", "pool": req.Pool})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "trim started", "pool": pool})
 }
 
 func (s *Server) handleClearPool(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Pool string `json:"pool"`
+	pool := strings.TrimSpace(r.URL.Query().Get("pool"))
+	if pool == "" {
+		pool = strings.TrimSpace(r.URL.Query().Get("name"))
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+	if r.Body != nil {
+		var req struct {
+			Pool string `json:"pool"`
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			if req.Pool != "" {
+				pool = strings.TrimSpace(req.Pool)
+			} else if req.Name != "" {
+				pool = strings.TrimSpace(req.Name)
+			}
+		}
+	}
+	if pool == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Pool name required")
 		return
 	}
-	if err := s.zfs.ClearPool(req.Pool); err != nil {
+	if err := s.zfs.ClearPool(pool); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "errors cleared", "pool": req.Pool})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "errors cleared", "pool": pool})
 }
 
 // Storage Benchmark Engine (FIO Storage Testing)
@@ -478,23 +534,37 @@ func (s *Server) handleStorageBenchmark(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleScrub(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Pool   string `json:"pool"`
+		Name   string `json:"name"`
 		Action string `json:"action"` // "start" or "stop"
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	pool := strings.TrimSpace(req.Pool)
+	if pool == "" {
+		pool = strings.TrimSpace(req.Name)
+	}
+	if pool == "" {
+		pool = strings.TrimSpace(r.URL.Query().Get("pool"))
+	}
+	if pool == "" {
+		pool = strings.TrimSpace(r.URL.Query().Get("name"))
+	}
+	if pool == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Pool name required")
 		return
 	}
 	var err error
 	if req.Action == "stop" {
-		err = s.zfs.StopScrub(req.Pool)
+		err = s.zfs.StopScrub(pool)
 	} else {
-		err = s.zfs.StartScrub(req.Pool)
+		err = s.zfs.StartScrub(pool)
 	}
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "ok", "pool": pool})
 }
 
 func (s *Server) handleListDatasets(w http.ResponseWriter, r *http.Request) {
@@ -524,18 +594,32 @@ func (s *Server) handleCreateDataset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDestroyDataset(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name string `json:"name"`
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		name = strings.TrimSpace(r.URL.Query().Get("dataset"))
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+	if r.Body != nil {
+		var req struct {
+			Name    string `json:"name"`
+			Dataset string `json:"dataset"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			if req.Name != "" {
+				name = strings.TrimSpace(req.Name)
+			} else if req.Dataset != "" {
+				name = strings.TrimSpace(req.Dataset)
+			}
+		}
+	}
+	if name == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Dataset name required")
 		return
 	}
-	if err := s.zfs.DestroyDataset(req.Name); err != nil {
+	if err := s.zfs.DestroyDataset(name); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "destroyed"})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "destroyed", "name": name})
 }
 
 func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
@@ -565,32 +649,58 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRollbackSnapshot(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Snapshot string `json:"snapshot"`
+		Snapshot     string `json:"snapshot"`
+		Dataset      string `json:"dataset"`
+		SnapshotName string `json:"snapshot_name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	target := strings.TrimSpace(req.Snapshot)
+	if target == "" && req.Dataset != "" && req.SnapshotName != "" {
+		target = fmt.Sprintf("%s@%s", strings.TrimSpace(req.Dataset), strings.TrimSpace(req.SnapshotName))
+	}
+	if target == "" {
+		target = strings.TrimSpace(r.URL.Query().Get("snapshot"))
+	}
+	if target == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Snapshot target required")
 		return
 	}
-	if err := s.zfs.RollbackSnapshot(req.Snapshot); err != nil {
+	if err := s.zfs.RollbackSnapshot(target); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "rolled back"})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "rolled back", "snapshot": target})
 }
 
 func (s *Server) handleDestroySnapshot(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Snapshot string `json:"snapshot"`
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		name = strings.TrimSpace(r.URL.Query().Get("snapshot"))
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+	if r.Body != nil {
+		var req struct {
+			Name     string `json:"name"`
+			Snapshot string `json:"snapshot"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			if req.Snapshot != "" {
+				name = strings.TrimSpace(req.Snapshot)
+			} else if req.Name != "" {
+				name = strings.TrimSpace(req.Name)
+			}
+		}
+	}
+	if name == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Snapshot name required")
 		return
 	}
-	if err := s.zfs.DestroySnapshot(req.Snapshot); err != nil {
+	if err := s.zfs.DestroySnapshot(name); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "destroyed"})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "destroyed", "snapshot": name})
 }
 
 func (s *Server) handleSetDatasetProperty(w http.ResponseWriter, r *http.Request) {
@@ -814,18 +924,24 @@ func (s *Server) handleSaveSmb(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteSmb(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name string `json:"name"`
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if r.Body != nil {
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.Name != "" {
+			name = strings.TrimSpace(req.Name)
+		}
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+	if name == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Share name required")
 		return
 	}
-	if err := s.shares.DeleteSmb(req.Name); err != nil {
+	if err := s.shares.DeleteSmb(name); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "deleted", "name": name})
 }
 
 func (s *Server) handleListNfs(w http.ResponseWriter, r *http.Request) {
@@ -852,18 +968,24 @@ func (s *Server) handleSaveNfs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteNfs(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Path string `json:"path"`
+	path := strings.TrimSpace(r.URL.Query().Get("path"))
+	if r.Body != nil {
+		var req struct {
+			Path string `json:"path"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.Path != "" {
+			path = strings.TrimSpace(req.Path)
+		}
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+	if path == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Share path required")
 		return
 	}
-	if err := s.shares.DeleteNfs(req.Path); err != nil {
+	if err := s.shares.DeleteNfs(path); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "deleted", "path": path})
 }
 
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
@@ -893,18 +1015,24 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Username string `json:"username"`
+	username := strings.TrimSpace(r.URL.Query().Get("username"))
+	if r.Body != nil {
+		var req struct {
+			Username string `json:"username"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.Username != "" {
+			username = strings.TrimSpace(req.Username)
+		}
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+	if username == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Username required")
 		return
 	}
-	if err := s.shares.DeleteUser(req.Username); err != nil {
+	if err := s.shares.DeleteUser(username); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "user deleted", "username": req.Username})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "user deleted", "username": username})
 }
 
 // ---------------- 5. Cloud Sync Handlers ----------------
@@ -942,18 +1070,24 @@ func (s *Server) handleSaveCloudJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteCloudJob(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		ID string `json:"id"`
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	if r.Body != nil {
+		var req struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.ID != "" {
+			id = strings.TrimSpace(req.ID)
+		}
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+	if id == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Job ID required")
 		return
 	}
-	if err := s.cloudsync.DeleteJob(req.ID); err != nil {
+	if err := s.cloudsync.DeleteJob(id); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "deleted", "id": id})
 }
 
 func (s *Server) handleTriggerCloudJob(w http.ResponseWriter, r *http.Request) {

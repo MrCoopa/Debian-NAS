@@ -1242,42 +1242,63 @@ function renderShares() {
 window.deleteSmbShare = async function (name) {
   if (!confirm(`Delete SMB share "${name}"? Existing files on the dataset will remain untouched.`)) return;
   try {
-    const res = await fetch(`${API_BASE}/shares/smb?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+    const res = await fetch(`${API_BASE}/shares/smb?name=${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
     if (res.ok) {
       showToast(`SMB share ${name} deleted`, 'info');
       audit(`Removed SMB share configuration: ${name}`);
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Failed to delete share: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
-    showToast('Failed to delete share', 'error');
+    showToast(`Failed to delete share: ${err.message}`, 'error');
   }
 };
 
 window.deleteNfsExport = async function (path) {
   if (!confirm(`Remove NFS export "${path}"?`)) return;
   try {
-    const res = await fetch(`${API_BASE}/shares/nfs?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+    const res = await fetch(`${API_BASE}/shares/nfs?path=${encodeURIComponent(path)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
     if (res.ok) {
       showToast(`NFS export ${path} removed`, 'info');
       audit(`Exportfs unexported: ${path}`);
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Failed to remove NFS export: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
-    showToast('Failed to remove NFS export', 'error');
+    showToast(`Failed to remove NFS export: ${err.message}`, 'error');
   }
 };
 
 window.deleteStorageUser = async function (username) {
   if (!confirm(`Delete storage user "${username}"?`)) return;
   try {
-    const res = await fetch(`${API_BASE}/shares/users?username=${encodeURIComponent(username)}`, { method: 'DELETE' });
+    const res = await fetch(`${API_BASE}/shares/users?username=${encodeURIComponent(username)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    });
     if (res.ok) {
       showToast(`Storage user ${username} deleted`, 'info');
       audit(`Deleted system & smbpasswd user ${username}`);
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Failed to delete user: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
-    showToast('Failed to delete user', 'error');
+    showToast(`Failed to delete user: ${err.message}`, 'error');
   }
 };
 
@@ -1324,18 +1345,22 @@ function renderProtection() {
 window.rollbackSnapshot = async function (dataset, snapName) {
   if (!confirm(`WARNING: Rollback dataset ${dataset} to snapshot "${snapName}"? All data written after this snapshot will be reverted!`)) return;
   try {
+    const fullName = `${dataset}@${snapName}`;
     const res = await fetch(`${API_BASE}/zfs/snapshots/rollback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dataset, snapshot_name: snapName }),
+      body: JSON.stringify({ dataset, snapshot_name: snapName, snapshot: fullName }),
     });
     if (res.ok) {
       showToast(`Dataset reverted to ${snapName}`, 'info');
-      audit(`ZFS rollback triggered: ${dataset}@${snapName}`);
+      audit(`ZFS rollback triggered: ${fullName}`);
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Rollback failed: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
-    showToast('Rollback failed', 'error');
+    showToast(`Rollback failed: ${err.message}`, 'error');
   }
 };
 
@@ -1343,14 +1368,21 @@ window.destroySnapshot = async function (dataset, snapName) {
   if (!confirm(`Destroy snapshot "${snapName}" on ${dataset}?`)) return;
   try {
     const fullName = `${dataset}@${snapName}`;
-    const res = await fetch(`${API_BASE}/zfs/snapshots?name=${encodeURIComponent(fullName)}`, { method: 'DELETE' });
+    const res = await fetch(`${API_BASE}/zfs/snapshots?name=${encodeURIComponent(fullName)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ snapshot: fullName, name: fullName }),
+    });
     if (res.ok) {
       showToast(`Snapshot ${snapName} destroyed`, 'info');
       audit(`ZFS snapshot destroyed: ${fullName}`);
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Failed to destroy snapshot: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
-    showToast('Failed to destroy snapshot', 'error');
+    showToast(`Failed to destroy snapshot: ${err.message}`, 'error');
   }
 };
 
@@ -1448,15 +1480,18 @@ window.scrubPool = async function (pool) {
     const res = await fetch(`${API_BASE}/zfs/scrub`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pool }),
+      body: JSON.stringify({ pool, name: pool }),
     });
     if (res.ok) {
       showToast(`ZFS scrub initiated for pool ${pool}`, 'info');
       audit(`Initiated zpool scrub verification on ${pool}`);
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Failed to start scrub: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
-    showToast('Failed to start scrub', 'error');
+    showToast(`Failed to start scrub: ${err.message}`, 'error');
   }
 };
 
@@ -1465,14 +1500,17 @@ window.trimPool = async function (pool) {
     const res = await fetch(`${API_BASE}/zfs/pools/trim`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pool }),
+      body: JSON.stringify({ pool, name: pool }),
     });
     if (res.ok) {
       showToast(`SSD TRIM initiated for pool ${pool}`, 'info');
       audit(`Triggered zpool trim command on ${pool}`);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Trim command failed: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
-    showToast('Trim command failed', 'error');
+    showToast(`Trim command failed: ${err.message}`, 'error');
   }
 };
 
@@ -1481,15 +1519,18 @@ window.clearPool = async function (pool) {
     const res = await fetch(`${API_BASE}/zfs/pools/clear`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pool }),
+      body: JSON.stringify({ pool, name: pool }),
     });
     if (res.ok) {
       showToast(`Errors cleared for pool ${pool}`, 'info');
       audit(`Cleared error counters on pool ${pool}`);
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Failed to clear errors: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
-    showToast('Failed to clear errors', 'error');
+    showToast(`Failed to clear errors: ${err.message}`, 'error');
   }
 };
 
@@ -1499,47 +1540,66 @@ window.exportPool = async function (pool) {
     const res = await fetch(`${API_BASE}/zfs/pools/export`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pool }),
+      body: JSON.stringify({ pool, name: pool }),
     });
     if (res.ok) {
       showToast(`Pool ${pool} exported`, 'info');
       audit(`ZFS pool exported cleanly: ${pool}`);
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Export failed: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
-    showToast('Export failed', 'error');
+    showToast(`Export failed: ${err.message}`, 'error');
   }
 };
 
 window.destroyPool = async function (pool) {
-  const confirmName = prompt(`DANGER: Destroying pool "${pool}" will permanently erase all data. Type the pool name "${pool}" to confirm:`);
-  if (confirmName !== pool) {
-    showToast('Pool destruction cancelled', 'info');
+  const confirmName = prompt(`DANGER: Destroying pool "${pool}" will permanently erase all data.\n\nType the pool name "${pool}" to confirm:`);
+  if (!confirmName || confirmName.trim() !== pool) {
+    if (confirmName !== null) {
+      showToast('Pool name did not match. Deletion cancelled.', 'info');
+    }
     return;
   }
   try {
-    const res = await fetch(`${API_BASE}/zfs/pools?name=${encodeURIComponent(pool)}`, { method: 'DELETE' });
+    const res = await fetch(`${API_BASE}/zfs/pools?name=${encodeURIComponent(pool)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: pool, pool }),
+    });
     if (res.ok) {
       showToast(`Pool ${pool} destroyed`, 'info');
       audit(`PERMANENT ACTION: ZFS pool destroyed: ${pool}`);
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Failed to destroy pool: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
-    showToast('Failed to destroy pool', 'error');
+    showToast(`Failed to destroy pool: ${err.message}`, 'error');
   }
 };
 
 window.destroyDataset = async function (name) {
   if (!confirm(`Destroy dataset "${name}" and all its child filesystems?`)) return;
   try {
-    const res = await fetch(`${API_BASE}/zfs/datasets?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+    const res = await fetch(`${API_BASE}/zfs/datasets?name=${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, dataset: name }),
+    });
     if (res.ok) {
       showToast(`Dataset ${name} destroyed`, 'info');
       audit(`Destroyed ZFS dataset: ${name}`);
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Failed to destroy dataset: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
-    showToast('Failed to destroy dataset', 'error');
+    showToast(`Failed to destroy dataset: ${err.message}`, 'error');
   }
 };
 
