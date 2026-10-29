@@ -685,7 +685,12 @@ func (s *Server) handleRollbackSnapshot(w http.ResponseWriter, r *http.Request) 
 	}
 	target := strings.TrimSpace(req.Snapshot)
 	if target == "" && req.Dataset != "" && req.SnapshotName != "" {
-		target = fmt.Sprintf("%s@%s", strings.TrimSpace(req.Dataset), strings.TrimSpace(req.SnapshotName))
+		snapTag := strings.TrimSpace(req.SnapshotName)
+		if strings.Contains(snapTag, "@") {
+			target = snapTag
+		} else {
+			target = fmt.Sprintf("%s@%s", strings.TrimSpace(req.Dataset), snapTag)
+		}
 	}
 	if target == "" {
 		target = strings.TrimSpace(r.URL.Query().Get("snapshot"))
@@ -693,6 +698,10 @@ func (s *Server) handleRollbackSnapshot(w http.ResponseWriter, r *http.Request) 
 	if target == "" {
 		s.errorResponse(w, http.StatusBadRequest, "Snapshot target required")
 		return
+	}
+	if strings.Count(target, "@") > 1 {
+		parts := strings.Split(target, "@")
+		target = parts[0] + "@" + parts[len(parts)-1]
 	}
 	if err := s.zfs.RollbackSnapshot(target); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
@@ -722,6 +731,10 @@ func (s *Server) handleDestroySnapshot(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		s.errorResponse(w, http.StatusBadRequest, "Snapshot name required")
 		return
+	}
+	if strings.Count(name, "@") > 1 {
+		parts := strings.Split(name, "@")
+		name = parts[0] + "@" + parts[len(parts)-1]
 	}
 	if err := s.zfs.DestroySnapshot(name); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
@@ -902,7 +915,12 @@ func (s *Server) handleCloneSnapshot(w http.ResponseWriter, r *http.Request) {
 		s.errorResponse(w, http.StatusBadRequest, "snapshot and target_dataset are required")
 		return
 	}
-	if err := s.zfs.CloneSnapshot(req.Snapshot, req.TargetDataset); err != nil {
+	snapshot := strings.TrimSpace(req.Snapshot)
+	if strings.Count(snapshot, "@") > 1 {
+		parts := strings.Split(snapshot, "@")
+		snapshot = parts[0] + "@" + parts[len(parts)-1]
+	}
+	if err := s.zfs.CloneSnapshot(snapshot, req.TargetDataset); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}

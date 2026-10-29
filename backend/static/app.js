@@ -1336,7 +1336,7 @@ function renderProtection() {
         <td class="col-actions">
           <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
             <button class="btn btn-secondary btn-sm" onclick="rollbackSnapshot('${s.dataset}', '${s.name}')">Rollback</button>
-            <button class="btn btn-secondary btn-sm" onclick="openCloneSnapshotModal('${s.dataset}@${s.name}')">Clone Snapshot</button>
+            <button class="btn btn-secondary btn-sm" onclick="openCloneSnapshotModal('${s.name}')">Clone Snapshot</button>
             <button class="btn btn-danger btn-sm" onclick="destroySnapshot('${s.dataset}', '${s.name}')">Destroy</button>
           </div>
         </td>
@@ -1347,16 +1347,17 @@ function renderProtection() {
 }
 
 window.rollbackSnapshot = async function (dataset, snapName) {
-  if (!confirm(`WARNING: Rollback dataset ${dataset} to snapshot "${snapName}"? All data written after this snapshot will be reverted!`)) return;
+  const fullName = snapName.includes('@') ? snapName : `${dataset}@${snapName}`;
+  const displayLabel = snapName.includes('@') ? snapName.split('@')[1] : snapName;
+  if (!confirm(`WARNING: Rollback dataset ${dataset} to snapshot "${displayLabel}"? All data written after this snapshot will be reverted!`)) return;
   try {
-    const fullName = `${dataset}@${snapName}`;
     const res = await fetch(`${API_BASE}/zfs/snapshots/rollback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dataset, snapshot_name: snapName, snapshot: fullName }),
+      body: JSON.stringify({ dataset, snapshot_name: displayLabel, snapshot: fullName }),
     });
     if (res.ok) {
-      showToast(`Dataset reverted to ${snapName}`, 'info');
+      showToast(`Dataset reverted to ${displayLabel}`, 'info');
       audit(`ZFS rollback triggered: ${fullName}`);
       refreshAll();
     } else {
@@ -1369,16 +1370,17 @@ window.rollbackSnapshot = async function (dataset, snapName) {
 };
 
 window.destroySnapshot = async function (dataset, snapName) {
-  if (!confirm(`Destroy snapshot "${snapName}" on ${dataset}?`)) return;
+  const fullName = snapName.includes('@') ? snapName : `${dataset}@${snapName}`;
+  const displayLabel = snapName.includes('@') ? snapName.split('@')[1] : snapName;
+  if (!confirm(`Destroy snapshot "${displayLabel}" on ${dataset}?`)) return;
   try {
-    const fullName = `${dataset}@${snapName}`;
     const res = await fetch(`${API_BASE}/zfs/snapshots?name=${encodeURIComponent(fullName)}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ snapshot: fullName, name: fullName }),
     });
     if (res.ok) {
-      showToast(`Snapshot ${snapName} destroyed`, 'info');
+      showToast(`Snapshot ${displayLabel} destroyed`, 'info');
       audit(`ZFS snapshot destroyed: ${fullName}`);
       state.snapshots = (state.snapshots || []).filter((s) => s.name !== fullName);
       renderProtection();
