@@ -548,7 +548,7 @@ function renderProDiskMatrix() {
       const rMB = devStats ? devStats.read_mb_s : 0.0;
       const wMB = devStats ? devStats.write_mb_s : 0.0;
       const iops = devStats ? (devStats.read_iops + devStats.write_iops) : 0;
-      const isStandby = disk.state === 'STANDBY' || disk.state === 'SLEEPING' || disk.power_state === 'STANDBY' || disk.power_state === 'SLEEP';
+      const matrixStandby = disk.state === 'STANDBY' || disk.state === 'SLEEPING' || disk.power_state === 'STANDBY' || disk.power_state === 'SLEEP';
       const isSelected = state.selectedDiskTarget === diskKey;
 
       // History points
@@ -577,7 +577,7 @@ function renderProDiskMatrix() {
               <div class="pd-iops">R: <strong class="text-blue">${rMB.toFixed(1)}</strong> • W: <strong class="text-amber">${wMB.toFixed(1)}</strong></div>
             </div>
             <div style="text-align: right;">
-              <span class="badge-status ${isStandby ? 'amber' : 'green'}">${isStandby ? '0W Standby' : 'Active'}</span>
+              <span class="badge-status ${matrixStandby ? 'amber' : 'green'}">${matrixStandby ? '0W Standby' : 'Active'}</span>
               <div class="pd-iops" style="margin-top: 2px;">${iops} IOPS</div>
             </div>
           </div>
@@ -948,8 +948,8 @@ function renderDisksTable() {
   tbody.innerHTML = state.disks
     .map((d) => {
       const devKey = d.name || d.device;
-      const isStandby = d.state === 'STANDBY' || d.state === 'SLEEPING' || d.power_state === 'STANDBY' || d.power_state === 'SLEEP';
-      const powerBadge = isStandby
+      const tableDiskStandby = d.state === 'STANDBY' || d.state === 'SLEEPING' || d.power_state === 'STANDBY' || d.power_state === 'SLEEP';
+      const powerBadge = tableDiskStandby
         ? `<span class="badge-status amber">STANDBY (0W)</span>`
         : `<span class="badge-status green">ACTIVE</span>`;
 
