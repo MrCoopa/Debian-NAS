@@ -9,12 +9,8 @@ User=root
 ExecStart=/usr/local/bin/nasd -port 8080 -config /etc/nas/config.json
 Restart=always
 RestartSec=5s
+# Appliance Service configuration (Storage Daemon needs write access to /etc for useradd, /var/lib/samba, /mnt)
 LimitNOFILE=65536
-
-# Sandboxing & Security while retaining disk control
-ProtectSystem=full
-ProtectHome=read-only
-ReadWritePaths=/etc/nas /etc/samba/conf.d /etc/exports.d /var/log
 
 [Install]
 WantedBy=multi-user.target
