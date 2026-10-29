@@ -431,19 +431,65 @@ func (m *Manager) CreateUser(username, password, role string) error {
 		role = "user"
 	}
 
-	m.users[username] = StorageUser{Username: username, Role: role}
-
 	if m.mockMode {
+		m.users[username] = StorageUser{Username: username, Role: role}
 		return nil
 	}
 
-	// 1. Add Linux system user without login shell
-	_ = exec.Command("useradd", "-M", "-s", "/usr/sbin/nologin", username).Run()
+	// 1. Ensure Linux system user exists
+	idCmd := exec.Command("id", username)
+	if err := idCmd.Run(); err != nil {
+		// User does not exist, create it with nologin shell
+		nologin := "/usr/sbin/nologin"
+		if _, err := os.Stat("/usr/sbin/nologin"); err != nil {
+			if _, err2 := os.Stat("/sbin/nologin"); err2 == nil {
+				nologin = "/sbin/nologin"
+			} else {
+				nologin = "/bin/false"
+			}
+		}
+		useraddCmd := exec.Command("useradd", "-M", "-s", nologin, username)
+		if uOut, uErr := useraddCmd.CombinedOutput(); uErr != nil {
+			if !strings.Contains(string(uOut), "already exists") {
+				return fmt.Errorf("useradd failed: %v (%s)", uErr, strings.TrimSpace(string(uOut)))
+			}
+		}
+	}
 
-	// 2. Set Samba password via pdbedit / smbpasswd
+	// 2. Set Linux system password via chpasswd
+	chCmd := exec.Command("chpasswd")
+	chCmd.Stdin = strings.NewReader(fmt.Sprintf("%s:%s\n", username, password))
+	_ = chCmd.Run()
+
+	// 3. Set Samba password via smbpasswd
+	if _, err := exec.LookPath("smbpasswd"); err != nil {
+		// If smbpasswd is not installed, record in local storage users map
+		m.users[username] = StorageUser{Username: username, Role: role}
+		return nil
+	}
+
 	cmd := exec.Command("smbpasswd", "-a", "-s", username)
 	cmd.Stdin = strings.NewReader(fmt.Sprintf("%s\n%s\n", password, password))
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		outStr := strings.TrimSpace(string(out))
+		// If already in passdb, update without -a
+		if strings.Contains(outStr, "Failed to add") || strings.Contains(outStr, "already exists") {
+			updateCmd := exec.Command("smbpasswd", "-s", username)
+			updateCmd.Stdin = strings.NewReader(fmt.Sprintf("%s\n%s\n", password, password))
+			if uOut, uErr := updateCmd.CombinedOutput(); uErr != nil {
+				return fmt.Errorf("smbpasswd failed: %v (%s)", uErr, strings.TrimSpace(string(uOut)))
+			}
+		} else {
+			return fmt.Errorf("smbpasswd failed: %v (%s)", err, outStr)
+		}
+	}
+
+	// 4. Ensure user is enabled in Samba
+	_ = exec.Command("smbpasswd", "-e", username).Run()
+
+	m.users[username] = StorageUser{Username: username, Role: role}
+	return nil
 }
 
 func (m *Manager) DeleteUser(username string) error {

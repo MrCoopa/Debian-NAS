@@ -1296,6 +1296,8 @@ window.deleteStorageUser = async function (username) {
     if (res.ok) {
       showToast(`Storage user ${username} deleted`, 'info');
       audit(`Deleted system & smbpasswd user ${username}`);
+      state.users = (state.users || []).filter((u) => u.username !== username);
+      renderShares();
       refreshAll();
     } else {
       const err = await res.json().catch(() => ({}));
@@ -1926,10 +1928,11 @@ function setupModals() {
           formCreateUser.reset();
           refreshAll();
         } else {
-          showToast('Failed to create storage user', 'error');
+          const err = await res.json().catch(() => ({}));
+          showToast(`Failed to create storage user: ${err.error || res.statusText}`, 'error');
         }
       } catch (err) {
-        showToast('Error creating storage user', 'error');
+        showToast(`Error creating storage user: ${err.message}`, 'error');
       }
     });
   }
