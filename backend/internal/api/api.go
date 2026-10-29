@@ -650,18 +650,28 @@ func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Dataset string `json:"dataset"`
-		Name    string `json:"name"`
+		Dataset      string `json:"dataset"`
+		Name         string `json:"name"`
+		SnapshotName string `json:"snapshot_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload: "+err.Error())
 		return
 	}
-	if err := s.zfs.CreateSnapshot(req.Dataset, req.Name); err != nil {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = strings.TrimSpace(req.SnapshotName)
+	}
+	dataset := strings.TrimSpace(req.Dataset)
+	if dataset == "" || name == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Dataset and snapshot name required")
+		return
+	}
+	if err := s.zfs.CreateSnapshot(dataset, name); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "created"})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "created", "snapshot": dataset + "@" + name})
 }
 
 func (s *Server) handleRollbackSnapshot(w http.ResponseWriter, r *http.Request) {

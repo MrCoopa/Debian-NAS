@@ -1979,7 +1979,7 @@ function setupModals() {
         const res = await fetch(`${API_BASE}/zfs/snapshots`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dataset, snapshot_name: snapName }),
+          body: JSON.stringify({ dataset, name: snapName, snapshot_name: snapName }),
         });
 
         if (res.ok) {
@@ -1989,10 +1989,11 @@ function setupModals() {
           formCreateSnap.reset();
           refreshAll();
         } else {
-          showToast('Failed to create snapshot', 'error');
+          const err = await res.json().catch(() => ({}));
+          showToast(`Failed to create snapshot: ${err.error || res.statusText}`, 'error');
         }
       } catch (err) {
-        showToast('Error taking snapshot', 'error');
+        showToast(`Error taking snapshot: ${err.message}`, 'error');
       }
     });
   }
