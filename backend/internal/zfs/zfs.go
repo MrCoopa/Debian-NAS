@@ -814,15 +814,31 @@ func (m *Manager) CreatePool(name, vdevType string, disks []string, ashift int, 
 
 	args := []string{
 		"create",
+		"-f",
 		"-o", fmt.Sprintf("ashift=%d", ashift),
 		"-O", "atime=off",
 		"-O", "compression=" + compression,
 		name,
 	}
-	if vdevType != "stripe" && vdevType != "single" {
+	if vdevType != "stripe" && vdevType != "single" && vdevType != "" {
 		args = append(args, vdevType)
 	}
-	args = append(args, disks...)
+
+	var cleanDisks []string
+	for _, d := range disks {
+		d = strings.TrimSpace(d)
+		if d == "" || d == "undefined" {
+			continue
+		}
+		if !strings.HasPrefix(d, "/") {
+			d = "/dev/" + d
+		}
+		cleanDisks = append(cleanDisks, d)
+	}
+	if len(cleanDisks) == 0 {
+		return fmt.Errorf("no valid block devices specified")
+	}
+	args = append(args, cleanDisks...)
 
 	cmd := exec.Command("zpool", args...)
 	out, err := cmd.CombinedOutput()
@@ -1075,11 +1091,26 @@ func (m *Manager) AddVdev(pool, vdevType string, disks []string) error {
 		return nil
 	}
 
-	args := []string{"add", pool}
-	if vdevType != "stripe" && vdevType != "single" && vdevType != "disk" {
+	args := []string{"add", "-f", pool}
+	if vdevType != "stripe" && vdevType != "single" && vdevType != "disk" && vdevType != "data" {
 		args = append(args, vdevType)
 	}
-	args = append(args, disks...)
+
+	var cleanDisks []string
+	for _, d := range disks {
+		d = strings.TrimSpace(d)
+		if d == "" || d == "undefined" {
+			continue
+		}
+		if !strings.HasPrefix(d, "/") {
+			d = "/dev/" + d
+		}
+		cleanDisks = append(cleanDisks, d)
+	}
+	if len(cleanDisks) == 0 {
+		return fmt.Errorf("no valid block devices specified")
+	}
+	args = append(args, cleanDisks...)
 
 	cmd := exec.Command("zpool", args...)
 	out, err := cmd.CombinedOutput()

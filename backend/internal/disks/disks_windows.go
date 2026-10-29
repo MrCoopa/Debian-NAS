@@ -60,6 +60,7 @@ func (m *Manager) scanWindowsDisks() ([]*DiskInfo, error) {
 
 		info := &DiskInfo{
 			Name:               name,
+			Device:             name,
 			Path:               fmt.Sprintf(`\\.\PhysicalDrive%s`, devID),
 			ByIDPath:           fmt.Sprintf(`disk-%s-%s`, strings.ToLower(d.BusType), strings.Trim(d.SerialNumber, ". ")),
 			Model:              d.FriendlyName,

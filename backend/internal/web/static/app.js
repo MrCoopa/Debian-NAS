@@ -1655,10 +1655,11 @@ function setupModals() {
       } else {
         diskBox.innerHTML = state.disks
           .map((d) => {
+            const diskVal = d.name || d.device || (d.path ? d.path.replace('/dev/', '') : '');
             return `
             <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.78rem;">
-              <input type="checkbox" name="pool_disks" value="${d.device}">
-              <strong class="font-mono">${d.name || d.device}</strong>
+              <input type="checkbox" name="pool_disks" value="${diskVal}">
+              <strong class="font-mono text-blue">${d.name || d.device}</strong>
               <span>${d.model || ''}</span>
               <span class="text-blue font-mono">(${formatBytes(d.size_bytes || 0)})</span>
             </label>
@@ -1891,11 +1892,12 @@ function setupModals() {
       } else {
         diskBox.innerHTML = state.disks
           .map((d) => {
+            const diskVal = d.name || d.device || (d.path ? d.path.replace('/dev/', '') : '');
             const isAssigned = d.pool && d.pool !== '';
             return `
             <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.78rem;">
-              <input type="checkbox" name="vdev_disks" value="${d.device}">
-              <strong class="font-mono">${d.name || d.device}</strong>
+              <input type="checkbox" name="vdev_disks" value="${diskVal}">
+              <strong class="font-mono text-blue">${d.name || d.device}</strong>
               <span>${d.model || ''}</span>
               <span class="text-blue font-mono">(${formatBytes(d.size_bytes || 0)})</span>
               ${isAssigned ? `<span class="badge-status slate" style="font-size: 0.65rem;">in ${d.pool}</span>` : '<span class="badge-status green" style="font-size: 0.65rem;">Available</span>'}
@@ -1976,12 +1978,15 @@ function setupModals() {
 
     const selectTarget = document.getElementById('select-da-new-dev');
     if (selectTarget) {
-      const candidates = state.disks.filter((d) => d.device !== device && d.name !== device);
+      const candidates = state.disks.filter((d) => (d.name || d.device) !== device);
       if (candidates.length === 0) {
         selectTarget.innerHTML = `<option value="">No other physical disks available</option>`;
       } else {
         selectTarget.innerHTML = candidates
-          .map((d) => `<option value="${d.device}">${d.name || d.device} - ${d.model || ''} (${formatBytes(d.size_bytes || 0)})</option>`)
+          .map((d) => {
+            const diskVal = d.name || d.device || (d.path ? d.path.replace('/dev/', '') : '');
+            return `<option value="${diskVal}">${d.name || d.device} - ${d.model || ''} (${formatBytes(d.size_bytes || 0)})</option>`;
+          })
           .join('');
       }
     }

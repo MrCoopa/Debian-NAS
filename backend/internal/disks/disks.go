@@ -26,6 +26,7 @@ const (
 
 type DiskInfo struct {
 	Name               string    `json:"name"`                // e.g. "sda"
+	Device             string    `json:"device"`              // alias for name or dev path
 	Path               string    `json:"path"`                // e.g. "/dev/sda"
 	ByIDPath           string    `json:"by_id_path"`          // e.g. "/dev/disk/by-id/ata-WDC_WD40EFRX..."
 	Model              string    `json:"model"`               // e.g. "WDC WD40EFRX-68N32N0"
@@ -390,6 +391,7 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 
 		disk := &DiskInfo{
 			Name:               name,
+			Device:             name,
 			Path:               devPath,
 			ByIDPath:           byID,
 			Model:              fullModel,
