@@ -1,0 +1,20 @@
+[Unit]
+Description=Debian NAS Management Daemon (ZFS, Samba, NFS & HDD Standby)
+After=network.target zfs-mount.service smbd.service
+Wants=zfs-mount.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/nasd -port 8080 -config /etc/nas/config.json
+Restart=always
+RestartSec=5s
+LimitNOFILE=65536
+
+# Sandboxing & Security while retaining disk control
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/etc/nas /etc/samba/conf.d /etc/exports.d /var/log
+
+[Install]
+WantedBy=multi-user.target

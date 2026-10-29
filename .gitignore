@@ -1,0 +1,16 @@
+# Binaries
+backend/nasd.exe
+backend/nasd.exe~
+backend/nasd-linux-amd64
+backend/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts and temporary files
+*.tmp
+*.log
+.DS_Store
+Thumbs.db

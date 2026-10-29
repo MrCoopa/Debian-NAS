@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debian Storage Appliance - Cockpit &amp; Enterprise ZFS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ==============================================================================
+       Cockpit Masthead (Topbar)
+       ============================================================================== -->
+  <header class="app-topbar">
+    <div class="brand-logo">
+      <div class="brand-icon-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M4 2h16c1.1 0 2 .9 2 2v16c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2zm0 4v3h16V6H4zm0 5v3h16v-3H4zm0 5v3h16v-3H4zM6 7h2v1H6V7zm0 5h2v1H6v-1zm0 5h2v1H6v-1z"/>
+        </svg>
+      </div>
+      <div class="brand-title">Debian <span>Storage</span></div>
+      <span class="version-tag">Enterprise Appliance</span>
+    </div>
+
+    <div class="topbar-meta-strip">
+      <div class="meta-item">
+        <span class="status-dot green"></span>
+        <span class="text-dim">Node:</span>
+        <strong id="top-host">localhost</strong>
+      </div>
+      <div class="meta-item">
+        <span class="text-dim">ZFS:</span>
+        <strong id="top-zfs-ver">2.2.6-native</strong>
+      </div>
+      <div class="meta-item">
+        <span class="text-dim">Raw Storage:</span>
+        <strong id="top-storage-summary">0.0 TB (0 Disks)</strong>
+      </div>
+      <div class="meta-item">
+        <span class="text-dim">Daemon:</span>
+        <strong id="top-ram" class="text-green">0.0 MB RSS</strong>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <div class="io-pill">
+        <span class="r">&#9650; <strong id="top-io-read">0.0 MB/s</strong></span>
+        <span class="w">&#9660; <strong id="top-io-write">0.0 MB/s</strong></span>
+      </div>
+      <div class="hdd-spindown-badge" id="top-standby-pill" title="Safe Non-Intrusive Spindown">
+        <span id="top-standby-text">0 HDDs Sleeping (0W Standby)</span>
+      </div>
+      <button class="icon-btn" id="btn-refresh" title="Refresh Telemetry">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ==============================================================================
+       App Layout: Sidebar & Main Console
+       ============================================================================== -->
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <nav class="sidebar-menu">
+        <div class="sidebar-category">Storage Administration</div>
+        
+        <button class="nav-item active" data-tab="dashboard">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+          <span>Dashboard &amp; Health</span>
+        </button>
+
+        <button class="nav-item" data-tab="pools">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          <span>Storage Pools (ZFS)</span>
+          <span class="nav-badge" id="nav-pool-count">0</span>
+        </button>
+
+        <button class="nav-item" data-tab="disks">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4 2h16c1.1 0 2 .9 2 2v16c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2zm0 4v3h16V6H4zm0 5v3h16v-3H4zm0 5v3h16v-3H4zM6 7h2v1H6V7zm0 5h2v1H6v-1zm0 5h2v1H6v-1z"/></svg>
+          <span>Physical Disks</span>
+          <span class="nav-badge" id="nav-disk-count">0</span>
+        </button>
+
+        <div class="sidebar-category">Sharing &amp; Access</div>
+
+        <button class="nav-item" data-tab="shares">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-5 3c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2zm4 8h-8v-1c0-1.33 2.67-2 4-2s4 .67 4 2v1z"/></svg>
+          <span>Shares (SMB &amp; NFS)</span>
+        </button>
+
+        <div class="sidebar-category">Data Protection</div>
+
+        <button class="nav-item" data-tab="protection">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+          <span>Snapshots &amp; Scrub</span>
+        </button>
+
+        <button class="nav-item" data-tab="diagnostics">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
+          <span>FIO &amp; Diagnostics</span>
+        </button>
+
+        <div class="sidebar-category">Infrastructure &amp; Network</div>
+
+        <button class="nav-item" data-tab="network">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4.5 11h-2V9H1v6h1.5v-2h2v2H6V9H4.5v2zm15 0h-2V9H16v6h1.5v-2h2v2H21V9h-1.5v2zm-6-7h-3c-1.1 0-2 .9-2 2v2h7V6c0-1.1-.9-2-2-2zm-6 9v2c0 1.1.9 2 2 2h3v3h1.5v-3h3c1.1 0 2-.9 2-2v-2h-11.5z"/></svg>
+          <span>Networking</span>
+          <span class="nav-badge" id="nav-iface-count">0</span>
+        </button>
+
+        <div class="sidebar-category">Appliance &amp; Logs</div>
+
+        <button class="nav-item" data-tab="system">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+          <span>System &amp; Services</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="footer-title" id="footer-os-name">Debian GNU/Linux 13</div>
+        <div class="footer-kernel" id="footer-kernel-ver">Kernel Linux 6.12.0 &bull; OpenZFS</div>
+        <div>Daemon Memory: <strong id="footer-daemon-mem">1.0 MB RSS</strong></div>
+      </div>
+    </aside>
+
+    <main class="app-main">
+      <!-- ==============================================================================
+           TAB 1: DASHBOARD & HEALTH
+           ============================================================================== -->
+      <section id="tab-dashboard" class="tab-pane active">
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>Storage Appliance Dashboard</h1>
+            <p>Real-time storage telemetry, hardware compute load, OpenZFS ARC cache status and disk activity</p>
+          </div>
+          <div class="page-actions">
+            <span class="badge-status green">Kernel Telemetry Active</span>
+          </div>
+        </div>
+
+        <!-- 4 Clean Standard Metric Tiles with Visual Diagramme -->
+        <div class="metrics-row">
+          <!-- CPU & Load Diagram -->
+          <div class="stat-card">
+            <div class="stat-card-head">
+              <span class="stat-card-title">CPU Utilization</span>
+              <span class="badge-status slate" id="cpu-temp-badge">32 &deg;C</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 0.35rem;">
+              <div class="stat-card-value" style="margin: 0;">
+                <span id="dash-cpu-pct">0.0</span><span class="stat-card-unit">%</span>
+              </div>
+              <!-- Mini SVG Sparkline Diagram -->
+              <div style="width: 110px; height: 32px;">
+                <svg id="dash-cpu-sparkline" viewBox="0 0 110 32" preserveAspectRatio="none" style="width: 100%; height: 100%; overflow: visible;">
+                  <path id="dash-cpu-sparkline-path" fill="rgba(0, 102, 204, 0.15)" stroke="#0066cc" stroke-width="1.5" d="M 0,30 L 110,30" />
+                </svg>
+              </div>
+            </div>
+            <div class="meter-track">
+              <div id="dash-cpu-bar" class="meter-bar" style="width: 1%;"></div>
+            </div>
+            <div class="stat-card-foot">
+              <span id="dash-cpu-model" style="max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Host CPU</span>
+              <span>Load: <strong id="dash-cpu-load">0.00</strong></span>
+            </div>
+          </div>
+
+          <!-- Memory & ARC Diagram -->
+          <div class="stat-card">
+            <div class="stat-card-head">
+              <span class="stat-card-title">Memory &amp; ZFS ARC</span>
+              <span class="badge-status blue" id="dash-arc-hit-badge">ARC Hit 99.4%</span>
+            </div>
+            <div class="stat-card-value" style="margin-bottom: 0.35rem;">
+              <span id="dash-mem-used">0.0</span><span class="stat-card-unit">/ <span id="dash-mem-total">0.0 GiB</span></span>
+            </div>
+            <!-- Stacked 3-segment Visual Bar Diagram -->
+            <div class="meter-track" style="height: 7px;">
+              <div id="dash-mem-arc-bar" class="meter-bar" style="width: 0%; background: #0066cc;" title="ARC Cache"></div>
+              <div id="dash-mem-os-bar" class="meter-bar slate" style="width: 0%;" title="OS &amp; Services"></div>
+              <div id="dash-mem-free-bar" class="meter-bar" style="width: 0%; background: rgba(255,255,255,0.06);" title="Free Memory"></div>
+            </div>
+            <div class="stat-card-foot" style="flex-direction: column; gap: 0.2rem; margin-top: 0.4rem;">
+              <div style="display: flex; justify-content: space-between;">
+                <span>ZFS ARC: <strong id="dash-mem-arc-text" class="text-blue">0 B (0%)</strong></span>
+                <span>Free: <strong id="dash-mem-free-text">0 B</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Disk I/O Diagram -->
+          <div class="stat-card">
+            <div class="stat-card-head">
+              <span class="stat-card-title">Disk I/O Throughput</span>
+              <span class="badge-status green">Direct IO</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 0.35rem;">
+              <div class="stat-card-value" style="margin: 0;">
+                <span id="dash-io-total">0.0</span><span class="stat-card-unit">MB/s</span>
+              </div>
+              <!-- Mini SVG Sparkline Diagram -->
+              <div style="width: 110px; height: 32px;">
+                <svg id="dash-io-sparkline" viewBox="0 0 110 32" preserveAspectRatio="none" style="width: 100%; height: 100%; overflow: visible;">
+                  <path id="dash-io-sparkline-path" fill="rgba(240, 171, 0, 0.15)" stroke="#f0ab00" stroke-width="1.5" d="M 0,30 L 110,30" />
+                </svg>
+              </div>
+            </div>
+            <div class="meter-track">
+              <div id="dash-io-bar" class="meter-bar amber" style="width: 0%;"></div>
+            </div>
+            <div class="stat-card-foot">
+              <span>Read: <strong id="dash-io-read">0.0 MB/s</strong></span>
+              <span>Write: <strong id="dash-io-write">0.0 MB/s</strong></span>
+            </div>
+          </div>
+
+          <!-- Storage Raw Diagram -->
+          <div class="stat-card">
+            <div class="stat-card-head">
+              <span class="stat-card-title">Physical Storage</span>
+              <span class="badge-status green" id="dash-storage-health">Healthy</span>
+            </div>
+            <div class="stat-card-value" style="margin-bottom: 0.35rem;">
+              <span id="dash-storage-raw">0.0</span><span class="stat-card-unit">TB Raw</span>
+            </div>
+            <div class="meter-track">
+              <div id="dash-storage-bar" class="meter-bar green" style="width: 100%;"></div>
+            </div>
+            <div class="stat-card-foot">
+              <span>Active: <strong id="dash-storage-active">0 Drives</strong></span>
+              <span>Sleeping: <strong id="dash-storage-standby" class="text-amber">0 HDDs (0W)</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Disk I/O Activity Graph (Per-Disk & Aggregate) -->
+        <div class="io-chart-card">
+          <div class="io-chart-head">
+            <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+              <h3 style="margin: 0;">Live Disk I/O Activity (<span id="current-io-target-label">Aggregate Kernel Telemetry</span>)</h3>
+              <!-- Pro-Disk Filter Pills -->
+              <div class="disk-filter-strip" id="disk-selector-pills">
+                <button class="disk-pill active" onclick="selectDiskGraph('all')">All Disks (Aggregate)</button>
+              </div>
+            </div>
+            <div class="io-legend">
+              <span><span class="legend-dot read"></span>Read (MB/s)</span>
+              <span><span class="legend-dot write"></span>Write (MB/s)</span>
+            </div>
+          </div>
+          <div class="io-chart-box">
+            <svg class="io-chart-svg" viewBox="0 0 600 90" preserveAspectRatio="none">
+              <line x1="0" y1="30" x2="600" y2="30" stroke="rgba(255,255,255,0.04)" />
+              <line x1="0" y1="60" x2="600" y2="60" stroke="rgba(255,255,255,0.04)" />
+              <path id="io-live-line" fill="rgba(0, 102, 204, 0.1)" stroke="#0066cc" stroke-width="1.8" d="M 0,85 L 600,85" />
+            </svg>
+          </div>
+
+          <!-- PRO-DISK REAL-TIME TELEMETRY MATRIX -->
+          <div style="margin-top: 1rem; border-top: 1px solid var(--pf-border-color); padding-top: 0.75rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.65rem;">
+              <span style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; color: var(--pf-text-secondary);">
+                Pro-Disk Individual Telemetry &amp; Throughput
+              </span>
+              <span class="text-dim" style="font-size: 0.72rem;">Click any drive to isolate in chart above</span>
+            </div>
+            <div id="per-disk-io-grid" class="per-disk-grid">
+              <!-- Populated dynamically by app.js -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Storage Pools Overview Table -->
+        <div class="table-card">
+          <div class="table-toolbar">
+            <div class="toolbar-title">
+              <span>OpenZFS Storage Pools</span>
+            </div>
+            <div class="toolbar-actions">
+              <button class="btn btn-secondary btn-sm" onclick="showTab('pools')">Manage Pools &rarr;</button>
+            </div>
+          </div>
+          <table class="pf-table">
+            <thead>
+              <tr>
+                <th>Pool Name</th>
+                <th>Health</th>
+                <th>Topology / VDEVs</th>
+                <th>Allocated / Capacity</th>
+                <th>Free Space</th>
+                <th>Fragmentation</th>
+              </tr>
+            </thead>
+            <tbody id="dash-pools-table-body">
+              <tr><td colspan="6" class="text-dim" style="text-align: center; padding: 1.5rem;">Scanning storage pools...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ==============================================================================
+           TAB 2: STORAGE POOLS & ZFS DATASETS
+           ============================================================================== -->
+      <section id="tab-pools" class="tab-pane">
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>OpenZFS Storage Pools &amp; Datasets</h1>
+            <p>Manage mirrored and RAID-Z vdev topologies, dataset properties, scrubbing and data verification</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary" id="btn-open-import-pool">Import Existing Pool</button>
+            <button class="btn btn-primary" id="btn-open-create-pool">+ Create Storage Pool</button>
+          </div>
+        </div>
+
+        <div id="pools-full-container">
+          <!-- Populated by app.js -->
+        </div>
+      </section>
+
+      <!-- ==============================================================================
+           TAB 3: PHYSICAL DISKS (TABLE VIEW)
+           ============================================================================== -->
+      <section id="tab-disks" class="tab-pane">
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>Physical Block Storage &amp; Devices</h1>
+            <p>Direct block device inspection, SMART self-tests, standby power management and ZFS pool membership</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary btn-sm" onclick="refreshAll()">Rescan Hardware Disks</button>
+          </div>
+        </div>
+
+        <!-- Disks Table View -->
+        <div class="table-card" id="disks-table-card">
+          <table class="pf-table">
+            <thead>
+              <tr>
+                <th>Device</th>
+                <th>Model &amp; Vendor</th>
+                <th>Serial Number</th>
+                <th>Capacity</th>
+                <th>Bus / Type</th>
+                <th>ZFS Pool</th>
+                <th>Temp</th>
+                <th>State</th>
+                <th>SMART Health</th>
+                <th class="col-actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="disks-table-body">
+              <tr><td colspan="10" class="text-dim" style="text-align: center; padding: 1.5rem;">Scanning block devices...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Disk Inspection Drawer -->
+        <div class="drawer-card" id="disk-drawer-card" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--pf-border-color); padding-bottom: 0.5rem;">
+            <h3 style="font-size: 0.95rem; font-weight: 600;">Drive Hardware Inspection: <span id="drawer-disk-name" class="font-mono text-blue">--</span></h3>
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="btn btn-secondary btn-sm" id="btn-drawer-smart">Run SMART Test</button>
+              <button class="btn btn-secondary btn-sm" id="btn-drawer-standby">Force Standby (0W)</button>
+              <button class="btn btn-secondary btn-sm" id="btn-drawer-locate">Toggle Locate LED</button>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; font-size: 0.8rem;">
+            <div><span class="text-dim">Device Path:</span> <div class="font-mono" id="drawer-disk-path">--</div></div>
+            <div><span class="text-dim">By-ID Path:</span> <div class="font-mono text-dim" id="drawer-disk-byid" style="font-size: 0.72rem; word-break: break-all;">--</div></div>
+            <div><span class="text-dim">Power-On Hours:</span> <div class="font-mono" id="drawer-disk-hours">--</div></div>
+            <div><span class="text-dim">Spindown Timeout:</span> 
+              <select id="drawer-spindown-select" style="margin-top: 0.25rem; font-size: 0.75rem;">
+                <option value="0">Disabled (Always On)</option>
+                <option value="300">5 Minutes</option>
+                <option value="900">15 Minutes (Default)</option>
+                <option value="1800">30 Minutes</option>
+                <option value="3600">1 Hour</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==============================================================================
+           TAB 4: SHARES (SMB & NFS)
+           ============================================================================== -->
+      <section id="tab-shares" class="tab-pane">
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>Network Shares &amp; Access Control</h1>
+            <p>Configure Samba (SMB) and NFS kernel server exports, permissions and storage credentials</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary" id="btn-open-create-user">+ New Storage User</button>
+            <button class="btn btn-primary" id="btn-open-create-share">+ New Network Share</button>
+          </div>
+        </div>
+
+        <!-- Shares Table -->
+        <div class="table-card">
+          <div class="table-toolbar">
+            <span class="toolbar-title">Active Network Exports</span>
+          </div>
+          <table class="pf-table">
+            <thead>
+              <tr>
+                <th>Protocol</th>
+                <th>Share Name</th>
+                <th>Target Dataset / Path</th>
+                <th>Access / Permissions</th>
+                <th>Allowed Users / Hosts</th>
+                <th>Status</th>
+                <th class="col-actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="shares-table-body">
+              <tr><td colspan="7" class="text-dim" style="text-align: center; padding: 1.5rem;">Loading active shares...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Storage Users Table -->
+        <div class="table-card">
+          <div class="table-toolbar">
+            <span class="toolbar-title">Storage Users &amp; SMB Credentials</span>
+          </div>
+          <table class="pf-table">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>UID</th>
+                <th>Samba Auth</th>
+                <th>Primary Group</th>
+                <th>Created</th>
+                <th class="col-actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-table-body">
+              <tr><td colspan="6" class="text-dim" style="text-align: center; padding: 1rem;">Loading storage users...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ==============================================================================
+           TAB 5: DATA PROTECTION (SNAPSHOTS & SCRUB)
+           ============================================================================== -->
+      <section id="tab-protection" class="tab-pane">
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>Data Protection &amp; Integrity Tasks</h1>
+            <p>Manage point-in-time OpenZFS snapshots, bit rot scrub schedules and cloud replication</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-primary" id="btn-open-create-snap">+ Take Manual Snapshot</button>
+          </div>
+        </div>
+
+        <!-- Snapshots List -->
+        <div class="table-card">
+          <div class="table-toolbar">
+            <span class="toolbar-title">OpenZFS Snapshots</span>
+          </div>
+          <table class="pf-table">
+            <thead>
+              <tr>
+                <th>Snapshot Name</th>
+                <th>Dataset</th>
+                <th>Referenced Data</th>
+                <th>Used Space</th>
+                <th>Created</th>
+                <th class="col-actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="snapshots-table-body">
+              <tr><td colspan="6" class="text-dim" style="text-align: center; padding: 1.5rem;">Loading snapshots...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ==============================================================================
+           TAB 6: FIO BENCHMARKS & DIAGNOSTICS
+           ============================================================================== -->
+      <section id="tab-diagnostics" class="tab-pane">
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>Storage Diagnostics &amp; FIO Benchmarks</h1>
+            <p>Measure real filesystem throughput, IOPS and latency using flexible I/O tester</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-primary" id="btn-run-fio">Run FIO Benchmark</button>
+          </div>
+        </div>
+
+        <div class="table-card">
+          <div class="table-toolbar">
+            <span class="toolbar-title">Benchmark Configurations</span>
+            <div style="display: flex; gap: 0.5rem;">
+              <select id="fio-mode-select" style="font-size: 0.78rem;">
+                <option value="seq_read">Sequential Read (1M Block)</option>
+                <option value="seq_write">Sequential Write (1M Block)</option>
+                <option value="rand_read">Random Read (4K IOPS)</option>
+                <option value="rand_write">Random Write (4K IOPS)</option>
+              </select>
+            </div>
+          </div>
+          <div style="padding: 1.25rem;">
+            <div id="fio-results-box" class="font-mono text-dim" style="background: var(--pf-bg-input); border: 1px solid var(--pf-border-color); border-radius: var(--pf-radius-sm); padding: 1rem; min-height: 120px; font-size: 0.78rem; white-space: pre-wrap;">Select a benchmark test and click 'Run FIO Benchmark' to test pool throughput directly without mock generators.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==============================================================================
+           TAB: NETWORKING (NETWORK INTERFACES & STORAGE FABRIC)
+           ============================================================================== -->
+      <section id="tab-network" class="tab-pane">
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>Network Interfaces &amp; Storage Fabric</h1>
+            <p>Physical NIC telemetry, IPv4/IPv6 addresses, MTU, packet throughput and storage network services</p>
+          </div>
+          <div class="page-actions">
+            <span class="badge-status green">Kernel Sockets Active</span>
+          </div>
+        </div>
+
+        <!-- 4 Network Metrics -->
+        <div class="metrics-row">
+          <div class="stat-card">
+            <div class="stat-card-head">
+              <span class="stat-card-title">Total Network Throughput</span>
+              <span class="badge-status green">Live</span>
+            </div>
+            <div class="stat-card-value">
+              <span id="net-total-rate">0.0</span><span class="stat-card-unit">MB/s</span>
+            </div>
+            <div class="meter-track">
+              <div id="net-total-bar" class="meter-bar green" style="width: 2%;"></div>
+            </div>
+            <div class="stat-card-foot">
+              <span>Bandwidth Utilization</span>
+              <span id="net-link-speed">1 Gbps Full Duplex</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-card-head">
+              <span class="stat-card-title">Inbound Traffic (RX)</span>
+              <span class="badge-status blue">Inbound</span>
+            </div>
+            <div class="stat-card-value">
+              <span id="net-rx-rate" class="text-blue">0.00</span><span class="stat-card-unit">kb/s</span>
+            </div>
+            <div class="meter-track">
+              <div id="net-rx-bar" class="meter-bar" style="width: 1%;"></div>
+            </div>
+            <div class="stat-card-foot">
+              <span>Total Received</span>
+              <span id="net-rx-total" class="font-mono">--</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-card-head">
+              <span class="stat-card-title">Outbound Traffic (TX)</span>
+              <span class="badge-status amber">Outbound</span>
+            </div>
+            <div class="stat-card-value">
+              <span id="net-tx-rate" class="text-amber">0.00</span><span class="stat-card-unit">kb/s</span>
+            </div>
+            <div class="meter-track">
+              <div id="net-tx-bar" class="meter-bar amber" style="width: 1%;"></div>
+            </div>
+            <div class="stat-card-foot">
+              <span>Total Transmitted</span>
+              <span id="net-tx-total" class="font-mono">--</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-card-head">
+              <span class="stat-card-title">Hardware Adapters</span>
+              <span class="badge-status green" id="net-adapters-badge">Online</span>
+            </div>
+            <div class="stat-card-value">
+              <span id="net-active-ifaces">0</span><span class="stat-card-unit">Active Interfaces</span>
+            </div>
+            <div class="meter-track">
+              <div class="meter-bar green" style="width: 100%;"></div>
+            </div>
+            <div class="stat-card-foot">
+              <span>Packet Drop / Errors</span>
+              <strong class="text-green">0.00% (Healthy)</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Network Bandwidth Diagram -->
+        <div class="io-chart-card">
+          <div class="io-chart-head">
+            <h3>Live Network Throughput Diagram</h3>
+            <div class="io-legend">
+              <span><span class="legend-dot" style="background: #10b981;"></span>RX Inbound (KB/s)</span>
+              <span><span class="legend-dot" style="background: #0066cc;"></span>TX Outbound (KB/s)</span>
+            </div>
+          </div>
+          <div class="io-chart-box">
+            <svg class="io-chart-svg" viewBox="0 0 600 90" preserveAspectRatio="none">
+              <line x1="0" y1="30" x2="600" y2="30" stroke="rgba(255,255,255,0.04)" />
+              <line x1="0" y1="60" x2="600" y2="60" stroke="rgba(255,255,255,0.04)" />
+              <path id="net-live-rx-line" fill="rgba(16, 185, 129, 0.1)" stroke="#10b981" stroke-width="1.8" d="M 0,85 L 600,85" />
+              <path id="net-live-tx-line" fill="none" stroke="#0066cc" stroke-width="1.8" d="M 0,85 L 600,85" />
+            </svg>
+          </div>
+        </div>
+
+        <!-- Network Interfaces Table -->
+        <div class="table-card">
+          <div class="table-toolbar">
+            <span class="toolbar-title">Physical &amp; Virtual Network Adapters</span>
+          </div>
+          <table class="pf-table">
+            <thead>
+              <tr>
+                <th>Interface</th>
+                <th>IPv4 / Subnet Address</th>
+                <th>MAC Hardware Address</th>
+                <th>Type &amp; Link Speed</th>
+                <th>Inbound Rate (RX)</th>
+                <th>Outbound Rate (TX)</th>
+                <th>State</th>
+              </tr>
+            </thead>
+            <tbody id="network-ifaces-table-body">
+              <tr><td colspan="7" class="text-dim" style="text-align: center; padding: 1.5rem;">Scanning network interfaces...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Storage Network Protocol Ports & Services -->
+        <div class="table-card">
+          <div class="table-toolbar">
+            <span class="toolbar-title">Storage Network Ports &amp; Fabric Listeners</span>
+          </div>
+          <table class="pf-table">
+            <thead>
+              <tr>
+                <th>Service</th>
+                <th>Transport</th>
+                <th>Port</th>
+                <th>Binding</th>
+                <th>Status</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Samba SMB</strong></td>
+                <td><span class="badge-status slate">TCP</span></td>
+                <td><span class="font-mono text-blue">445</span></td>
+                <td><span class="font-mono text-dim">0.0.0.0</span></td>
+                <td><span class="badge-status green">Active</span></td>
+                <td class="text-dim">Windows &amp; macOS CIFS file sharing</td>
+              </tr>
+              <tr>
+                <td><strong>NFSv4 Kernel</strong></td>
+                <td><span class="badge-status slate">TCP</span></td>
+                <td><span class="font-mono text-blue">2049</span></td>
+                <td><span class="font-mono text-dim">0.0.0.0</span></td>
+                <td><span class="badge-status green">Active</span></td>
+                <td class="text-dim">Linux &amp; Proxmox high-throughput exports</td>
+              </tr>
+              <tr>
+                <td><strong>Web Appliance GUI</strong></td>
+                <td><span class="badge-status slate">TCP</span></td>
+                <td><span class="font-mono text-blue">8080</span></td>
+                <td><span class="font-mono text-dim">0.0.0.0</span></td>
+                <td><span class="badge-status green">Active</span></td>
+                <td class="text-dim">Enterprise PatternFly Storage Console</td>
+              </tr>
+              <tr>
+                <td><strong>SSH Remote Console</strong></td>
+                <td><span class="badge-status slate">TCP</span></td>
+                <td><span class="font-mono text-blue">22</span></td>
+                <td><span class="font-mono text-dim">0.0.0.0</span></td>
+                <td><span class="badge-status green">Active</span></td>
+                <td class="text-dim">Encrypted terminal &amp; automation access</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ==============================================================================
+           TAB 7: SYSTEM & SERVICES
+           ============================================================================== -->
+      <section id="tab-system" class="tab-pane">
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>System Environment &amp; Storage Services</h1>
+            <p>Host operating system information, kernel storage drivers and system audit logs</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary btn-sm" onclick="exportAuditLog()">Export Audit Log</button>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.25rem;">
+          <!-- System Services -->
+          <div class="table-card">
+            <div class="table-toolbar">
+              <span class="toolbar-title">Storage Core Daemons</span>
+            </div>
+            <table class="pf-table">
+              <thead>
+                <tr>
+                  <th>Daemon / Service</th>
+                  <th>Status</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>zfs-zed</strong></td>
+                  <td><span class="badge-status green">Active</span></td>
+                  <td class="text-dim">ZFS Event Daemon (Disks &amp; Pools)</td>
+                </tr>
+                <tr>
+                  <td><strong>smbd</strong></td>
+                  <td><span class="badge-status green">Active</span></td>
+                  <td class="text-dim">Samba 4.x Windows File Sharing</td>
+                </tr>
+                <tr>
+                  <td><strong>nfs-server</strong></td>
+                  <td><span class="badge-status green">Active</span></td>
+                  <td class="text-dim">NFSv4 Kernel Server</td>
+                </tr>
+                <tr>
+                  <td><strong>hd-idle</strong></td>
+                  <td><span class="badge-status green">Active</span></td>
+                  <td class="text-dim">Automated HDD Spindown Daemon</td>
+                </tr>
+                <tr>
+                  <td><strong>smartd</strong></td>
+                  <td><span class="badge-status green">Active</span></td>
+                  <td class="text-dim">SMART Disk Health Daemon</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Host Specs -->
+          <div class="table-card">
+            <div class="table-toolbar">
+              <span class="toolbar-title">Operating System Details</span>
+            </div>
+            <table class="pf-table">
+              <tbody>
+                <tr><td class="text-dim">Hostname</td><td class="font-mono" id="sys-host-detail">--</td></tr>
+                <tr><td class="text-dim">Operating System</td><td id="sys-os-detail">--</td></tr>
+                <tr><td class="text-dim">Kernel Version</td><td class="font-mono" id="sys-kernel-detail">--</td></tr>
+                <tr><td class="text-dim">Architecture</td><td class="font-mono" id="sys-arch-detail">--</td></tr>
+                <tr><td class="text-dim">System Uptime</td><td id="sys-uptime-detail">--</td></tr>
+                <tr><td class="text-dim">Daemon Memory</td><td id="sys-daemon-detail">--</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Live Storage Audit Log -->
+        <div class="table-card">
+          <div class="table-toolbar">
+            <span class="toolbar-title">Storage Command Audit Log</span>
+          </div>
+          <div id="terminal-auditor" class="font-mono" style="background: var(--pf-bg-input); padding: 1rem; max-height: 200px; overflow-y: auto; font-size: 0.75rem; color: #94a3b8; line-height: 1.6;">
+            [AUDIT] Debian NAS Storage Engine initialized.
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ==============================================================================
+       Modals (Standard PatternFly Modals)
+       ============================================================================== -->
+
+  <!-- Modal: Create Storage Pool -->
+  <div class="modal-backdrop" id="modal-pool">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Create New OpenZFS Pool</h3>
+        <button class="modal-close" id="btn-close-pool">&times;</button>
+      </div>
+      <form id="form-create-pool">
+        <div class="form-group">
+          <label>Pool Identifier (Name)</label>
+          <input type="text" id="input-pool-name" placeholder="e.g. TANK, FASTPOOL" required>
+        </div>
+        <div class="form-group">
+          <label>VDEV Topology</label>
+          <select id="select-pool-type">
+            <option value="mirror">Mirror (RAID-1 Equivalent - High Redundancy)</option>
+            <option value="raidz1">RAID-Z1 (Single Parity, Min. 3 Disks)</option>
+            <option value="raidz2">RAID-Z2 (Dual Parity, Min. 4 Disks)</option>
+            <option value="single">Single Disk (No Redundancy)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Select Physical Member Drives</label>
+          <div id="pool-disks-checkboxes" style="max-height: 120px; overflow-y: auto; background: var(--pf-bg-input); border: 1px solid var(--pf-border-color); border-radius: var(--pf-radius-sm); padding: 0.5rem;">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-pool">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Zpool</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Create Network Share -->
+  <div class="modal-backdrop" id="modal-share">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Create Network File Share</h3>
+        <button class="modal-close" id="btn-close-share">&times;</button>
+      </div>
+      <form id="form-create-share">
+        <div class="form-group">
+          <label>Share Name</label>
+          <input type="text" id="input-share-name" placeholder="e.g. Media, Backups" required>
+        </div>
+        <div class="form-group">
+          <label>Target Filesystem Path</label>
+          <input type="text" id="input-share-path" placeholder="/tank/media" required>
+        </div>
+        <div class="form-group">
+          <label>Protocol</label>
+          <select id="select-share-proto">
+            <option value="smb">SMB / CIFS (Windows &amp; Mac File Sharing)</option>
+            <option value="nfs">NFSv4 (Linux &amp; Proxmox Storage Mounts)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Access Control</label>
+          <select id="select-share-access">
+            <option value="restricted">Restricted (Require Storage User Login)</option>
+            <option value="guest">Public / Guest Access (Read/Write without Password)</option>
+            <option value="readonly">Read-Only</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-share">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Share</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Create Storage User -->
+  <div class="modal-backdrop" id="modal-user">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Create Storage User &amp; Credentials</h3>
+        <button class="modal-close" id="btn-close-user">&times;</button>
+      </div>
+      <form id="form-create-user">
+        <div class="form-group">
+          <label>Linux Username</label>
+          <input type="text" id="input-user-name" placeholder="e.g. backupuser, niklas" required>
+        </div>
+        <div class="form-group">
+          <label>Password (Samba &amp; Local)</label>
+          <input type="password" id="input-user-password" placeholder="••••••••" required>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-user">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add User</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Create Snapshot -->
+  <div class="modal-backdrop" id="modal-snap">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Take ZFS Point-in-Time Snapshot</h3>
+        <button class="modal-close" id="btn-close-snap">&times;</button>
+      </div>
+      <form id="form-create-snap">
+        <div class="form-group">
+          <label>Target Dataset</label>
+          <select id="select-snap-dataset" required>
+            <!-- Populated dynamically -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Snapshot Label</label>
+          <input type="text" id="input-snap-name" placeholder="e.g. manual-backup, pre-update" required>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-snap">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Snapshot</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Import Existing Storage Pool -->
+  <div class="modal-backdrop" id="modal-import">
+    <div class="modal-box" style="max-width: 580px;">
+      <div class="modal-header">
+        <h3>Import OpenZFS Storage Pool</h3>
+        <button class="modal-close" id="btn-close-import">&times;</button>
+      </div>
+      <div style="padding-bottom: 0.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem;">
+          <p class="text-dim" style="font-size: 0.78rem; margin: 0;">Scan block devices to discover exported or unimported ZFS pools.</p>
+          <button class="btn btn-secondary btn-sm" id="btn-rescan-importable">Rescan Devices</button>
+        </div>
+
+        <div id="importable-pools-container" style="max-height: 220px; overflow-y: auto; background: var(--pf-bg-input); border: 1px solid var(--pf-border-color); border-radius: var(--pf-radius-sm); padding: 0.75rem; margin-bottom: 1rem;">
+          <span class="text-dim" style="font-size: 0.78rem;">Click 'Rescan Devices' or select a pool below...</span>
+        </div>
+
+        <form id="form-import-pool" style="display: none;">
+          <input type="hidden" id="input-import-target-id">
+          <div class="form-group">
+            <label>Selected Pool</label>
+            <input type="text" id="input-import-pool-display" readonly style="opacity: 0.8;">
+          </div>
+          <div class="form-group">
+            <label>Rename Pool on Import (Optional)</label>
+            <input type="text" id="input-import-new-name" placeholder="Leave blank to keep original pool name">
+          </div>
+          <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+            <input type="checkbox" id="check-import-force" style="width: auto;">
+            <label for="check-import-force" style="margin: 0; font-size: 0.75rem; cursor: pointer;">
+              Force import (-f) <span class="text-dim">(Use if pool was previously used on another host)</span>
+            </label>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="btn-cancel-import">Cancel</button>
+            <button type="submit" class="btn btn-primary">Import Pool</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Add VDEV to Pool (Expand / SLOG / L2ARC / Special / Spare) -->
+  <div class="modal-backdrop" id="modal-add-vdev">
+    <div class="modal-box" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3>Add VDEV to Pool: <span id="vdev-target-pool" class="text-blue">--</span></h3>
+        <button class="modal-close" id="btn-close-vdev">&times;</button>
+      </div>
+      <form id="form-add-vdev">
+        <input type="hidden" id="input-vdev-pool">
+        <div class="form-group">
+          <label>VDEV Type / Allocation Role</label>
+          <select id="select-vdev-type" required>
+            <option value="data">Data VDEV (Expand Capacity - Stripe)</option>
+            <option value="mirror">Data Mirror (Expand Capacity - Mirrored)</option>
+            <option value="log">Log / SLOG (ZIL Write Accelerator - Low Latency Sync Writes)</option>
+            <option value="cache">Cache / L2ARC (High-Speed SSD Read Cache)</option>
+            <option value="special">Special Allocation (Metadata &amp; Small Blocks on NVMe)</option>
+            <option value="spare">Hot Spare (Automatic Drive Failure Replacement)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Select Unallocated Member Disks</label>
+          <div id="vdev-disks-checkboxes" style="max-height: 140px; overflow-y: auto; background: var(--pf-bg-input); border: 1px solid var(--pf-border-color); border-radius: var(--pf-radius-sm); padding: 0.5rem;">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-vdev">Cancel</button>
+          <button type="submit" class="btn btn-primary">Attach VDEV</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Disk Actions (Replace / Attach to Mirror) -->
+  <div class="modal-backdrop" id="modal-disk-action">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 id="disk-action-title">Disk Operation</h3>
+        <button class="modal-close" id="btn-close-disk-action">&times;</button>
+      </div>
+      <form id="form-disk-action">
+        <input type="hidden" id="input-da-pool">
+        <input type="hidden" id="input-da-action">
+        <input type="hidden" id="input-da-old-dev">
+        <div class="form-group">
+          <label>Target Pool &amp; Existing Disk</label>
+          <input type="text" id="input-da-display" readonly style="opacity: 0.85;">
+        </div>
+        <div class="form-group">
+          <label id="lbl-da-target">Select Replacement Disk</label>
+          <select id="select-da-new-dev" required>
+            <!-- Populated dynamically with available disks -->
+          </select>
+        </div>
+        <p class="text-dim" id="da-desc" style="font-size: 0.75rem; margin-top: 0.5rem;"></p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-disk-action">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-da-submit">Execute Operation</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Create ZFS Dataset (Filesystem) -->
+  <div class="modal-backdrop" id="modal-dataset">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Create ZFS Dataset (Filesystem)</h3>
+        <button class="modal-close" id="btn-close-dataset">&times;</button>
+      </div>
+      <form id="form-create-dataset">
+        <input type="hidden" id="input-ds-pool">
+        <div class="form-group">
+          <label>Parent Pool</label>
+          <input type="text" id="input-ds-pool-display" readonly style="opacity: 0.85;">
+        </div>
+        <div class="form-group">
+          <label>Dataset Name</label>
+          <input type="text" id="input-ds-name" placeholder="e.g. data, media, backups" required>
+        </div>
+        <div class="form-group">
+          <label>Compression Algorithm</label>
+          <select id="select-ds-compression">
+            <option value="lz4" selected>LZ4 (Fast, Zero CPU Penalty - Recommended)</option>
+            <option value="zstd">ZSTD (High Compression Ratio)</option>
+            <option value="gzip-9">GZIP-9 (Maximum Compression)</option>
+            <option value="off">Off (Raw Uncompressed)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Record Size (Block Size)</label>
+          <select id="select-ds-recordsize">
+            <option value="128K" selected>128 KiB (Default General File Storage)</option>
+            <option value="1M">1 MiB (Sequential Media, Video, Large Backups)</option>
+            <option value="64K">64 KiB</option>
+            <option value="16K">16 KiB (Databases &amp; VMs)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Access Time (Atime)</label>
+          <select id="select-ds-atime">
+            <option value="off" selected>Off (Crucial for HDD Sleep &amp; Standby)</option>
+            <option value="on">On (Update Access Timestamps)</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-dataset">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Dataset</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Create Zvol (Block Volume for VMs / iSCSI) -->
+  <div class="modal-backdrop" id="modal-zvol">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Create ZFS Zvol (Block Volume)</h3>
+        <button class="modal-close" id="btn-close-zvol">&times;</button>
+      </div>
+      <form id="form-create-zvol">
+        <input type="hidden" id="input-zvol-pool">
+        <div class="form-group">
+          <label>Target Pool</label>
+          <input type="text" id="input-zvol-pool-display" readonly style="opacity: 0.85;">
+        </div>
+        <div class="form-group">
+          <label>Volume Identifier (Name)</label>
+          <input type="text" id="input-zvol-name" placeholder="e.g. vm-100-disk-0, iscsi-lun-0" required>
+        </div>
+        <div class="form-group" style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.5rem;">
+          <div>
+            <label>Volume Size</label>
+            <input type="number" id="input-zvol-size-val" placeholder="50" min="1" required style="width: 100%; padding: 0.45rem 0.65rem; background: var(--pf-bg-input); border: 1px solid var(--pf-border-color); border-radius: var(--pf-radius-sm); color: #fff;">
+          </div>
+          <div>
+            <label>Unit</label>
+            <select id="select-zvol-size-unit">
+              <option value="G" selected>GiB</option>
+              <option value="T">TiB</option>
+              <option value="M">MiB</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Volblocksize (Block Allocation)</label>
+          <select id="select-zvol-blocksize">
+            <option value="16k" selected>16 KiB (Recommended for VM Disks)</option>
+            <option value="4k">4 KiB</option>
+            <option value="8k">8 KiB</option>
+            <option value="32k">32 KiB</option>
+            <option value="64k">64 KiB</option>
+            <option value="128k">128 KiB</option>
+          </select>
+        </div>
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+          <input type="checkbox" id="check-zvol-sparse" checked style="width: auto;">
+          <label for="check-zvol-sparse" style="margin: 0; font-size: 0.75rem; cursor: pointer;">
+            Sparse Volume (Thin Provisioning) <span class="text-dim">- Allocates space only as data is written</span>
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-zvol">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Zvol</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Pool Properties (Autotrim, Autoexpand) -->
+  <div class="modal-backdrop" id="modal-pool-props">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Pool Properties: <span id="pool-props-title" class="text-blue">--</span></h3>
+        <button class="modal-close" id="btn-close-pool-props">&times;</button>
+      </div>
+      <form id="form-pool-props">
+        <input type="hidden" id="input-pp-pool">
+        <div class="form-group">
+          <label>Autotrim (Continuous SSD TRIM)</label>
+          <select id="select-pp-autotrim">
+            <option value="on">On (Automatically reclaim unused blocks on NVMe/SSD)</option>
+            <option value="off">Off (Manual TRIM only)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Autoexpand (Automatic Pool Expansion)</label>
+          <select id="select-pp-autoexpand">
+            <option value="on">On (Automatically expand capacity when larger disks replace old ones)</option>
+            <option value="off">Off (Manual expansion)</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-pool-props">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Pool Properties</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Dataset / Zvol Properties -->
+  <div class="modal-backdrop" id="modal-dataset-props">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Dataset Properties: <span id="ds-props-title" class="text-blue">--</span></h3>
+        <button class="modal-close" id="btn-close-ds-props">&times;</button>
+      </div>
+      <form id="form-dataset-props">
+        <input type="hidden" id="input-dp-name">
+        <div class="form-group">
+          <label>Compression</label>
+          <select id="select-dp-compression">
+            <option value="lz4">LZ4 (High Speed, Zero Overhead)</option>
+            <option value="zstd">ZSTD (High Compression)</option>
+            <option value="gzip">GZIP</option>
+            <option value="off">Off</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Storage Quota</label>
+          <input type="text" id="input-dp-quota" placeholder="e.g. none, 100G, 1T">
+          <span class="text-dim" style="font-size: 0.7rem;">Enter 'none' to remove limits</span>
+        </div>
+        <div class="form-group">
+          <label>Access Time (Atime)</label>
+          <select id="select-dp-atime">
+            <option value="off">Off (Conserves power and preserves HDD sleep)</option>
+            <option value="on">On</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Read-Only Enforcement</label>
+          <select id="select-dp-readonly">
+            <option value="off">Off (Read / Write)</option>
+            <option value="on">On (Immutable / Read-Only Protection)</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-ds-props">Cancel</button>
+          <button type="submit" class="btn btn-primary">Apply Properties</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Clone Snapshot -->
+  <div class="modal-backdrop" id="modal-clone-snap">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Clone ZFS Snapshot</h3>
+        <button class="modal-close" id="btn-close-clone-snap">&times;</button>
+      </div>
+      <form id="form-clone-snap">
+        <div class="form-group">
+          <label>Source Snapshot</label>
+          <input type="text" id="input-cs-source" readonly style="opacity: 0.85;">
+        </div>
+        <div class="form-group">
+          <label>Target Clone Dataset Path</label>
+          <input type="text" id="input-cs-target" placeholder="e.g. tank/data-clone" required>
+          <span class="text-dim" style="font-size: 0.72rem;">Creates an instant, writable copy with zero duplicated storage footprint</span>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-clone-snap">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Writable Clone</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

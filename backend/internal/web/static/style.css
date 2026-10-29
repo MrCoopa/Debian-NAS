@@ -1,0 +1,1070 @@
+/* ==============================================================================
+   DEBIAN STORAGE APPLIANCE - PATTERNFLY / COCKPIT ENTERPRISE DESIGN SYSTEM
+   Professional, High-Density Storage Console (Cockpit & TrueNAS SCALE Style)
+   ============================================================================== */
+
+:root {
+  /* PatternFly 5 / Cockpit Dark Enterprise Palette */
+  --pf-bg-base: #0c0f14;
+  --pf-bg-masthead: #131720;
+  --pf-bg-sidebar: #10141c;
+  --pf-bg-card: #151a24;
+  --pf-bg-card-subtle: #11151e;
+  --pf-bg-card-hover: #19202c;
+  --pf-bg-input: #090c10;
+  --pf-bg-header: #0e121a;
+
+  --pf-border-color: #212836;
+  --pf-border-subtle: #19202c;
+  --pf-border-light: rgba(255, 255, 255, 0.05);
+
+  --pf-text-primary: #f1f5f9;
+  --pf-text-secondary: #94a3b8;
+  --pf-text-muted: #64748b;
+  --pf-text-disabled: #475569;
+
+  /* Enterprise Functional Colors (Cockpit / Red Hat standard) */
+  --pf-blue: #0066cc;
+  --pf-blue-hover: #004080;
+  --pf-blue-subtle: rgba(0, 102, 204, 0.15);
+  --pf-blue-light: #70b8ff;
+
+  --pf-green: #3e8635;
+  --pf-green-subtle: rgba(62, 134, 53, 0.15);
+  --pf-green-light: #5ba352;
+
+  --pf-amber: #c58c00;
+  --pf-amber-subtle: rgba(197, 140, 0, 0.15);
+  --pf-amber-light: #f0ab00;
+
+  --pf-red: #c9190b;
+  --pf-red-subtle: rgba(201, 25, 11, 0.15);
+  --pf-red-light: #e03f32;
+
+  --pf-slate: #6a6e73;
+  --pf-slate-subtle: rgba(106, 110, 115, 0.15);
+
+  --pf-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --pf-font-mono: 'JetBrains Mono', 'Consolas', 'SFMono-Regular', Menlo, Monaco, monospace;
+
+  --pf-radius-xs: 2px;
+  --pf-radius-sm: 3px;
+  --pf-radius-md: 4px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--pf-font-sans);
+  background-color: var(--pf-bg-base);
+  color: var(--pf-text-primary);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ==============================================================================
+   1. Cockpit Masthead (Topbar)
+   ============================================================================== */
+.app-topbar {
+  height: 48px;
+  background-color: var(--pf-bg-masthead);
+  border-bottom: 1px solid var(--pf-border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 1.25rem;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.brand-icon-box {
+  width: 28px;
+  height: 28px;
+  background: var(--pf-blue-subtle);
+  border: 1px solid var(--pf-blue);
+  border-radius: var(--pf-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--pf-blue-light);
+}
+
+.brand-title {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+}
+
+.brand-title span {
+  color: var(--pf-blue-light);
+}
+
+.version-tag {
+  font-size: 0.68rem;
+  padding: 1px 5px;
+  border-radius: var(--pf-radius-xs);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--pf-border-color);
+  color: var(--pf-text-muted);
+  font-weight: 500;
+  margin-left: 0.4rem;
+}
+
+.topbar-meta-strip {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  font-size: 0.78rem;
+  color: var(--pf-text-secondary);
+  white-space: nowrap;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.meta-item strong {
+  color: var(--pf-text-primary);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.status-dot.green { background-color: #10b981; }
+.status-dot.amber { background-color: var(--pf-amber-light); }
+.status-dot.slate { background-color: var(--pf-slate); }
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.io-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: var(--pf-bg-card-subtle);
+  border: 1px solid var(--pf-border-color);
+  padding: 3px 8px;
+  border-radius: var(--pf-radius-sm);
+  font-family: var(--pf-font-mono);
+  font-size: 0.72rem;
+}
+
+.io-pill .r { color: var(--pf-blue-light); }
+.io-pill .w { color: var(--pf-amber-light); }
+
+.hdd-spindown-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--pf-green-subtle);
+  border: 1px solid var(--pf-green);
+  color: #6ee7b7;
+  padding: 3px 8px;
+  border-radius: var(--pf-radius-sm);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.icon-btn {
+  background: transparent;
+  border: 1px solid var(--pf-border-color);
+  color: var(--pf-text-secondary);
+  width: 28px;
+  height: 28px;
+  border-radius: var(--pf-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.icon-btn:hover {
+  background: var(--pf-bg-card-hover);
+  color: #ffffff;
+  border-color: var(--pf-blue-light);
+}
+
+/* ==============================================================================
+   2. Cockpit Layout & Vertical Sidebar
+   ============================================================================== */
+.app-layout {
+  display: flex;
+  flex: 1;
+}
+
+.app-sidebar {
+  width: 230px;
+  background-color: var(--pf-bg-sidebar);
+  border-right: 1px solid var(--pf-border-color);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1rem 0;
+  position: sticky;
+  top: 48px;
+  height: calc(100vh - 48px);
+}
+
+.sidebar-category {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--pf-text-muted);
+  padding: 0.85rem 1.25rem 0.35rem;
+  text-transform: uppercase;
+}
+
+.sidebar-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 1.25rem;
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  color: var(--pf-text-secondary);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.03);
+  color: #ffffff;
+}
+
+.nav-item.active {
+  background: var(--pf-blue-subtle);
+  border-left-color: var(--pf-blue);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.nav-item .nav-icon {
+  flex-shrink: 0;
+  color: var(--pf-text-muted);
+}
+
+.nav-item.active .nav-icon {
+  color: var(--pf-blue-light);
+}
+
+.nav-badge {
+  margin-left: auto;
+  font-size: 0.68rem;
+  padding: 1px 5px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--pf-border-color);
+  border-radius: var(--pf-radius-xs);
+  color: var(--pf-text-muted);
+  font-weight: 600;
+}
+
+.sidebar-footer {
+  border-top: 1px solid var(--pf-border-color);
+  padding: 0.85rem 1.25rem;
+  font-size: 0.72rem;
+  color: var(--pf-text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.footer-title {
+  color: var(--pf-text-primary);
+  font-weight: 600;
+}
+
+/* ==============================================================================
+   3. Content Header, Toolbar & Action Controls
+   ============================================================================== */
+.app-main {
+  flex: 1;
+  padding: 1.5rem 2rem;
+  max-width: 1600px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.tab-pane {
+  display: none;
+}
+
+.tab-pane.active {
+  display: block;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--pf-border-color);
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.page-title-group h1 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--pf-text-primary);
+  letter-spacing: -0.01em;
+}
+
+.page-title-group p {
+  font-size: 0.8rem;
+  color: var(--pf-text-secondary);
+  margin-top: 0.2rem;
+}
+
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Standard Buttons (PatternFly Hierarchy) */
+.btn {
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--pf-radius-sm);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  line-height: 1.2;
+}
+
+.btn-primary {
+  background-color: var(--pf-blue);
+  border-color: #004d99;
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background-color: var(--pf-blue-hover);
+}
+
+.btn-secondary {
+  background-color: var(--pf-bg-card);
+  border: 1px solid var(--pf-border-color);
+  color: var(--pf-text-primary);
+}
+
+.btn-secondary:hover {
+  background-color: var(--pf-bg-card-hover);
+  border-color: #3b82f6;
+  color: #ffffff;
+}
+
+.btn-danger {
+  background-color: var(--pf-red-subtle);
+  border: 1px solid var(--pf-red);
+  color: #fca5a5;
+}
+
+.btn-danger:hover {
+  background-color: var(--pf-red);
+  color: #ffffff;
+}
+
+.btn-sm {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.72rem;
+}
+
+/* Status Badges */
+.badge-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--pf-radius-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.badge-status.green {
+  background: var(--pf-green-subtle);
+  border: 1px solid var(--pf-green);
+  color: #6ee7b7;
+}
+
+.badge-status.blue {
+  background: var(--pf-blue-subtle);
+  border: 1px solid var(--pf-blue);
+  color: var(--pf-blue-light);
+}
+
+.badge-status.amber {
+  background: var(--pf-amber-subtle);
+  border: 1px solid var(--pf-amber);
+  color: #fcd34d;
+}
+
+.badge-status.red {
+  background: var(--pf-red-subtle);
+  border: 1px solid var(--pf-red);
+  color: #fca5a5;
+}
+
+.badge-status.slate {
+  background: var(--pf-slate-subtle);
+  border: 1px solid var(--pf-slate);
+  color: #cbd5e1;
+}
+
+/* ==============================================================================
+   4. Cockpit DataTables (Standard Enterprise Tables)
+   ============================================================================== */
+.table-card {
+  background: var(--pf-bg-card);
+  border: 1px solid var(--pf-border-color);
+  border-radius: var(--pf-radius-md);
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+}
+
+.table-toolbar {
+  padding: 0.75rem 1rem;
+  background: var(--pf-bg-header);
+  border-bottom: 1px solid var(--pf-border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.toolbar-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--pf-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  text-align: left;
+}
+
+.pf-table th {
+  background: var(--pf-bg-header);
+  color: var(--pf-text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--pf-border-color);
+  white-space: nowrap;
+}
+
+.pf-table td {
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--pf-border-light);
+  color: var(--pf-text-primary);
+  vertical-align: middle;
+}
+
+.pf-table tr:last-child td {
+  border-bottom: none;
+}
+
+.pf-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.col-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.font-mono {
+  font-family: var(--pf-font-mono);
+}
+
+.text-dim { color: var(--pf-text-muted); }
+.text-blue { color: var(--pf-blue-light); }
+.text-green { color: #6ee7b7; }
+.text-amber { color: #fcd34d; }
+
+/* ==============================================================================
+   5. Dashboard Metric Cards (Enterprise Telemetry)
+   ============================================================================== */
+.metrics-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.stat-card {
+  background: var(--pf-bg-card);
+  border: 1px solid var(--pf-border-color);
+  border-radius: var(--pf-radius-md);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.stat-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.stat-card-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--pf-text-muted);
+}
+
+.stat-card-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--pf-text-primary);
+  line-height: 1.1;
+  font-family: var(--pf-font-mono);
+  margin: 0.25rem 0 0.5rem;
+}
+
+.stat-card-unit {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--pf-text-secondary);
+  margin-left: 0.25rem;
+}
+
+.meter-track {
+  width: 100%;
+  height: 5px;
+  background: #090c10;
+  border-radius: var(--pf-radius-xs);
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+  display: flex;
+}
+
+.meter-bar {
+  height: 100%;
+  background: var(--pf-blue);
+  transition: width 0.3s ease;
+}
+
+.meter-bar.green { background: #10b981; }
+.meter-bar.amber { background: var(--pf-amber); }
+.meter-bar.slate { background: var(--pf-slate); }
+
+.stat-card-foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--pf-text-secondary);
+}
+
+.stat-card-foot strong {
+  color: var(--pf-text-primary);
+}
+
+/* Live I/O Chart Card */
+.io-chart-card {
+  background: var(--pf-bg-card);
+  border: 1px solid var(--pf-border-color);
+  border-radius: var(--pf-radius-md);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.io-chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.io-chart-head h3 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--pf-text-primary);
+}
+
+.io-legend {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.72rem;
+  color: var(--pf-text-secondary);
+}
+
+.legend-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 4px;
+}
+.legend-dot.read { background: var(--pf-blue-light); }
+.legend-dot.write { background: var(--pf-amber-light); }
+
+.io-chart-box {
+  width: 100%;
+  height: 90px;
+  background: var(--pf-bg-input);
+  border: 1px solid var(--pf-border-color);
+  border-radius: var(--pf-radius-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.io-chart-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ==============================================================================
+   6. Storage Pools & VDEV Topology (TrueNAS / Cockpit)
+   ============================================================================== */
+.pool-card {
+  background: var(--pf-bg-card);
+  border: 1px solid var(--pf-border-color);
+  border-radius: var(--pf-radius-md);
+  margin-bottom: 1.25rem;
+  overflow: hidden;
+}
+
+.pool-header {
+  padding: 1rem 1.25rem;
+  background: var(--pf-bg-header);
+  border-bottom: 1px solid var(--pf-border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.pool-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.pool-identity h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.pool-body {
+  padding: 1.25rem;
+}
+
+.pool-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.pool-stat-box {
+  background: var(--pf-bg-card-subtle);
+  border: 1px solid var(--pf-border-color);
+  border-radius: var(--pf-radius-sm);
+  padding: 0.75rem 0.85rem;
+}
+
+.pool-stat-box .lbl {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--pf-text-muted);
+  font-weight: 600;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.pool-stat-box .val {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--pf-text-primary);
+  font-family: var(--pf-font-mono);
+}
+
+.vdev-section {
+  border: 1px solid var(--pf-border-color);
+  border-radius: var(--pf-radius-sm);
+  overflow: hidden;
+  margin-top: 1rem;
+}
+
+.vdev-section-title {
+  padding: 0.5rem 0.85rem;
+  background: var(--pf-bg-header);
+  border-bottom: 1px solid var(--pf-border-color);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--pf-text-muted);
+}
+
+/* ==============================================================================
+   7. 45Drives Houston Chassis View
+   ============================================================================== */
+.chassis-matrix {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  padding: 1rem;
+  background: #090c10;
+  border-radius: var(--pf-radius-sm);
+  border: 1px solid var(--pf-border-color);
+}
+
+.chassis-slot {
+  background: var(--pf-bg-card);
+  border: 1px solid var(--pf-border-color);
+  border-radius: var(--pf-radius-sm);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 110px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chassis-slot:hover {
+  border-color: var(--pf-blue);
+  background: var(--pf-bg-card-hover);
+}
+
+.chassis-slot.selected {
+  border-color: var(--pf-blue-light);
+  outline: 1px solid var(--pf-blue-light);
+  background: #151e2c;
+}
+
+.slot-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: var(--pf-font-mono);
+  color: var(--pf-text-muted);
+}
+
+.slot-mid {
+  margin: 0.4rem 0;
+}
+
+.slot-model {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--pf-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slot-size {
+  font-size: 0.72rem;
+  font-family: var(--pf-font-mono);
+  color: var(--pf-blue-light);
+}
+
+.slot-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.7rem;
+  border-top: 1px solid var(--pf-border-light);
+  padding-top: 0.35rem;
+  color: var(--pf-text-muted);
+}
+
+/* ==============================================================================
+   8. Detail Drawer & Modals
+   ============================================================================== */
+.drawer-card {
+  background: var(--pf-bg-card);
+  border: 1px solid var(--pf-border-color);
+  border-radius: var(--pf-radius-md);
+  padding: 1.25rem;
+  margin-top: 1.25rem;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-backdrop.open { display: flex; }
+
+.modal-box {
+  width: 100%;
+  max-width: 480px;
+  background: var(--pf-bg-card);
+  border: 1px solid var(--pf-border-color);
+  border-radius: var(--pf-radius-md);
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--pf-border-color);
+}
+
+.modal-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--pf-text-muted);
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.form-group {
+  margin-bottom: 0.85rem;
+}
+
+label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--pf-text-secondary);
+  margin-bottom: 0.3rem;
+}
+
+input[type="text"], input[type="password"], select {
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  background: var(--pf-bg-input);
+  border: 1px solid var(--pf-border-color);
+  border-radius: var(--pf-radius-sm);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+input:focus, select:focus {
+  border-color: var(--pf-blue-light);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--pf-border-color);
+}
+
+.toast-container {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 2000;
+}
+
+.toast {
+  padding: 0.65rem 1rem;
+  border-radius: var(--pf-radius-sm);
+  background: #1e2634;
+  border: 1px solid var(--pf-border-color);
+  color: #ffffff;
+  font-size: 0.8rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+/* ==============================================================================
+   9. Pro-Disk Filter Pills & Per-Disk Live Matrix
+   ============================================================================== */
+.disk-filter-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.disk-pill {
+  background: var(--pf-bg-card-subtle);
+  border: 1px solid var(--pf-border-color);
+  border-radius: var(--pf-radius-xs);
+  color: var(--pf-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.disk-pill:hover {
+  background: var(--pf-bg-card-hover);
+  color: #ffffff;
+  border-color: #3b82f6;
+}
+
+.disk-pill.active {
+  background: var(--pf-blue);
+  border-color: var(--pf-blue-light);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.per-disk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.per-disk-card {
+  background: var(--pf-bg-card-subtle);
+  border: 1px solid var(--pf-border-color);
+  border-radius: var(--pf-radius-sm);
+  padding: 0.75rem 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.per-disk-card:hover {
+  background: var(--pf-bg-card-hover);
+  border-color: var(--pf-blue);
+}
+
+.per-disk-card.selected {
+  border-color: var(--pf-blue-light);
+  background: rgba(0, 102, 204, 0.1);
+  outline: 1px solid var(--pf-blue);
+}
+
+.pd-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.pd-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--pf-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 170px;
+}
+
+.pd-dev {
+  font-size: 0.7rem;
+  font-family: var(--pf-font-mono);
+  color: var(--pf-blue-light);
+}
+
+.pd-metrics {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 0.4rem;
+}
+
+.pd-rate {
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-family: var(--pf-font-mono);
+  color: var(--pf-text-primary);
+}
+
+.pd-iops {
+  font-size: 0.72rem;
+  color: var(--pf-text-muted);
+}
+
+.pd-sparkline-box {
+  width: 100%;
+  height: 28px;
+  background: #090c10;
+  border-radius: var(--pf-radius-xs);
+  overflow: hidden;
+}
+
