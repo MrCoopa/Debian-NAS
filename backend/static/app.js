@@ -533,10 +533,10 @@ function renderProDiskMatrix() {
 
   grid.innerHTML = state.disks
     .map((disk, idx) => {
-      // Match with devMap
+      const diskKey = disk.name || disk.device || '';
       let devStats = null;
       Object.entries(devMap).forEach(([k, v]) => {
-        if (k.includes(String(idx)) || k.includes(disk.device) || disk.device.includes(k)) {
+        if (k.includes(String(idx)) || (diskKey && (k.includes(diskKey) || diskKey.includes(k)))) {
           devStats = v;
         }
       });
@@ -544,11 +544,11 @@ function renderProDiskMatrix() {
       const rMB = devStats ? devStats.read_mb_s : 0.0;
       const wMB = devStats ? devStats.write_mb_s : 0.0;
       const iops = devStats ? (devStats.read_iops + devStats.write_iops) : 0;
-      const isStandby = disk.power_state === 'STANDBY' || disk.power_state === 'SLEEP';
-      const isSelected = state.selectedDiskTarget === disk.device;
+      const isStandby = disk.state === 'STANDBY' || disk.state === 'SLEEPING' || disk.power_state === 'STANDBY' || disk.power_state === 'SLEEP';
+      const isSelected = state.selectedDiskTarget === diskKey;
 
       // History points
-      const hist = state.diskHistories[disk.device] || (devStats ? devStats.history : [0, 0, 0, 0, 0]);
+      const hist = state.diskHistories[diskKey] || (devStats ? devStats.history : [0, 0, 0, 0, 0]);
       const maxH = Math.max(10, ...(hist || [10]));
       const step = 240 / Math.max(1, (hist.length - 1));
       let sparklineD = '';
@@ -562,10 +562,10 @@ function renderProDiskMatrix() {
       }
 
       return `
-        <div class="per-disk-card ${isSelected ? 'selected' : ''}" onclick="selectDiskGraph('${disk.device}')">
+        <div class="per-disk-card ${isSelected ? 'selected' : ''}" onclick="selectDiskGraph('${diskKey}')">
           <div class="pd-head">
             <span class="pd-title" title="${disk.model || disk.name}">${disk.model || disk.name}</span>
-            <span class="pd-dev">${disk.device}</span>
+            <span class="pd-dev">${diskKey}</span>
           </div>
           <div class="pd-metrics">
             <div>
@@ -610,12 +610,12 @@ function renderDashboardPoolsTable() {
         ? `<span class="badge-status green">ONLINE</span>`
         : `<span class="badge-status red">${p.health || 'FAULTED'}</span>`;
 
-      const alloc = formatBytes(p.allocated_bytes || 0);
-      const cap = formatBytes(p.size_bytes || 0);
-      const free = formatBytes(p.free_bytes || 0);
-      const frag = `${p.fragmentation_pct || 0}%`;
+      const alloc = p.alloc_human || formatBytes(p.allocated || p.allocated_bytes || 0);
+      const cap = p.size_human || formatBytes(p.size_bytes || 0);
+      const free = p.free_human || formatBytes(p.free_bytes || 0);
+      const frag = `${p.fragmentation !== undefined ? p.fragmentation : (p.fragmentation_pct || 0)}%`;
 
-      const usedPct = p.size_bytes > 0 ? ((p.allocated_bytes || 0) / p.size_bytes) * 100 : 0;
+      const usedPct = p.size_bytes > 0 ? (((p.allocated || p.allocated_bytes || 0)) / p.size_bytes) * 100 : 0;
 
       return `
       <tr>
@@ -666,11 +666,11 @@ function renderPools() {
         ? `<span class="badge-status green">ONLINE</span>`
         : `<span class="badge-status red">${p.health || 'FAULTED'}</span>`;
 
-      const alloc = formatBytes(p.allocated_bytes || 0);
-      const cap = formatBytes(p.size_bytes || 0);
-      const free = formatBytes(p.free_bytes || 0);
-      const frag = `${p.fragmentation_pct || 0}%`;
-      const usedPct = p.size_bytes > 0 ? ((p.allocated_bytes || 0) / p.size_bytes) * 100 : 0;
+      const alloc = p.alloc_human || formatBytes(p.allocated || p.allocated_bytes || 0);
+      const cap = p.size_human || formatBytes(p.size_bytes || 0);
+      const free = p.free_human || formatBytes(p.free_bytes || 0);
+      const frag = `${p.fragmentation !== undefined ? p.fragmentation : (p.fragmentation_pct || 0)}%`;
+      const usedPct = p.size_bytes > 0 ? (((p.allocated || p.allocated_bytes || 0)) / p.size_bytes) * 100 : 0;
 
       const poolDatasets = state.datasets.filter((ds) => ds.pool === p.name || ds.name.startsWith(p.name + '/'));
 
@@ -948,31 +948,37 @@ function renderDisksTable() {
         ? `<span class="badge-status amber">STANDBY (0W)</span>`
         : `<span class="badge-status green">ACTIVE</span>`;
 
+      const devKey = d.name || d.device;
+      const isStandby = d.state === 'STANDBY' || d.state === 'SLEEPING' || d.power_state === 'STANDBY' || d.power_state === 'SLEEP';
+      const powerBadge = isStandby
+        ? `<span class="badge-status amber">STANDBY (0W)</span>`
+        : `<span class="badge-status green">ACTIVE</span>`;
+
       const smartBadge =
-        d.smart_status === 'PASSED'
-          ? `<span class="badge-status green">PASSED</span>`
-          : d.smart_status === 'FAILED'
+        d.smart_status && d.smart_status.includes('PASSED')
+          ? `<span class="badge-status green">${d.smart_status}</span>`
+          : d.smart_status && d.smart_status.includes('FAILED')
           ? `<span class="badge-status red">FAILED</span>`
           : `<span class="badge-status slate">${d.smart_status || 'OK'}</span>`;
 
-      const cap = formatBytes(d.size_bytes || 0);
-      const isSelected = state.selectedDisk && state.selectedDisk.device === d.device;
+      const cap = d.size_human || formatBytes(d.size_bytes || 0);
+      const isSelected = state.selectedDisk && (state.selectedDisk.name === devKey || state.selectedDisk.device === devKey);
 
       return `
-      <tr style="cursor: pointer; ${isSelected ? 'background: rgba(0, 102, 204, 0.08);' : ''}" onclick="selectDisk('${d.device}')">
-        <td><strong class="font-mono text-blue">${d.name || d.device}</strong></td>
+      <tr style="cursor: pointer; ${isSelected ? 'background: rgba(0, 102, 204, 0.08);' : ''}" onclick="selectDisk('${devKey}')">
+        <td><strong class="font-mono text-blue">${devKey}</strong></td>
         <td>${d.model || 'Unknown Model'} <span class="text-dim">(${d.vendor || 'Generic'})</span></td>
         <td><span class="font-mono text-dim">${d.serial || '-'}</span></td>
         <td><strong>${cap}</strong></td>
         <td><span class="badge-status slate">${d.bus_type || d.type || 'SATA'}</span></td>
-        <td>${d.pool ? `<span class="badge-status blue">${d.pool}</span>` : '<span class="text-dim">Unallocated</span>'}</td>
-        <td><span class="font-mono">${d.temp_c ? d.temp_c + ' °C' : '--'}</span></td>
+        <td>${d.zfs_pool || d.pool ? `<span class="badge-status blue">${d.zfs_pool || d.pool}</span>` : '<span class="text-dim">Unallocated</span>'}</td>
+        <td><span class="font-mono">${d.temperature_c !== undefined && d.temperature_c >= 0 ? d.temperature_c + ' °C' : '--'}</span></td>
         <td>${powerBadge}</td>
         <td>${smartBadge}</td>
         <td class="col-actions" onclick="event.stopPropagation()">
-          <button class="btn btn-secondary btn-sm" onclick="selectDisk('${d.device}')">Inspect</button>
-          <button class="btn btn-secondary btn-sm" onclick="forceStandby('${d.device}')" title="Spin down HDD (0W)">Standby</button>
-          <button class="btn btn-secondary btn-sm" onclick="runSmartTest('${d.device}')">SMART</button>
+          <button class="btn btn-secondary btn-sm" onclick="selectDisk('${devKey}')">Inspect</button>
+          <button class="btn btn-secondary btn-sm" onclick="forceStandby('${devKey}')" title="Spin down HDD (0W)">Standby</button>
+          <button class="btn btn-secondary btn-sm" onclick="runSmartTest('${devKey}')">SMART</button>
         </td>
       </tr>
     `;
@@ -981,7 +987,7 @@ function renderDisksTable() {
 }
 
 window.selectDisk = function (device) {
-  const disk = state.disks.find((d) => d.device === device);
+  const disk = state.disks.find((d) => d.name === device || d.device === device);
   if (!disk) return;
   state.selectedDisk = disk;
 
