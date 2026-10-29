@@ -15,15 +15,25 @@ echo "[+] 1/6: Debian Repositories aktualisieren (contrib & non-free-firmware)..
 apt-get update
 apt-get install -y curl wget git software-properties-common lsb-release
 
-# Ensure contrib & non-free-firmware are active
-sed -i 's/main$/main contrib non-free non-free-firmware/' /etc/apt/sources.list || true
+# Ensure contrib & non-free-firmware are active (Standard debian.sources or sources.list)
+if [ -f /etc/apt/sources.list.d/debian.sources ]; then
+  sed -i 's/^Components: .*/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources || true
+fi
+if [ -f /etc/apt/sources.list ]; then
+  sed -i 's/main$/main contrib non-free non-free-firmware/' /etc/apt/sources.list || true
+fi
 
 echo "[+] 2/6: Kern-Pakete installieren (OpenZFS, Samba, NFS, hd-idle, smartmontools, ledmon, fio, rclone)..."
 apt-get update
+
+# Check if ZFS is already installed (e.g. Proxmox VE native ZFS)
+ZFS_PKG="zfsutils-linux"
+if ! command -v zpool &>/dev/null; then
+  ZFS_PKG="zfs-dkms zfsutils-linux"
+fi
+
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  linux-headers-$(uname -r) \
-  zfs-dkms \
-  zfsutils-linux \
+  $ZFS_PKG \
   samba \
   smbclient \
   nfs-kernel-server \
