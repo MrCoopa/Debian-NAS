@@ -487,11 +487,12 @@ function drawDiskIOChart() {
   if (!path) return;
 
   let data = state.ioHistory;
-  if (state.selectedDiskTarget !== 'all') {
-    // Look up device history
-    const devKey = Object.keys(state.diskHistories).find((k) =>
-      k.includes(state.selectedDiskTarget) || state.selectedDiskTarget.includes(k)
-    );
+  if (state.selectedDiskTarget && state.selectedDiskTarget !== 'all') {
+    const target = String(state.selectedDiskTarget);
+    const devKey = Object.keys(state.diskHistories || {}).find((k) => {
+      const kStr = String(k || '');
+      return kStr.includes(target) || target.includes(kStr);
+    });
     if (devKey && state.diskHistories[devKey]) {
       data = state.diskHistories[devKey];
     }
@@ -503,7 +504,7 @@ function drawDiskIOChart() {
   const height = 90;
   const maxVal = Math.max(10, ...data);
 
-  const step = width / (data.length - 1);
+  const step = width / Math.max(1, (data.length - 1));
   let dStr = '';
 
   data.forEach((val, idx) => {
@@ -526,20 +527,23 @@ function renderProDiskMatrix() {
   const sys = state.system;
   const devMap = (sys && sys.disk_io && sys.disk_io.devices) ? sys.disk_io.devices : {};
 
-  if (state.disks.length === 0) {
+  if (!state.disks || state.disks.length === 0) {
     grid.innerHTML = `<span class="text-dim" style="font-size: 0.78rem;">Scanning physical disks...</span>`;
     return;
   }
 
   grid.innerHTML = state.disks
     .map((disk, idx) => {
-      const diskKey = disk.name || disk.device || '';
+      const diskKey = String(disk.name || disk.device || '');
       let devStats = null;
-      Object.entries(devMap).forEach(([k, v]) => {
-        if (k.includes(String(idx)) || (diskKey && (k.includes(diskKey) || diskKey.includes(k)))) {
-          devStats = v;
-        }
-      });
+      if (devMap && typeof devMap === 'object') {
+        Object.entries(devMap).forEach(([k, v]) => {
+          const kStr = String(k || '');
+          if (kStr.includes(String(idx)) || (diskKey && (kStr.includes(diskKey) || diskKey.includes(kStr)))) {
+            devStats = v;
+          }
+        });
+      }
 
       const rMB = devStats ? devStats.read_mb_s : 0.0;
       const wMB = devStats ? devStats.write_mb_s : 0.0;

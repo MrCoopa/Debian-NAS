@@ -114,9 +114,15 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/cloudsync/jobs", s.handleDeleteCloudJob)
 	mux.HandleFunc("POST /api/v1/cloudsync/trigger", s.handleTriggerCloudJob)
 
-	// Static UI assets embedded in binary
+	// Static UI assets embedded in binary (served with no-cache to guarantee live updates)
 	if s.staticFS != nil {
-		mux.Handle("/", http.FileServer(http.FS(s.staticFS)))
+		fileServer := http.FileServer(http.FS(s.staticFS))
+		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+			fileServer.ServeHTTP(w, r)
+		}))
 	}
 
 	return s.corsMiddleware(mux)
