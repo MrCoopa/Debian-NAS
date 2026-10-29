@@ -1380,7 +1380,9 @@ window.destroySnapshot = async function (dataset, snapName) {
     if (res.ok) {
       showToast(`Snapshot ${snapName} destroyed`, 'info');
       audit(`ZFS snapshot destroyed: ${fullName}`);
-      refreshAll();
+      state.snapshots = (state.snapshots || []).filter((s) => s.name !== fullName);
+      renderProtection();
+      await refreshAll();
     } else {
       const err = await res.json().catch(() => ({}));
       showToast(`Failed to destroy snapshot: ${err.error || res.statusText}`, 'error');

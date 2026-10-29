@@ -663,7 +663,11 @@ func (m *Manager) CreateSnapshot(dataset, snapName string) error {
 	}
 
 	cmd := exec.Command("zfs", "snapshot", fullName)
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zfs snapshot failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // RollbackSnapshot rolls back a dataset to a snapshot
@@ -676,7 +680,11 @@ func (m *Manager) RollbackSnapshot(snapshot string) error {
 	}
 
 	cmd := exec.Command("zfs", "rollback", "-r", snapshot)
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zfs rollback failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // DestroySnapshot deletes a snapshot
@@ -695,7 +703,11 @@ func (m *Manager) DestroySnapshot(snapshot string) error {
 	}
 
 	cmd := exec.Command("zfs", "destroy", snapshot)
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zfs destroy failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // SetDatasetProperty sets a ZFS dataset property like compression, recordsize, or quota
@@ -716,7 +728,11 @@ func (m *Manager) SetDatasetProperty(dataset, property, value string) error {
 	}
 
 	cmd := exec.Command("zfs", "set", fmt.Sprintf("%s=%s", property, value), dataset)
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zfs set failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // StartScrub initiates a scrub on a pool
@@ -735,7 +751,11 @@ func (m *Manager) StartScrub(poolName string) error {
 	}
 
 	cmd := exec.Command("zpool", "scrub", poolName)
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zpool scrub failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // StopScrub pauses or cancels an active scrub
@@ -751,7 +771,11 @@ func (m *Manager) StopScrub(poolName string) error {
 	}
 
 	cmd := exec.Command("zpool", "scrub", "-s", poolName)
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zpool scrub -s failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // CreatePool creates a new ZFS pool with chosen topology, ashift, compression and atime=off
@@ -1068,7 +1092,11 @@ func (m *Manager) TrimPool(name string) error {
 	}
 
 	cmd := exec.Command("zpool", "trim", name)
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zpool trim failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // ClearPool clears errors and device faults on a pool
@@ -1085,7 +1113,11 @@ func (m *Manager) ClearPool(name string) error {
 	}
 
 	cmd := exec.Command("zpool", "clear", name)
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zpool clear failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // AddVdev expands pool capacity or adds auxiliary vdevs (log, cache, special metadata, spare)
@@ -1242,7 +1274,11 @@ func (m *Manager) OfflineDisk(pool, device string) error {
 	}
 
 	cmd := exec.Command("zpool", "offline", pool, device)
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zpool offline failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // OnlineDisk brings an offline disk back online
@@ -1263,7 +1299,11 @@ func (m *Manager) OnlineDisk(pool, device string) error {
 	}
 
 	cmd := exec.Command("zpool", "online", pool, device)
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zpool online failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // SetPoolProperty sets a zpool property like autotrim, autoexpand, failmode
