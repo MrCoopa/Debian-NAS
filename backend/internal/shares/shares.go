@@ -420,7 +420,11 @@ func (m *Manager) ListUsers() ([]StorageUser, error) {
 }
 
 func cleanStalePasswdLocks() {
+	_ = exec.Command("pkill", "-9", "-x", "useradd").Run()
+	_ = exec.Command("pkill", "-9", "-x", "chpasswd").Run()
+
 	lockFiles := []string{
+		"/etc/.pwd.lock",
 		"/etc/passwd.lock",
 		"/etc/shadow.lock",
 		"/etc/group.lock",
@@ -453,6 +457,7 @@ func (m *Manager) CreateUser(username, password, role string) error {
 	// 1. Ensure Linux system user exists
 	idCmd := exec.Command("id", username)
 	if err := idCmd.Run(); err != nil {
+		cleanStalePasswdLocks()
 		// User does not exist, create it with nologin shell
 		nologin := "/usr/sbin/nologin"
 		if _, err := os.Stat("/usr/sbin/nologin"); err != nil {
