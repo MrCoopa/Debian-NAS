@@ -138,24 +138,24 @@ window.switchTab = function (tab) {
 async function refreshAll() {
   try {
     const [sys, disks, pools, datasets, smb, nfs, snaps, users] = await Promise.all([
-      fetch(`${API_BASE}/system`).then((r) => r.json()).catch(() => null),
-      fetch(`${API_BASE}/disks`).then((r) => r.json()).catch(() => []),
-      fetch(`${API_BASE}/zfs/pools`).then((r) => r.json()).catch(() => []),
-      fetch(`${API_BASE}/zfs/datasets`).then((r) => r.json()).catch(() => []),
-      fetch(`${API_BASE}/shares/smb`).then((r) => r.json()).catch(() => []),
-      fetch(`${API_BASE}/shares/nfs`).then((r) => r.json()).catch(() => []),
-      fetch(`${API_BASE}/zfs/snapshots`).then((r) => r.json()).catch(() => []),
-      fetch(`${API_BASE}/shares/users`).then((r) => r.json()).catch(() => []),
+      fetch(`${API_BASE}/system`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch(`${API_BASE}/disks`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`${API_BASE}/zfs/pools`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`${API_BASE}/zfs/datasets`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`${API_BASE}/shares/smb`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`${API_BASE}/shares/nfs`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`${API_BASE}/zfs/snapshots`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`${API_BASE}/shares/users`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
     ]);
 
     if (sys) state.system = sys;
-    if (Array.isArray(disks)) state.disks = disks;
-    if (Array.isArray(pools)) state.pools = pools;
-    if (Array.isArray(datasets)) state.datasets = datasets;
-    if (Array.isArray(smb)) state.smbShares = smb;
-    if (Array.isArray(nfs)) state.nfsExports = nfs;
-    if (Array.isArray(snaps)) state.snapshots = snaps;
-    if (Array.isArray(users)) state.users = users;
+    state.disks = Array.isArray(disks) ? disks : [];
+    state.pools = Array.isArray(pools) ? pools : [];
+    state.datasets = Array.isArray(datasets) ? datasets : [];
+    state.smbShares = Array.isArray(smb) ? smb : [];
+    state.nfsExports = Array.isArray(nfs) ? nfs : [];
+    state.snapshots = Array.isArray(snaps) ? snaps : [];
+    state.users = Array.isArray(users) ? users : [];
 
     // Track rolling CPU history
     if (sys && sys.cpu) {
@@ -1549,7 +1549,13 @@ window.exportPool = async function (pool) {
     if (res.ok) {
       showToast(`Pool ${pool} exported`, 'info');
       audit(`ZFS pool exported cleanly: ${pool}`);
-      refreshAll();
+      state.pools = (state.pools || []).filter((p) => p.name !== pool);
+      state.datasets = (state.datasets || []).filter(
+        (ds) => ds.pool !== pool && !ds.name.startsWith(pool + '/')
+      );
+      renderPools();
+      renderDashboard();
+      await refreshAll();
     } else {
       const err = await res.json().catch(() => ({}));
       showToast(`Export failed: ${err.error || res.statusText}`, 'error');
@@ -1616,7 +1622,13 @@ async function executeDirectDestroy(type, targetName) {
       if (res.ok) {
         showToast(`Pool ${targetName} permanently destroyed`, 'info');
         audit(`PERMANENT ACTION: ZFS pool destroyed: ${targetName}`);
-        refreshAll();
+        state.pools = (state.pools || []).filter((p) => p.name !== targetName);
+        state.datasets = (state.datasets || []).filter(
+          (ds) => ds.pool !== targetName && !ds.name.startsWith(targetName + '/')
+        );
+        renderPools();
+        renderDashboard();
+        await refreshAll();
       } else {
         const err = await res.json().catch(() => ({}));
         showToast(`Failed to destroy pool: ${err.error || res.statusText}`, 'error');
@@ -1635,7 +1647,12 @@ async function executeDirectDestroy(type, targetName) {
       if (res.ok) {
         showToast(`Dataset ${targetName} destroyed`, 'info');
         audit(`Destroyed ZFS dataset: ${targetName}`);
-        refreshAll();
+        state.datasets = (state.datasets || []).filter(
+          (ds) => ds.name !== targetName && !ds.name.startsWith(targetName + '/')
+        );
+        renderPools();
+        renderDashboard();
+        await refreshAll();
       } else {
         const err = await res.json().catch(() => ({}));
         showToast(`Failed to destroy dataset: ${err.error || res.statusText}`, 'error');

@@ -339,9 +339,13 @@ func (m *Manager) ListPools() ([]*Pool, error) {
 
 func (m *Manager) scanLinuxPools() ([]*Pool, error) {
 	cmd := exec.Command("zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,frag,cap,health")
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("zpool list: %w", err)
+		outStr := strings.TrimSpace(string(out))
+		if strings.Contains(outStr, "no pools available") || strings.Contains(outStr, "no pools found") || outStr == "" {
+			return []*Pool{}, nil
+		}
+		return nil, fmt.Errorf("zpool list: %w (%s)", err, outStr)
 	}
 
 	var pools []*Pool
@@ -469,9 +473,13 @@ func (m *Manager) ListDatasets() ([]*Dataset, error) {
 	snapCounts := m.getSnapshotCounts()
 
 	cmd := exec.Command("zfs", "list", "-H", "-o", "name,used,avail,mountpoint,compression,atime,recordsize")
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("zfs list: %w", err)
+		outStr := strings.TrimSpace(string(out))
+		if strings.Contains(outStr, "no datasets available") || strings.Contains(outStr, "no pools available") || outStr == "" {
+			return []*Dataset{}, nil
+		}
+		return nil, fmt.Errorf("zfs list: %w (%s)", err, outStr)
 	}
 
 	var datasets []*Dataset
@@ -598,9 +606,13 @@ func (m *Manager) ListSnapshots() ([]*Snapshot, error) {
 	}
 
 	cmd := exec.Command("zfs", "list", "-t", "snapshot", "-H", "-p", "-o", "name,used,refer,creation")
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("zfs list snapshot: %w", err)
+		outStr := strings.TrimSpace(string(out))
+		if strings.Contains(outStr, "no datasets available") || strings.Contains(outStr, "no snapshots available") || strings.Contains(outStr, "no pools available") || outStr == "" {
+			return []*Snapshot{}, nil
+		}
+		return nil, fmt.Errorf("zfs list snapshot: %w (%s)", err, outStr)
 	}
 
 	var list []*Snapshot
