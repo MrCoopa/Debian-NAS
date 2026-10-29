@@ -13,7 +13,7 @@ fi
 
 echo "[+] 1/6: Debian Repositories aktualisieren (contrib & non-free-firmware)..."
 apt-get update
-apt-get install -y curl wget git software-properties-common lsb-release
+apt-get install -y curl wget git
 
 # Ensure contrib & non-free-firmware are active (Standard debian.sources or sources.list)
 if [ -f /etc/apt/sources.list.d/debian.sources ]; then
@@ -21,6 +21,7 @@ if [ -f /etc/apt/sources.list.d/debian.sources ]; then
 fi
 if [ -f /etc/apt/sources.list ]; then
   sed -i 's/main$/main contrib non-free non-free-firmware/' /etc/apt/sources.list || true
+  sed -i 's/main contrib$/main contrib non-free non-free-firmware/' /etc/apt/sources.list || true
 fi
 
 echo "[+] 2/6: Kern-Pakete installieren (OpenZFS, Samba, NFS, hd-idle, smartmontools, ledmon, fio, rclone)..."
@@ -37,13 +38,14 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
   samba \
   smbclient \
   nfs-kernel-server \
-  hd-idle \
   hdparm \
   smartmontools \
-  ledmon \
   fio \
   rclone \
   golang-go
+
+# Optional hardware tools
+DEBIAN_FRONTEND=noninteractive apt-get install -y hd-idle ledmon || true
 
 echo "[+] 3/6: System-Optimierungen für HDD-Standby & ZFS..."
 # 1. Samba conf.d Ordner erstellen
