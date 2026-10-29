@@ -264,6 +264,7 @@ func (s *Server) handleCreatePool(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        string   `json:"name"`
 		VdevType    string   `json:"vdev_type"`
+		Type        string   `json:"type"`
 		Disks       []string `json:"disks"`
 		Ashift      int      `json:"ashift"`
 		Compression string   `json:"compression"`
@@ -276,7 +277,17 @@ func (s *Server) handleCreatePool(w http.ResponseWriter, r *http.Request) {
 		s.errorResponse(w, http.StatusBadRequest, "Pool name and at least one disk required")
 		return
 	}
-	if err := s.zfs.CreatePool(req.Name, req.VdevType, req.Disks, req.Ashift, req.Compression); err != nil {
+	vdevType := strings.TrimSpace(req.VdevType)
+	if vdevType == "" {
+		vdevType = strings.TrimSpace(req.Type)
+	}
+	if req.Ashift <= 0 {
+		req.Ashift = 12
+	}
+	if req.Compression == "" {
+		req.Compression = "zstd"
+	}
+	if err := s.zfs.CreatePool(req.Name, vdevType, req.Disks, req.Ashift, req.Compression); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}

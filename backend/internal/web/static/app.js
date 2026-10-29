@@ -1793,7 +1793,7 @@ function setupModals() {
         const res = await fetch(`${API_BASE}/zfs/pools/create`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, type, disks: checked }),
+          body: JSON.stringify({ name, vdev_type: type, type, disks: checked }),
         });
 
         if (res.ok) {

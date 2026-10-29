@@ -773,6 +773,13 @@ func (m *Manager) CreatePool(name, vdevType string, disks []string, ashift int, 
 		}
 
 		rawSize := uint64(len(disks)) * 16000900661248 // 16 TB per disk mock
+		if vdevType == "mirror" && len(disks) > 0 {
+			rawSize = 16000900661248
+		} else if vdevType == "raidz1" && len(disks) > 1 {
+			rawSize = uint64(len(disks)-1) * 16000900661248
+		} else if vdevType == "raidz2" && len(disks) > 2 {
+			rawSize = uint64(len(disks)-2) * 16000900661248
+		}
 		if rawSize == 0 {
 			rawSize = 32000000000000
 		}
