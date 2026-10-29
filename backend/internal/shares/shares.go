@@ -33,6 +33,7 @@ type SmbShare struct {
 type NfsExport struct {
 	Path           string `json:"path"`
 	AllowedClients string `json:"allowed_clients"` // e.g. "192.168.1.0/24" or "*"
+	AllowedHosts   string `json:"allowed_hosts"`   // frontend alias fallback
 	Options        string `json:"options"`         // rw,sync,no_subtree_check
 	Enabled        bool   `json:"enabled"`
 }
@@ -226,6 +227,19 @@ func (m *Manager) ListNfs() ([]*NfsExport, error) {
 	return list, nil
 }
 
+func ensureSambaInclude() {
+	smbConfPath := "/etc/samba/smb.conf"
+	data, err := os.ReadFile(smbConfPath)
+	if err != nil {
+		return
+	}
+	content := string(data)
+	if !strings.Contains(content, "/etc/samba/conf.d/*.conf") {
+		content = content + "\n\n# Auto-include Debian NAS shares\ninclude = /etc/samba/conf.d/*.conf\n"
+		_ = os.WriteFile(smbConfPath, []byte(content), 0644)
+	}
+}
+
 func (m *Manager) SaveSmb(s *SmbShare) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -234,29 +248,36 @@ func (m *Manager) SaveSmb(s *SmbShare) error {
 		return fmt.Errorf("share name and path are required")
 	}
 
+	if !strings.HasPrefix(s.Path, "/") {
+		s.Path = "/" + s.Path
+	}
+
 	m.smbShares[s.Name] = s
 
 	if m.mockMode {
 		return nil
 	}
 
+	ensureSambaInclude()
+
 	if err := os.MkdirAll(m.sambaConfDir, 0755); err != nil {
-		return err
+		return fmt.Errorf("failed to create samba conf.d dir: %w", err)
 	}
 
-	// Ensure share folder exists
-	_ = os.MkdirAll(s.Path, 0775)
+	// Ensure share folder exists with read/write permissions for clients
+	_ = os.MkdirAll(s.Path, 0777)
+	_ = os.Chmod(s.Path, 0777)
 
 	confPath := filepath.Join(m.sambaConfDir, fmt.Sprintf("%s.conf", s.Name))
 	content := m.generateSmbConfig(s)
 
 	if err := os.WriteFile(confPath, []byte(content), 0644); err != nil {
-		return err
+		return fmt.Errorf("failed to write samba share config: %w", err)
 	}
 
 	// Reload smbd
 	_ = exec.Command("smbcontrol", "all", "reload-config").Run()
-	_ = exec.Command("systemctl", "reload", "smbd").Run()
+	_ = exec.Command("systemctl", "reload-or-restart", "smbd").Run()
 	return nil
 }
 
@@ -274,7 +295,7 @@ func (m *Manager) DeleteSmb(name string) error {
 	_ = os.Remove(confPath)
 
 	_ = exec.Command("smbcontrol", "all", "reload-config").Run()
-	_ = exec.Command("systemctl", "reload", "smbd").Run()
+	_ = exec.Command("systemctl", "reload-or-restart", "smbd").Run()
 	return nil
 }
 
@@ -297,8 +318,10 @@ func (m *Manager) generateSmbConfig(s *SmbShare) string {
 	sb.WriteString(fmt.Sprintf("   read only = %s\n", readOnly))
 	sb.WriteString(fmt.Sprintf("   guest ok = %s\n", guestOk))
 	sb.WriteString("   browseable = yes\n")
-	sb.WriteString("   create mask = 0664\n")
-	sb.WriteString("   directory mask = 0775\n")
+	sb.WriteString("   create mask = 0666\n")
+	sb.WriteString("   directory mask = 0777\n")
+	sb.WriteString("   force create mode = 0666\n")
+	sb.WriteString("   force directory mode = 0777\n")
 
 	if s.TimeMachine {
 		sb.WriteString("   vfs objects = catia fruit streams_xattr\n")
@@ -321,17 +344,26 @@ func (m *Manager) SaveNfs(e *NfsExport) error {
 		return fmt.Errorf("export path is required")
 	}
 
+	if !strings.HasPrefix(e.Path, "/") {
+		e.Path = "/" + e.Path
+	}
+
+	if e.AllowedClients == "" && e.AllowedHosts != "" {
+		e.AllowedClients = e.AllowedHosts
+	}
+
 	m.nfsExports[e.Path] = e
 
 	if m.mockMode {
 		return nil
 	}
 
-	// Ensure folder exists
-	_ = os.MkdirAll(e.Path, 0755)
+	// Ensure folder exists with permissions
+	_ = os.MkdirAll(e.Path, 0777)
+	_ = os.Chmod(e.Path, 0777)
 
 	if err := os.MkdirAll(filepath.Dir(m.nfsConfFile), 0755); err != nil {
-		return err
+		return fmt.Errorf("failed to create nfs conf dir: %w", err)
 	}
 
 	var sb strings.Builder
@@ -339,9 +371,12 @@ func (m *Manager) SaveNfs(e *NfsExport) error {
 		if exp.Enabled {
 			options := exp.Options
 			if options == "" {
-				options = "rw,sync,no_subtree_check"
+				options = "rw,sync,no_subtree_check,no_root_squash"
 			}
 			clients := exp.AllowedClients
+			if clients == "" {
+				clients = exp.AllowedHosts
+			}
 			if clients == "" {
 				clients = "*"
 			}
@@ -350,11 +385,16 @@ func (m *Manager) SaveNfs(e *NfsExport) error {
 	}
 
 	if err := os.WriteFile(m.nfsConfFile, []byte(sb.String()), 0644); err != nil {
-		return err
+		return fmt.Errorf("failed to write nfs exports file: %w", err)
 	}
 
 	// Reload NFS kernel exports
-	return exec.Command("exportfs", "-ra").Run()
+	cmd := exec.Command("exportfs", "-ra")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("exportfs failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func (m *Manager) DeleteNfs(path string) error {

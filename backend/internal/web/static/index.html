@@ -841,7 +841,11 @@
         </div>
         <div class="form-group">
           <label>Target Filesystem Path</label>
-          <input type="text" id="input-share-path" placeholder="/tank/media" required>
+          <input type="text" id="input-share-path" placeholder="e.g. /Hallo or /Hallo/test" list="share-path-suggestions" required>
+          <datalist id="share-path-suggestions"></datalist>
+          <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
+            Choose from your ZFS datasets/pools or type an absolute path.
+          </small>
         </div>
         <div class="form-group">
           <label>Protocol</label>
@@ -1259,6 +1263,6 @@
 
   <div class="toast-container" id="toast-container"></div>
 
-  <script src="app.js?v=3.7"></script>
+  <script src="app.js?v=3.8"></script>
 </body>
 </html>

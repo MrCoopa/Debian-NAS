@@ -753,6 +753,7 @@ function renderPools() {
             </td>
             <td class="col-actions">
               <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
+                <button class="btn btn-secondary btn-sm" onclick="promptCreateShare('${ds.name.split('/').pop()}', '${ds.mountpoint || '/' + ds.name}')" title="Share via SMB or NFS">Share</button>
                 <button class="btn btn-secondary btn-sm" onclick="promptCreateSnapshot('${ds.name}')">Snapshot</button>
                 <button class="btn btn-secondary btn-sm" onclick="openDatasetPropsModal('${ds.name}')">Properties</button>
                 <button class="btn btn-danger btn-sm" onclick="destroyDataset('${ds.name}')">Delete</button>
@@ -1842,7 +1843,35 @@ function setupModals() {
   const btnCancelShare = document.getElementById('btn-cancel-share');
   const formCreateShare = document.getElementById('form-create-share');
 
-  if (btnOpenCreateShare) btnOpenCreateShare.addEventListener('click', () => modalShare.classList.add('open'));
+  function populateSharePathSuggestions() {
+    const datalist = document.getElementById('share-path-suggestions');
+    if (!datalist) return;
+    const paths = new Set();
+    (state.pools || []).forEach((p) => {
+      paths.add(p.mountpoint || `/${p.name}`);
+    });
+    (state.datasets || []).forEach((ds) => {
+      paths.add(ds.mountpoint || `/${ds.name}`);
+    });
+    datalist.innerHTML = Array.from(paths)
+      .map((pt) => `<option value="${pt}">`)
+      .join('');
+  }
+
+  window.promptCreateShare = function (suggestedName, suggestedPath) {
+    if (!modalShare) return;
+    populateSharePathSuggestions();
+    if (suggestedName) document.getElementById('input-share-name').value = suggestedName;
+    if (suggestedPath) document.getElementById('input-share-path').value = suggestedPath;
+    modalShare.classList.add('open');
+  };
+
+  if (btnOpenCreateShare) {
+    btnOpenCreateShare.addEventListener('click', () => {
+      populateSharePathSuggestions();
+      modalShare.classList.add('open');
+    });
+  }
   if (btnCloseShare) btnCloseShare.addEventListener('click', () => modalShare.classList.remove('open'));
   if (btnCancelShare) btnCancelShare.addEventListener('click', () => modalShare.classList.remove('open'));
 
@@ -1850,11 +1879,12 @@ function setupModals() {
     formCreateShare.addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = document.getElementById('input-share-name').value.trim();
-      const path = document.getElementById('input-share-path').value.trim();
+      let path = document.getElementById('input-share-path').value.trim();
       const proto = document.getElementById('select-share-proto').value;
       const access = document.getElementById('select-share-access').value;
 
       if (!name || !path) return alert('Name and path required');
+      if (!path.startsWith('/')) path = '/' + path;
 
       try {
         let endpoint = `${API_BASE}/shares/smb`;
@@ -1869,6 +1899,7 @@ function setupModals() {
           endpoint = `${API_BASE}/shares/nfs`;
           payload = {
             path,
+            allowed_clients: '*',
             allowed_hosts: '*',
             read_only: access === 'readonly',
           };
@@ -1887,10 +1918,11 @@ function setupModals() {
           formCreateShare.reset();
           refreshAll();
         } else {
-          showToast('Failed to create network share', 'error');
+          const err = await res.json().catch(() => ({}));
+          showToast(`Failed to create share: ${err.error || res.statusText}`, 'error');
         }
       } catch (err) {
-        showToast('Error saving network share', 'error');
+        showToast(`Error saving network share: ${err.message}`, 'error');
       }
     });
   }
