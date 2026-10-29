@@ -943,11 +943,6 @@ function renderDisksTable() {
 
   tbody.innerHTML = state.disks
     .map((d) => {
-      const isStandby = d.power_state === 'STANDBY' || d.power_state === 'SLEEP';
-      const powerBadge = isStandby
-        ? `<span class="badge-status amber">STANDBY (0W)</span>`
-        : `<span class="badge-status green">ACTIVE</span>`;
-
       const devKey = d.name || d.device;
       const isStandby = d.state === 'STANDBY' || d.state === 'SLEEPING' || d.power_state === 'STANDBY' || d.power_state === 'SLEEP';
       const powerBadge = isStandby
