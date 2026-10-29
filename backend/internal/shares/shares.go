@@ -419,6 +419,20 @@ func (m *Manager) ListUsers() ([]StorageUser, error) {
 	return list, nil
 }
 
+func cleanStalePasswdLocks() {
+	lockFiles := []string{
+		"/etc/passwd.lock",
+		"/etc/shadow.lock",
+		"/etc/group.lock",
+		"/etc/gshadow.lock",
+		"/etc/subuid.lock",
+		"/etc/subgid.lock",
+	}
+	for _, f := range lockFiles {
+		_ = os.Remove(f)
+	}
+}
+
 func (m *Manager) CreateUser(username, password, role string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -449,14 +463,24 @@ func (m *Manager) CreateUser(username, password, role string) error {
 			}
 		}
 		useraddCmd := exec.Command("useradd", "-M", "-s", nologin, username)
-		if uOut, uErr := useraddCmd.CombinedOutput(); uErr != nil {
-			if !strings.Contains(string(uOut), "already exists") {
-				return fmt.Errorf("useradd failed: %v (%s)", uErr, strings.TrimSpace(string(uOut)))
+		uOut, uErr := useraddCmd.CombinedOutput()
+		if uErr != nil {
+			outStr := strings.TrimSpace(string(uOut))
+			// If locked by a stale lock file, remove stale locks and retry once
+			if strings.Contains(outStr, "gesperrt") || strings.Contains(outStr, "lock") {
+				cleanStalePasswdLocks()
+				retryCmd := exec.Command("useradd", "-M", "-s", nologin, username)
+				uOut, uErr = retryCmd.CombinedOutput()
+				outStr = strings.TrimSpace(string(uOut))
+			}
+			if uErr != nil && !strings.Contains(outStr, "already exists") && !strings.Contains(outStr, "existiert bereits") {
+				return fmt.Errorf("useradd failed: %v (%s)", uErr, outStr)
 			}
 		}
 	}
 
 	// 2. Set Linux system password via chpasswd
+	cleanStalePasswdLocks()
 	chCmd := exec.Command("chpasswd")
 	chCmd.Stdin = strings.NewReader(fmt.Sprintf("%s:%s\n", username, password))
 	_ = chCmd.Run()
