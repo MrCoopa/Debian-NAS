@@ -334,7 +334,7 @@
             <p>Direct block device inspection, SMART self-tests, standby power management and ZFS pool membership</p>
           </div>
           <div class="page-actions">
-            <button class="btn btn-secondary btn-sm" onclick="refreshAll()">Rescan Hardware Disks</button>
+            <button class="btn btn-secondary btn-sm" onclick="rescanDisks()">Rescan Hardware Disks</button>
           </div>
         </div>
 
@@ -365,16 +365,20 @@
         <div class="drawer-card" id="disk-drawer-card" style="display: none;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--pf-border-color); padding-bottom: 0.5rem;">
             <h3 style="font-size: 0.95rem; font-weight: 600;">Drive Hardware Inspection: <span id="drawer-disk-name" class="font-mono text-blue">--</span></h3>
-            <div style="display: flex; gap: 0.5rem;">
-              <button class="btn btn-secondary btn-sm" id="btn-drawer-smart">Run SMART Test</button>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button class="btn btn-secondary btn-sm" id="btn-drawer-smart">SMART Short Test</button>
+              <button class="btn btn-secondary btn-sm" id="btn-drawer-smart-long">SMART Long Test</button>
               <button class="btn btn-secondary btn-sm" id="btn-drawer-standby">Force Standby (0W)</button>
               <button class="btn btn-secondary btn-sm" id="btn-drawer-locate">Toggle Locate LED</button>
+              <button class="btn btn-danger btn-sm" id="btn-drawer-wipe">Wipe Disk</button>
             </div>
           </div>
-          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; font-size: 0.8rem;">
+          <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 1rem; font-size: 0.8rem;">
             <div><span class="text-dim">Device Path:</span> <div class="font-mono" id="drawer-disk-path">--</div></div>
             <div><span class="text-dim">By-ID Path:</span> <div class="font-mono text-dim" id="drawer-disk-byid" style="font-size: 0.72rem; word-break: break-all;">--</div></div>
+            <div><span class="text-dim">ZFS Pool / Role:</span> <div class="font-mono" id="drawer-disk-pool">--</div></div>
             <div><span class="text-dim">Power-On Hours:</span> <div class="font-mono" id="drawer-disk-hours">--</div></div>
+            <div><span class="text-dim">Last SMART Test:</span> <div class="font-mono" id="drawer-disk-smart-test">--</div></div>
             <div><span class="text-dim">Spindown Timeout:</span> 
               <select id="drawer-spindown-select" style="margin-top: 0.25rem; font-size: 0.75rem;">
                 <option value="0">Disabled (Always On)</option>
@@ -854,6 +858,13 @@
             <option value="nfs">NFSv4 (Linux &amp; Proxmox Storage Mounts)</option>
           </select>
         </div>
+        <div class="form-group" id="group-nfs-clients" style="display: none;">
+          <label>Allowed NFS Clients (IP, Subnet or Host)</label>
+          <input type="text" id="input-nfs-clients" placeholder="e.g. 192.168.1.0/24, 192.168.1.50 or *">
+          <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
+            Limit access to specific client IPs/subnets, or use * for unrestricted access.
+          </small>
+        </div>
         <div class="form-group">
           <label>Access Control</label>
           <select id="select-share-access">
@@ -1178,7 +1189,17 @@
             <option value="lz4">LZ4 (High Speed, Zero Overhead)</option>
             <option value="zstd">ZSTD (High Compression)</option>
             <option value="gzip">GZIP</option>
+            <option value="gzip-9">GZIP-9 (Maximum Compression)</option>
             <option value="off">Off</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Record Size (Block Size)</label>
+          <select id="select-dp-recordsize">
+            <option value="128K">128 KiB (Default General Storage)</option>
+            <option value="1M">1 MiB (Sequential Media / Large Backups)</option>
+            <option value="64K">64 KiB</option>
+            <option value="16K">16 KiB (Databases &amp; VMs)</option>
           </select>
         </div>
         <div class="form-group">

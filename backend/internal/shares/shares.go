@@ -3,14 +3,26 @@ package shares
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
+	"time"
+
+	"debian-nas/internal/validate"
 )
+
+func runCmdWithTimeout(timeout time.Duration, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	return cmd.CombinedOutput()
+}
 
 type ShareType string
 
@@ -35,6 +47,7 @@ type NfsExport struct {
 	AllowedClients string `json:"allowed_clients"` // e.g. "192.168.1.0/24" or "*"
 	AllowedHosts   string `json:"allowed_hosts"`   // frontend alias fallback
 	Options        string `json:"options"`         // rw,sync,no_subtree_check
+	ReadOnly       bool   `json:"read_only"`
 	Enabled        bool   `json:"enabled"`
 }
 
@@ -162,6 +175,7 @@ func (m *Manager) loadLinuxShares() {
 					Path:           path,
 					AllowedClients: client,
 					Options:        opts,
+					ReadOnly:       strings.Contains(","+opts+",", ",ro,") || strings.HasPrefix(opts, "ro,") || opts == "ro",
 					Enabled:        true,
 				}
 			}
@@ -213,6 +227,9 @@ func (m *Manager) ListSmb() ([]*SmbShare, error) {
 	for _, s := range m.smbShares {
 		list = append(list, s)
 	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].Name < list[j].Name
+	})
 	return list, nil
 }
 
@@ -224,6 +241,9 @@ func (m *Manager) ListNfs() ([]*NfsExport, error) {
 	for _, e := range m.nfsExports {
 		list = append(list, e)
 	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].Path < list[j].Path
+	})
 	return list, nil
 }
 
@@ -244,14 +264,22 @@ func (m *Manager) SaveSmb(s *SmbShare) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if s.Name == "" || s.Path == "" {
-		return fmt.Errorf("share name and path are required")
+	if err := validate.ShareName(s.Name); err != nil {
+		return fmt.Errorf("invalid share name: %w", err)
+	}
+	if err := validate.SharePath(s.Path); err != nil {
+		return fmt.Errorf("invalid share path: %w", err)
+	}
+	if err := validate.ShareComment(s.Comment); err != nil {
+		return fmt.Errorf("invalid share comment: %w", err)
+	}
+	for _, u := range s.ValidUsers {
+		if err := validate.Username(u); err != nil {
+			return fmt.Errorf("invalid user in valid_users: %w", err)
+		}
 	}
 
-	if !strings.HasPrefix(s.Path, "/") {
-		s.Path = "/" + s.Path
-	}
-
+	s.Path = filepath.ToSlash(filepath.Clean(s.Path))
 	m.smbShares[s.Name] = s
 
 	if m.mockMode {
@@ -264,26 +292,49 @@ func (m *Manager) SaveSmb(s *SmbShare) error {
 		return fmt.Errorf("failed to create samba conf.d dir: %w", err)
 	}
 
-	// Ensure share folder exists with read/write permissions for clients
-	_ = os.MkdirAll(s.Path, 0777)
-	_ = os.Chmod(s.Path, 0777)
+	// Create share folder if it does not exist (default 0775 for storage shares)
+	if _, err := os.Stat(s.Path); os.IsNotExist(err) {
+		_ = os.MkdirAll(s.Path, 0775)
+	}
 
 	confPath := filepath.Join(m.sambaConfDir, fmt.Sprintf("%s.conf", s.Name))
-	content := m.generateSmbConfig(s)
+	if filepath.Dir(filepath.Clean(confPath)) != filepath.Clean(m.sambaConfDir) {
+		return fmt.Errorf("path traversal detected in share name")
+	}
 
-	if err := os.WriteFile(confPath, []byte(content), 0644); err != nil {
+	content := m.generateSmbConfig(s)
+	tmpPath := confPath + ".tmp"
+	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write samba share config: %w", err)
 	}
 
+	// Validate config syntax with testparm if available before committing
+	if _, err := exec.LookPath("testparm"); err == nil {
+		tOut, tErr := runCmdWithTimeout(5*time.Second, "testparm", "-s", tmpPath)
+		if tErr != nil {
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("samba configuration syntax error: %v (%s)", tErr, strings.TrimSpace(string(tOut)))
+		}
+	}
+
+	if err := os.Rename(tmpPath, confPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("failed to commit samba share config: %w", err)
+	}
+
 	// Reload smbd
-	_ = exec.Command("smbcontrol", "all", "reload-config").Run()
-	_ = exec.Command("systemctl", "reload-or-restart", "smbd").Run()
+	_, _ = runCmdWithTimeout(5*time.Second, "smbcontrol", "all", "reload-config")
+	_, _ = runCmdWithTimeout(10*time.Second, "systemctl", "reload-or-restart", "smbd")
 	return nil
 }
 
 func (m *Manager) DeleteSmb(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if err := validate.ShareName(name); err != nil {
+		return fmt.Errorf("invalid share name: %w", err)
+	}
 
 	delete(m.smbShares, name)
 
@@ -292,10 +343,12 @@ func (m *Manager) DeleteSmb(name string) error {
 	}
 
 	confPath := filepath.Join(m.sambaConfDir, fmt.Sprintf("%s.conf", name))
-	_ = os.Remove(confPath)
+	if filepath.Dir(filepath.Clean(confPath)) == filepath.Clean(m.sambaConfDir) {
+		_ = os.Remove(confPath)
+	}
 
-	_ = exec.Command("smbcontrol", "all", "reload-config").Run()
-	_ = exec.Command("systemctl", "reload-or-restart", "smbd").Run()
+	_, _ = runCmdWithTimeout(5*time.Second, "smbcontrol", "all", "reload-config")
+	_, _ = runCmdWithTimeout(10*time.Second, "systemctl", "reload-or-restart", "smbd")
 	return nil
 }
 
@@ -310,7 +363,7 @@ func (m *Manager) generateSmbConfig(s *SmbShare) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[%s]\n", s.Name))
+	sb.WriteString(fmt.Sprintf("# Managed by Debian NAS\n[%s]\n", s.Name))
 	sb.WriteString(fmt.Sprintf("   path = %s\n", s.Path))
 	if s.Comment != "" {
 		sb.WriteString(fmt.Sprintf("   comment = %s\n", s.Comment))
@@ -318,10 +371,10 @@ func (m *Manager) generateSmbConfig(s *SmbShare) string {
 	sb.WriteString(fmt.Sprintf("   read only = %s\n", readOnly))
 	sb.WriteString(fmt.Sprintf("   guest ok = %s\n", guestOk))
 	sb.WriteString("   browseable = yes\n")
-	sb.WriteString("   create mask = 0666\n")
-	sb.WriteString("   directory mask = 0777\n")
-	sb.WriteString("   force create mode = 0666\n")
-	sb.WriteString("   force directory mode = 0777\n")
+	sb.WriteString("   create mask = 0664\n")
+	sb.WriteString("   directory mask = 0775\n")
+	sb.WriteString("   force create mode = 0664\n")
+	sb.WriteString("   force directory mode = 0775\n")
 
 	if s.TimeMachine {
 		sb.WriteString("   vfs objects = catia fruit streams_xattr\n")
@@ -340,17 +393,44 @@ func (m *Manager) SaveNfs(e *NfsExport) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if e.Path == "" {
-		return fmt.Errorf("export path is required")
-	}
-
-	if !strings.HasPrefix(e.Path, "/") {
-		e.Path = "/" + e.Path
+	if err := validate.SharePath(e.Path); err != nil {
+		return fmt.Errorf("invalid export path: %w", err)
 	}
 
 	if e.AllowedClients == "" && e.AllowedHosts != "" {
 		e.AllowedClients = e.AllowedHosts
 	}
+	if e.AllowedClients == "" {
+		e.AllowedClients = "*"
+	}
+	if err := validate.NfsClient(e.AllowedClients); err != nil {
+		return fmt.Errorf("invalid NFS client: %w", err)
+	}
+
+	if e.Options != "" {
+		if err := validate.NfsOptions(e.Options); err != nil {
+			return fmt.Errorf("invalid NFS options: %w", err)
+		}
+	}
+
+	// Normalise options and enforce ReadOnly consistency and root_squash
+	options := e.Options
+	if options == "" {
+		if e.ReadOnly {
+			options = "ro,sync,no_subtree_check,root_squash"
+		} else {
+			options = "rw,sync,no_subtree_check,root_squash"
+		}
+	} else if e.ReadOnly {
+		options = strings.ReplaceAll(options, "rw,", "ro,")
+		if strings.HasSuffix(options, ",rw") {
+			options = strings.TrimSuffix(options, ",rw") + ",ro"
+		} else if options == "rw" {
+			options = "ro"
+		}
+	}
+	e.Options = options
+	e.Path = filepath.ToSlash(filepath.Clean(e.Path))
 
 	m.nfsExports[e.Path] = e
 
@@ -358,20 +438,44 @@ func (m *Manager) SaveNfs(e *NfsExport) error {
 		return nil
 	}
 
-	// Ensure folder exists with permissions
-	_ = os.MkdirAll(e.Path, 0777)
-	_ = os.Chmod(e.Path, 0777)
+	// Ensure folder exists
+	if _, err := os.Stat(e.Path); os.IsNotExist(err) {
+		_ = os.MkdirAll(e.Path, 0775)
+	}
 
+	return m.writeNfsExportsLocked()
+}
+
+func (m *Manager) DeleteNfs(path string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	path = filepath.ToSlash(filepath.Clean(path))
+	delete(m.nfsExports, path)
+
+	if m.mockMode {
+		return nil
+	}
+
+	return m.writeNfsExportsLocked()
+}
+
+func (m *Manager) writeNfsExportsLocked() error {
 	if err := os.MkdirAll(filepath.Dir(m.nfsConfFile), 0755); err != nil {
 		return fmt.Errorf("failed to create nfs conf dir: %w", err)
 	}
 
 	var sb strings.Builder
+	sb.WriteString("# Managed by Debian NAS\n")
 	for _, exp := range m.nfsExports {
 		if exp.Enabled {
 			options := exp.Options
 			if options == "" {
-				options = "rw,sync,no_subtree_check,no_root_squash"
+				if exp.ReadOnly {
+					options = "ro,sync,no_subtree_check,root_squash"
+				} else {
+					options = "rw,sync,no_subtree_check,root_squash"
+				}
 			}
 			clients := exp.AllowedClients
 			if clients == "" {
@@ -384,50 +488,27 @@ func (m *Manager) SaveNfs(e *NfsExport) error {
 		}
 	}
 
-	if err := os.WriteFile(m.nfsConfFile, []byte(sb.String()), 0644); err != nil {
+	tmpFile := m.nfsConfFile + ".tmp"
+	if err := os.WriteFile(tmpFile, []byte(sb.String()), 0644); err != nil {
 		return fmt.Errorf("failed to write nfs exports file: %w", err)
+	}
+	if err := os.Rename(tmpFile, m.nfsConfFile); err != nil {
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to commit nfs exports file: %w", err)
 	}
 
 	// Reload NFS kernel exports
-	cmd := exec.Command("exportfs", "-ra")
-	out, err := cmd.CombinedOutput()
+	out, err := runCmdWithTimeout(10*time.Second, "exportfs", "-ra")
 	if err != nil {
 		return fmt.Errorf("exportfs failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
-func (m *Manager) DeleteNfs(path string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	delete(m.nfsExports, path)
-
-	if m.mockMode {
-		return nil
-	}
-
-	var sb strings.Builder
-	for _, exp := range m.nfsExports {
-		if exp.Enabled {
-			options := exp.Options
-			if options == "" {
-				options = "rw,sync,no_subtree_check"
-			}
-			clients := exp.AllowedClients
-			if clients == "" {
-				clients = "*"
-			}
-			sb.WriteString(fmt.Sprintf("%s %s(%s)\n", exp.Path, clients, options))
-		}
-	}
-
-	_ = os.WriteFile(m.nfsConfFile, []byte(sb.String()), 0644)
-	return exec.Command("exportfs", "-ra").Run()
-}
-
 func (m *Manager) loadLinuxUsers() {
-	cmd := exec.Command("pdbedit", "-L")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "pdbedit", "-L")
 	out, err := cmd.Output()
 	if err == nil {
 		scanner := bufio.NewScanner(bytes.NewReader(out))
@@ -456,25 +537,10 @@ func (m *Manager) ListUsers() ([]StorageUser, error) {
 	for _, u := range m.users {
 		list = append(list, u)
 	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].Username < list[j].Username
+	})
 	return list, nil
-}
-
-func cleanStalePasswdLocks() {
-	_ = exec.Command("pkill", "-9", "-x", "useradd").Run()
-	_ = exec.Command("pkill", "-9", "-x", "chpasswd").Run()
-
-	lockFiles := []string{
-		"/etc/.pwd.lock",
-		"/etc/passwd.lock",
-		"/etc/shadow.lock",
-		"/etc/group.lock",
-		"/etc/gshadow.lock",
-		"/etc/subuid.lock",
-		"/etc/subgid.lock",
-	}
-	for _, f := range lockFiles {
-		_ = os.Remove(f)
-	}
 }
 
 func (m *Manager) CreateUser(username, password, role string) error {
@@ -482,8 +548,11 @@ func (m *Manager) CreateUser(username, password, role string) error {
 	defer m.mu.Unlock()
 
 	username = strings.ToLower(strings.TrimSpace(username))
-	if username == "" {
-		return fmt.Errorf("username is required")
+	if err := validate.Username(username); err != nil {
+		return fmt.Errorf("invalid username: %w", err)
+	}
+	if err := validate.Password(password); err != nil {
+		return fmt.Errorf("invalid password: %w", err)
 	}
 	if role == "" {
 		role = "user"
@@ -494,11 +563,14 @@ func (m *Manager) CreateUser(username, password, role string) error {
 		return nil
 	}
 
-	// 1. Ensure Linux system user exists
-	idCmd := exec.Command("id", username)
+	// 1. Ensure dedicated 'nasusers' group exists
+	_, _ = runCmdWithTimeout(5*time.Second, "groupadd", "-f", "nasusers")
+
+	// 2. Ensure Linux system user exists with nologin shell and nasusers group
+	ctxId, cancelId := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelId()
+	idCmd := exec.CommandContext(ctxId, "id", username)
 	if err := idCmd.Run(); err != nil {
-		cleanStalePasswdLocks()
-		// User does not exist, create it with nologin shell
 		nologin := "/usr/sbin/nologin"
 		if _, err := os.Stat("/usr/sbin/nologin"); err != nil {
 			if _, err2 := os.Stat("/sbin/nologin"); err2 == nil {
@@ -507,47 +579,35 @@ func (m *Manager) CreateUser(username, password, role string) error {
 				nologin = "/bin/false"
 			}
 		}
-		useraddCmd := exec.Command("useradd", "-M", "-s", nologin, username)
-		uOut, uErr := useraddCmd.CombinedOutput()
+		uOut, uErr := runCmdWithTimeout(5*time.Second, "useradd", "-M", "-s", nologin, "-G", "nasusers", "-c", "NAS Storage User", username)
 		if uErr != nil {
 			outStr := strings.TrimSpace(string(uOut))
-			// If locked by a stale lock file, remove stale locks and retry once
-			if strings.Contains(outStr, "gesperrt") || strings.Contains(outStr, "lock") {
-				cleanStalePasswdLocks()
-				retryCmd := exec.Command("useradd", "-M", "-s", nologin, username)
-				uOut, uErr = retryCmd.CombinedOutput()
-				outStr = strings.TrimSpace(string(uOut))
-			}
-			if uErr != nil && !strings.Contains(outStr, "already exists") && !strings.Contains(outStr, "existiert bereits") {
+			if !strings.Contains(outStr, "already exists") && !strings.Contains(outStr, "existiert bereits") {
 				return fmt.Errorf("useradd failed: %v (%s)", uErr, outStr)
 			}
 		}
 	}
 
-	// 2. Set Linux system password via chpasswd
-	cleanStalePasswdLocks()
-	chCmd := exec.Command("chpasswd")
-	chCmd.Stdin = strings.NewReader(fmt.Sprintf("%s:%s\n", username, password))
-	_ = chCmd.Run()
-
-	// 3. Set Samba password via smbpasswd
+	// 3. Set Samba password via smbpasswd (no shadow / chpasswd needed for nologin storage users)
 	if _, err := exec.LookPath("smbpasswd"); err != nil {
-		// If smbpasswd is not installed, record in local storage users map
 		m.users[username] = StorageUser{Username: username, Role: role}
 		return nil
 	}
 
-	cmd := exec.Command("smbpasswd", "-a", "-s", username)
+	ctxPw, cancelPw := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelPw()
+	cmd := exec.CommandContext(ctxPw, "smbpasswd", "-a", "-s", username)
 	cmd.Stdin = strings.NewReader(fmt.Sprintf("%s\n%s\n", password, password))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		outStr := strings.TrimSpace(string(out))
-		// If already in passdb, update without -a
 		if strings.Contains(outStr, "Failed to add") || strings.Contains(outStr, "already exists") {
-			updateCmd := exec.Command("smbpasswd", "-s", username)
+			ctxUp, cancelUp := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancelUp()
+			updateCmd := exec.CommandContext(ctxUp, "smbpasswd", "-s", username)
 			updateCmd.Stdin = strings.NewReader(fmt.Sprintf("%s\n%s\n", password, password))
 			if uOut, uErr := updateCmd.CombinedOutput(); uErr != nil {
-				return fmt.Errorf("smbpasswd failed: %v (%s)", uErr, strings.TrimSpace(string(uOut)))
+				return fmt.Errorf("smbpasswd update failed: %v (%s)", uErr, strings.TrimSpace(string(uOut)))
 			}
 		} else {
 			return fmt.Errorf("smbpasswd failed: %v (%s)", err, outStr)
@@ -555,7 +615,7 @@ func (m *Manager) CreateUser(username, password, role string) error {
 	}
 
 	// 4. Ensure user is enabled in Samba
-	_ = exec.Command("smbpasswd", "-e", username).Run()
+	_, _ = runCmdWithTimeout(5*time.Second, "smbpasswd", "-e", username)
 
 	m.users[username] = StorageUser{Username: username, Role: role}
 	return nil
@@ -565,13 +625,33 @@ func (m *Manager) DeleteUser(username string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	username = strings.ToLower(strings.TrimSpace(username))
+	if err := validate.Username(username); err != nil {
+		return fmt.Errorf("invalid username: %w", err)
+	}
+
 	delete(m.users, username)
 
 	if m.mockMode {
 		return nil
 	}
 
-	_ = exec.Command("smbpasswd", "-x", username).Run()
-	_ = exec.Command("userdel", username).Run()
+	// Safety check: verify UID >= 1000 to prevent accidental deletion of system daemons
+	uidOut, uidErr := runCmdWithTimeout(5*time.Second, "id", "-u", username)
+	if uidErr == nil {
+		var uid int
+		if _, err := fmt.Sscanf(strings.TrimSpace(string(uidOut)), "%d", &uid); err == nil && uid < 1000 {
+			return fmt.Errorf("refusing to delete system account with UID %d", uid)
+		}
+	}
+
+	_, _ = runCmdWithTimeout(5*time.Second, "smbpasswd", "-x", username)
+	out, err := runCmdWithTimeout(10*time.Second, "userdel", username)
+	if err != nil {
+		outStr := strings.TrimSpace(string(out))
+		if !strings.Contains(outStr, "does not exist") && !strings.Contains(outStr, "existiert nicht") {
+			return fmt.Errorf("userdel failed: %v (%s)", err, outStr)
+		}
+	}
 	return nil
 }

@@ -55,6 +55,11 @@ func NewServer(
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 
+	// 0. Authentication & Security
+	mux.HandleFunc("GET /api/v1/auth/status", s.handleAuthStatus)
+	mux.HandleFunc("POST /api/v1/auth/login", s.handleAuthLogin)
+	mux.HandleFunc("POST /api/v1/auth/logout", s.handleAuthLogout)
+
 	// 1. System Telemetry
 	mux.HandleFunc("GET /api/v1/system", s.handleSystemStatus)
 
@@ -64,6 +69,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/disks/standby", s.handleForceStandby)
 	mux.HandleFunc("POST /api/v1/disks/locate", s.handleToggleLocate)
 	mux.HandleFunc("POST /api/v1/disks/smart-test", s.handleTriggerSmartTest)
+	mux.HandleFunc("POST /api/v1/disks/wipe", s.handleWipeDisk)
 
 	// 3. OpenZFS Pools, Datasets & Snapshots
 	mux.HandleFunc("GET /api/v1/zfs/pools", s.handleListPools)
@@ -125,20 +131,130 @@ func (s *Server) Routes() http.Handler {
 		}))
 	}
 
-	return s.corsMiddleware(mux)
+	return s.securityMiddleware(mux)
 }
 
-func (s *Server) corsMiddleware(next http.Handler) http.Handler {
+func (s *Server) securityMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		// 1. Security Headers
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+
+		origin := r.Header.Get("Origin")
+		host := r.Host
+
+		// 2. Strict Origin/Host checks - No wildcard CORS
+		if origin != "" {
+			originHost := origin
+			if idx := strings.Index(origin, "://"); idx != -1 {
+				originHost = origin[idx+3:]
+			}
+			if idx := strings.Index(originHost, "/"); idx != -1 {
+				originHost = originHost[:idx]
+			}
+
+			if originHost == host || strings.HasPrefix(originHost, "localhost:") || strings.HasPrefix(originHost, "127.0.0.1:") || originHost == "localhost" || originHost == "127.0.0.1" {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Auth-Token")
+			} else if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+				http.Error(w, "Cross-origin request forbidden", http.StatusForbidden)
+				return
+			}
+		}
+
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+
+		// 3. Authentication Check
+		if s.cfg.AuthToken != "" && strings.HasPrefix(r.URL.Path, "/api/v1/") {
+			if r.URL.Path != "/api/v1/auth/login" && r.URL.Path != "/api/v1/auth/status" {
+				authenticated := false
+
+				authHeader := r.Header.Get("Authorization")
+				if authHeader != "" {
+					token := strings.TrimPrefix(authHeader, "Bearer ")
+					if token == s.cfg.AuthToken {
+						authenticated = true
+					}
+				}
+
+				if !authenticated && r.Header.Get("X-Auth-Token") == s.cfg.AuthToken {
+					authenticated = true
+				}
+
+				if !authenticated {
+					if cookie, err := r.Cookie("nas_session"); err == nil && cookie.Value == s.cfg.AuthToken {
+						authenticated = true
+					}
+				}
+
+				if !authenticated {
+					s.errorResponse(w, http.StatusUnauthorized, "Authentication required")
+					return
+				}
+			}
+		}
+
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	authenticated := true
+	if s.cfg.AuthToken != "" {
+		authenticated = false
+		if cookie, err := r.Cookie("nas_session"); err == nil && cookie.Value == s.cfg.AuthToken {
+			authenticated = true
+		} else if r.Header.Get("X-Auth-Token") == s.cfg.AuthToken || strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ") == s.cfg.AuthToken {
+			authenticated = true
+		}
+	}
+	s.jsonResponse(w, http.StatusOK, map[string]any{
+		"auth_enabled":  s.cfg.AuthToken != "",
+		"authenticated": authenticated,
+	})
+}
+
+func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	if s.cfg.AuthToken == "" || req.Token == s.cfg.AuthToken {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "nas_session",
+			Value:    req.Token,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   86400 * 30, // 30 days
+		})
+		s.jsonResponse(w, http.StatusOK, map[string]string{"status": "authenticated"})
+		return
+	}
+
+	s.errorResponse(w, http.StatusUnauthorized, "Invalid authentication token")
+}
+
+func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "nas_session",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   -1,
+	})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "logged out"})
 }
 
 func (s *Server) jsonResponse(w http.ResponseWriter, status int, data any) {
@@ -194,59 +310,152 @@ func (s *Server) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 // ---------------- 2. Disks & Standby Handlers ----------------
 
 func (s *Server) handleListDisks(w http.ResponseWriter, r *http.Request) {
-	list, err := s.disks.ListDisks()
+	var list []*disks.DiskInfo
+	var err error
+	if r.URL.Query().Get("rescan") == "true" {
+		list, err = s.disks.RescanDisks()
+	} else {
+		list, err = s.disks.ListDisks()
+	}
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	if s.zfs != nil {
+		poolMap, roleMap := s.zfs.GetDiskPoolMap()
+		s.disks.SyncPoolMembership(poolMap, roleMap)
+		list, _ = s.disks.ListDisks()
 	}
 	s.jsonResponse(w, http.StatusOK, list)
 }
 
 func (s *Server) handleSetSpindown(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Path    string `json:"path"`
-		Seconds int    `json:"seconds"`
+		Path           string `json:"path"`
+		Device         string `json:"device"`
+		Name           string `json:"name"`
+		Seconds        *int   `json:"seconds"`
+		TimeoutSeconds *int   `json:"timeout_seconds"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
 		return
 	}
-	if err := s.disks.SetSpindown(req.Path, req.Seconds); err != nil {
+	target := strings.TrimSpace(req.Path)
+	if target == "" {
+		target = strings.TrimSpace(req.Device)
+	}
+	if target == "" {
+		target = strings.TrimSpace(req.Name)
+	}
+	if target == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Disk device or path required")
+		return
+	}
+
+	sec := 0
+	if req.Seconds != nil {
+		sec = *req.Seconds
+	} else if req.TimeoutSeconds != nil {
+		sec = *req.TimeoutSeconds
+	}
+
+	if err := s.disks.SetSpindown(target, sec); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+	s.jsonResponse(w, http.StatusOK, map[string]any{"status": "ok", "device": target, "timeout_seconds": sec})
 }
 
 func (s *Server) handleForceStandby(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Path string `json:"path"`
+		Path   string `json:"path"`
+		Device string `json:"device"`
+		Name   string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
 		return
 	}
-	if err := s.disks.ForceStandby(req.Path); err != nil {
+	target := strings.TrimSpace(req.Path)
+	if target == "" {
+		target = strings.TrimSpace(req.Device)
+	}
+	if target == "" {
+		target = strings.TrimSpace(req.Name)
+	}
+	if target == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Disk device or path required")
+		return
+	}
+	if err := s.disks.ForceStandby(target); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "standby triggered"})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "standby triggered", "device": target})
 }
 
 func (s *Server) handleToggleLocate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Path string `json:"path"`
+		Path   string `json:"path"`
+		Device string `json:"device"`
+		Name   string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
 		return
 	}
-	active, err := s.disks.ToggleLocate(req.Path)
+	target := strings.TrimSpace(req.Path)
+	if target == "" {
+		target = strings.TrimSpace(req.Device)
+	}
+	if target == "" {
+		target = strings.TrimSpace(req.Name)
+	}
+	if target == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Disk device or path required")
+		return
+	}
+	active, err := s.disks.ToggleLocate(target)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]any{"status": "ok", "locate_led": active})
+	s.jsonResponse(w, http.StatusOK, map[string]any{"status": "ok", "device": target, "locate_led": active})
+}
+
+func (s *Server) handleWipeDisk(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Path   string `json:"path"`
+		Device string `json:"device"`
+		Name   string `json:"name"`
+		Mode   string `json:"mode"` // "quick" or "zero"
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+	target := strings.TrimSpace(req.Path)
+	if target == "" {
+		target = strings.TrimSpace(req.Device)
+	}
+	if target == "" {
+		target = strings.TrimSpace(req.Name)
+	}
+	if target == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Disk device or path required")
+		return
+	}
+	if s.zfs != nil {
+		poolMap, roleMap := s.zfs.GetDiskPoolMap()
+		s.disks.SyncPoolMembership(poolMap, roleMap)
+	}
+	if err := s.disks.WipeDisk(target, req.Mode); err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "disk wiped", "device": target})
 }
 
 // ---------------- 3. ZFS Handlers ----------------
@@ -444,91 +653,120 @@ func (s *Server) handleClearPool(w http.ResponseWriter, r *http.Request) {
 // Storage Benchmark Engine (FIO Storage Testing)
 func (s *Server) handleStorageBenchmark(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Target  string `json:"target"`  // pool name or disk name
-		Profile string `json:"profile"` // "seq", "rand4k", "mixed"
-		SizeMB  int    `json:"size_mb"`
+		Target     string `json:"target"`      // pool name or disk name
+		TargetPath string `json:"target_path"` // frontend alias
+		Profile    string `json:"profile"`     // "seq", "rand4k", "mixed"
+		Mode       string `json:"mode"`        // frontend alias: "seq_read", "seq_write", "rand_read", "rand_write"
+		SizeMB     int    `json:"size_mb"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
 		return
 	}
 
+	target := strings.TrimSpace(req.Target)
+	if target == "" {
+		target = strings.TrimSpace(req.TargetPath)
+	}
+	mode := strings.TrimSpace(req.Mode)
+	if mode == "" {
+		mode = strings.TrimSpace(req.Profile)
+	}
 	if req.SizeMB <= 0 {
 		req.SizeMB = 1024
 	}
 
-	readMB := 542.4
-	writeMB := 518.8
-	iops := 72400
-	latMs := 0.24
+	var readMB, writeMB float64
+	var iops int
+	var latMs float64
 
-	// If running on real Linux with fio installed and not in mock mode:
-	if !s.cfg.MockMode && runtime.GOOS == "linux" {
-		if _, err := exec.LookPath("fio"); err == nil {
-			targetPath := "/tmp/.nas_bench.tmp"
-			if strings.HasPrefix(req.Target, "/") {
-				targetPath = filepath.Join(req.Target, ".nas_bench.tmp")
+	// If running in production (not mock mode):
+	if !s.cfg.MockMode {
+		if runtime.GOOS != "linux" {
+			s.errorResponse(w, http.StatusBadRequest, "Storage benchmarks via FIO are only supported on Linux")
+			return
+		}
+		if _, err := exec.LookPath("fio"); err != nil {
+			s.errorResponse(w, http.StatusNotFound, "fio benchmark tool is not installed (run 'apt install fio')")
+			return
+		}
+
+		targetPath := "/tmp/.nas_bench.tmp"
+		if target != "" && !strings.Contains(target, "..") {
+			if strings.HasPrefix(target, "/") {
+				targetPath = filepath.Join(filepath.Clean(target), ".nas_bench.tmp")
 			} else {
-				targetPath = filepath.Join("/mnt", req.Target, ".nas_bench.tmp")
-			}
-
-			// Run real fio test
-			fioArgs := []string{
-				"--name=nas_bench",
-				fmt.Sprintf("--filename=%s", targetPath),
-				fmt.Sprintf("--size=%dM", req.SizeMB),
-				"--direct=1",
-				"--ioengine=libaio",
-				"--output-format=json",
-			}
-			if req.Profile == "rand4k" {
-				fioArgs = append(fioArgs, "--rw=randrw", "--bs=4k", "--iodepth=32")
-			} else {
-				fioArgs = append(fioArgs, "--rw=readwrite", "--bs=1M", "--iodepth=8")
-			}
-
-			cmd := exec.Command("fio", fioArgs...)
-			out, err := cmd.Output()
-			_ = os.Remove(targetPath)
-
-			if err == nil {
-				var fioResult struct {
-					Jobs []struct {
-						Read struct {
-							BwBytes uint64  `json:"bw_bytes"`
-							Iops    float64 `json:"iops"`
-							LatNs   struct {
-								Mean float64 `json:"mean"`
-							} `json:"lat_ns"`
-						} `json:"read"`
-						Write struct {
-							BwBytes uint64  `json:"bw_bytes"`
-							Iops    float64 `json:"iops"`
-						} `json:"write"`
-					} `json:"jobs"`
-				}
-				if json.Unmarshal(out, &fioResult) == nil && len(fioResult.Jobs) > 0 {
-					j := fioResult.Jobs[0]
-					readMB = float64(j.Read.BwBytes) / (1024 * 1024)
-					writeMB = float64(j.Write.BwBytes) / (1024 * 1024)
-					iops = int(j.Read.Iops + j.Write.Iops)
-					latMs = j.Read.LatNs.Mean / 1_000_000
-				}
+				targetPath = filepath.Join("/mnt", filepath.Clean(target), ".nas_bench.tmp")
 			}
 		}
+
+		fioArgs := []string{
+			"--name=nas_bench",
+			fmt.Sprintf("--filename=%s", targetPath),
+			fmt.Sprintf("--size=%dM", req.SizeMB),
+			"--direct=1",
+			"--ioengine=libaio",
+			"--output-format=json",
+		}
+		switch mode {
+		case "rand4k", "rand_read", "rand_write":
+			fioArgs = append(fioArgs, "--rw=randrw", "--bs=4k", "--iodepth=32")
+		default:
+			fioArgs = append(fioArgs, "--rw=readwrite", "--bs=1M", "--iodepth=8")
+		}
+
+		cmd := exec.Command("fio", fioArgs...)
+		out, err := cmd.CombinedOutput()
+		_ = os.Remove(targetPath)
+
+		if err != nil {
+			s.errorResponse(w, http.StatusInternalServerError, fmt.Sprintf("fio execution failed: %v (%s)", err, strings.TrimSpace(string(out))))
+			return
+		}
+
+		var fioResult struct {
+			Jobs []struct {
+				Read struct {
+					BwBytes uint64  `json:"bw_bytes"`
+					Iops    float64 `json:"iops"`
+					LatNs   struct {
+						Mean float64 `json:"mean"`
+					} `json:"lat_ns"`
+				} `json:"read"`
+				Write struct {
+					BwBytes uint64  `json:"bw_bytes"`
+					Iops    float64 `json:"iops"`
+				} `json:"write"`
+			} `json:"jobs"`
+		}
+		if err := json.Unmarshal(out, &fioResult); err != nil || len(fioResult.Jobs) == 0 {
+			s.errorResponse(w, http.StatusInternalServerError, "failed to parse fio output")
+			return
+		}
+
+		j := fioResult.Jobs[0]
+		readMB = float64(j.Read.BwBytes) / (1024 * 1024)
+		writeMB = float64(j.Write.BwBytes) / (1024 * 1024)
+		iops = int(j.Read.Iops + j.Write.Iops)
+		latMs = j.Read.LatNs.Mean / 1_000_000
 	} else {
 		// Mock calculation
-		if strings.HasPrefix(req.Target, "nvme") || req.Target == "SSD-MIRROR" {
+		readMB = 542.4
+		writeMB = 518.8
+		iops = 72400
+		latMs = 0.24
+
+		if strings.Contains(strings.ToUpper(target), "NVME") || strings.Contains(strings.ToUpper(target), "SSD") {
 			readMB = 3450.0
 			writeMB = 2980.0
 			iops = 485000
 			latMs = 0.04
-		} else if req.Profile == "rand4k" {
+		} else if strings.HasPrefix(mode, "rand") {
 			readMB = 48.2
 			writeMB = 42.1
 			iops = 12400
 			latMs = 1.15
-		} else if req.Profile == "mixed" {
+		} else if mode == "mixed" {
 			readMB = 280.5
 			writeMB = 260.0
 			iops = 38000
@@ -536,15 +774,27 @@ func (s *Server) handleStorageBenchmark(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	throughputMB := readMB
+	if writeMB > throughputMB {
+		throughputMB = writeMB
+	}
+	if mode == "seq_write" || mode == "rand_write" {
+		throughputMB = writeMB
+	}
+
 	s.jsonResponse(w, http.StatusOK, map[string]any{
-		"target":        req.Target,
-		"profile":       req.Profile,
-		"read_mb_s":     readMB,
-		"write_mb_s":    writeMB,
-		"read_iops":     iops,
-		"latency_ms":    latMs,
-		"timestamp":     time.Now().Format("2006-01-02 15:04:05"),
-		"benchmark_msg": "Benchmark completed via native asynchronous I/O engine",
+		"target":          target,
+		"target_path":     target,
+		"profile":         mode,
+		"mode":            mode,
+		"throughput_mb_s": throughputMB,
+		"read_mb_s":       readMB,
+		"write_mb_s":      writeMB,
+		"iops":            iops,
+		"read_iops":       iops,
+		"latency_ms":      latMs,
+		"timestamp":       time.Now().Format("2006-01-02 15:04:05"),
+		"benchmark_msg":   "Benchmark completed via native asynchronous I/O engine",
 	})
 }
 
@@ -598,6 +848,8 @@ func (s *Server) handleCreateDataset(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		Compression string `json:"compression"`
 		RecordSize  string `json:"recordsize"`
+		Atime       string `json:"atime"`
+		Quota       string `json:"quota"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
@@ -606,6 +858,12 @@ func (s *Server) handleCreateDataset(w http.ResponseWriter, r *http.Request) {
 	if err := s.zfs.CreateDataset(req.Name, req.Compression, req.RecordSize); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if req.Atime != "" && req.Atime != "off" {
+		_ = s.zfs.SetDatasetProperty(req.Name, "atime", req.Atime)
+	}
+	if req.Quota != "" && req.Quota != "none" {
+		_ = s.zfs.SetDatasetProperty(req.Name, "quota", req.Quota)
 	}
 	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "created", "atime": "off"})
 }
@@ -930,17 +1188,30 @@ func (s *Server) handleCloneSnapshot(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTriggerSmartTest(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Path     string `json:"path"`
+		Device   string `json:"device"`
+		Name     string `json:"name"`
 		TestType string `json:"test_type"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
 		return
 	}
-	if err := s.disks.TriggerSmartTest(req.Path, req.TestType); err != nil {
+	target := strings.TrimSpace(req.Path)
+	if target == "" {
+		target = strings.TrimSpace(req.Device)
+	}
+	if target == "" {
+		target = strings.TrimSpace(req.Name)
+	}
+	if target == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Disk device or path required")
+		return
+	}
+	if err := s.disks.TriggerSmartTest(target, req.TestType); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "smart test started"})
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "smart test started", "device": target})
 }
 
 // ---------------- 4. Shares Handlers (SMB & NFS) ----------------

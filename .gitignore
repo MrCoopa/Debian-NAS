@@ -1,4 +1,5 @@
 # Binaries
+bin/
 backend/nasd.exe
 backend/nasd.exe~
 backend/nasd-linux-amd64

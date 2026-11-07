@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -164,6 +165,9 @@ func (m *Manager) ListJobs() ([]*SyncJob, error) {
 	for _, j := range m.jobs {
 		list = append(list, j)
 	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].ID < list[j].ID
+	})
 	return list, nil
 }
 
@@ -303,7 +307,7 @@ func (m *Manager) saveJobsConfig() {
 	}
 	data, err := json.MarshalIndent(list, "", "  ")
 	if err == nil {
-		_ = os.WriteFile(m.configPath, data, 0644)
+		_ = os.WriteFile(m.configPath, data, 0600)
 	}
 }
 

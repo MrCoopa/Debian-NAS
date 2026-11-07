@@ -3,16 +3,19 @@ package disks
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"debian-nas/internal/validate"
 )
 
 type DiskState string
@@ -25,29 +28,69 @@ const (
 )
 
 type DiskInfo struct {
-	Name               string    `json:"name"`                // e.g. "sda"
-	Device             string    `json:"device"`              // alias for name or dev path
-	Path               string    `json:"path"`                // e.g. "/dev/sda"
-	ByIDPath           string    `json:"by_id_path"`          // e.g. "/dev/disk/by-id/ata-WDC_WD40EFRX..."
-	Model              string    `json:"model"`               // e.g. "WDC WD40EFRX-68N32N0"
-	Serial             string    `json:"serial"`              // e.g. "WD-WCC7K1234567"
-	SizeBytes          uint64    `json:"size_bytes"`          // e.g. 4000787030016
-	SizeHuman          string    `json:"size_human"`          // e.g. "3.64 TB"
-	IsRotational       bool      `json:"is_rotational"`       // true = HDD, false = SSD/NVMe
-	State              DiskState `json:"state"`               // ACTIVE, STANDBY, SLEEPING
-	TemperatureC       int       `json:"temperature_c"`       // -1 if sleeping
-	SpindownSeconds    int       `json:"spindown_seconds"`    // configured timeout
-	ZfsPool            string    `json:"zfs_pool"`            // pool name if in use
-	Slot               int       `json:"slot"`                // Physical chassis bay slot (1..X)
-	Enclosure          string    `json:"enclosure"`           // e.g. "Bay 01 (Front)"
-	BusType            string    `json:"bus_type"`            // SATA 6Gb/s, SAS 12Gb/s, NVMe PCIe 4.0
-	SmartStatus        string    `json:"smart_status"`        // PASSED, WARNING, STANDBY
-	PowerOnHours       int       `json:"power_on_hours"`      // e.g. 14200
-	ReallocatedSectors int       `json:"reallocated_sectors"` // 0
-	PendingSectors     int       `json:"pending_sectors"`     // 0
-	LocateLed          bool      `json:"locate_led"`          // LED blinking
-	VdevType           string    `json:"vdev_type"`           // mirror-0, raidz1, single, unassigned
-	LastStateCheck     time.Time `json:"last_state_check"`
+	Name                   string    `json:"name"`                     // e.g. "sda"
+	Device                 string    `json:"device"`                   // alias for name or dev path
+	Path                   string    `json:"path"`                     // e.g. "/dev/sda"
+	ByIDPath               string    `json:"by_id_path"`               // e.g. "/dev/disk/by-id/ata-WDC_WD40EFRX..."
+	Vendor                 string    `json:"vendor"`                   // e.g. "WDC", "Seagate", "Samsung"
+	Model                  string    `json:"model"`                    // e.g. "WDC WD40EFRX-68N32N0"
+	Serial                 string    `json:"serial"`                   // e.g. "WD-WCC7K1234567"
+	SizeBytes              uint64    `json:"size_bytes"`               // e.g. 4000787030016
+	SizeHuman              string    `json:"size_human"`               // e.g. "3.64 TB"
+	IsRotational           bool      `json:"is_rotational"`            // true = HDD, false = SSD/NVMe
+	State                  DiskState `json:"state"`                    // ACTIVE, STANDBY, SLEEPING
+	PowerState             string    `json:"power_state"`              // ACTIVE, STANDBY, SLEEP
+	TemperatureC           int       `json:"temperature_c"`            // -1 if sleeping
+	SpindownSeconds        int       `json:"spindown_seconds"`         // configured timeout
+	SpindownTimeoutSeconds int       `json:"spindown_timeout_seconds"` // alias for frontend drawer
+	ZfsPool                string    `json:"zfs_pool"`                 // pool name if in use
+	Pool                   string    `json:"pool"`                     // alias for zfs_pool
+	Slot                   int       `json:"slot"`                     // Physical chassis bay slot (1..X)
+	Enclosure              string    `json:"enclosure"`                // e.g. "Bay 01 (Front)"
+	BusType                string    `json:"bus_type"`                 // SATA 6Gb/s, SAS 12Gb/s, NVMe PCIe 4.0
+	SmartStatus            string    `json:"smart_status"`             // PASSED, WARNING, STANDBY
+	SmartLastTest          string    `json:"smart_last_test"`          // Last self-test status
+	PowerOnHours           int       `json:"power_on_hours"`           // e.g. 14200
+	ReallocatedSectors     int       `json:"reallocated_sectors"`      // 0
+	PendingSectors         int       `json:"pending_sectors"`          // 0
+	LocateLed              bool      `json:"locate_led"`               // LED blinking
+	VdevType               string    `json:"vdev_type"`                // mirror-0, raidz1, single, unassigned
+	IsSystemDisk           bool      `json:"is_system_disk"`           // true = contains OS mount (/ or /boot)
+	LastStateCheck         time.Time `json:"last_state_check"`
+}
+
+func syncDiskFields(d *DiskInfo) {
+	if d == nil {
+		return
+	}
+	if d.Device == "" {
+		d.Device = d.Name
+	}
+	if d.Path == "" && d.Name != "" {
+		d.Path = "/dev/" + d.Name
+	}
+	switch d.State {
+	case StateStandby:
+		d.PowerState = "STANDBY"
+	case StateSleep:
+		d.PowerState = "SLEEP"
+	case StateActive:
+		d.PowerState = "ACTIVE"
+	default:
+		d.PowerState = string(d.State)
+	}
+	d.SpindownTimeoutSeconds = d.SpindownSeconds
+	if d.ZfsPool != "" && d.Pool == "" {
+		d.Pool = d.ZfsPool
+	} else if d.Pool != "" && d.ZfsPool == "" {
+		d.ZfsPool = d.Pool
+	}
+	if d.Vendor == "" && d.Model != "" {
+		parts := strings.Fields(d.Model)
+		if len(parts) > 0 {
+			d.Vendor = parts[0]
+		}
+	}
 }
 
 type Manager struct {
@@ -68,8 +111,6 @@ func NewManager(mockMode bool, hdIdleConfig string) *Manager {
 
 	if m.mockMode {
 		m.initMockDisks()
-	} else if runtime.GOOS == "windows" {
-		_, _ = m.scanWindowsDisks()
 	} else {
 		// Scan linux disks on startup
 		_, _ = m.scanLinuxDisks()
@@ -153,7 +194,7 @@ func (m *Manager) initMockDisks() {
 			ReallocatedSectors: 0,
 			PendingSectors:     0,
 			LocateLed:          false,
-			VdevType:           "single",
+			VdevType:           "stripe",
 			LastStateCheck:     time.Now(),
 		},
 		"sdd": {
@@ -277,26 +318,125 @@ func (m *Manager) initMockDisks() {
 			LastStateCheck:     time.Now(),
 		},
 	}
+	for _, d := range m.cachedDisks {
+		syncDiskFields(d)
+	}
+}
+
+// SyncPoolMembership updates disk ZFS pool assignments from active pools
+func (m *Manager) SyncPoolMembership(poolMap map[string]string, roleMap map[string]string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, d := range m.cachedDisks {
+		byIDBase := filepath.Base(d.ByIDPath)
+		pool := poolMap[d.Name]
+		if pool == "" {
+			pool = poolMap[d.Path]
+		}
+		if pool == "" && byIDBase != "" {
+			pool = poolMap[byIDBase]
+		}
+		if pool == "" && d.ByIDPath != "" {
+			pool = poolMap[d.ByIDPath]
+		}
+
+		d.ZfsPool = pool
+		d.Pool = pool
+		if pool != "" {
+			if role, ok := roleMap[d.Name]; ok && role != "" {
+				d.VdevType = role
+			} else if role, ok := roleMap[byIDBase]; ok && role != "" {
+				d.VdevType = role
+			} else {
+				d.VdevType = "assigned (" + pool + ")"
+			}
+		} else if d.IsSystemDisk {
+			d.VdevType = "OS / System Drive"
+		} else {
+			d.VdevType = "unassigned (Ready for Pool)"
+		}
+		syncDiskFields(d)
+	}
 }
 
 // ListDisks enumerates all block devices without waking up sleeping HDDs.
 func (m *Manager) ListDisks() ([]*DiskInfo, error) {
+	m.mu.RLock()
+	if len(m.cachedDisks) > 0 {
+		var list []*DiskInfo
+		for _, d := range m.cachedDisks {
+			syncDiskFields(d)
+			list = append(list, d)
+		}
+		m.mu.RUnlock()
+		sort.Slice(list, func(i, j int) bool {
+			return list[i].Name < list[j].Name
+		})
+		return list, nil
+	}
+	m.mu.RUnlock()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(m.cachedDisks) > 0 {
+		var list []*DiskInfo
+		for _, d := range m.cachedDisks {
+			syncDiskFields(d)
+			list = append(list, d)
+		}
+		sort.Slice(list, func(i, j int) bool {
+			return list[i].Name < list[j].Name
+		})
+		return list, nil
+	}
+
+	if m.mockMode {
+		var list []*DiskInfo
+		for _, d := range m.cachedDisks {
+			syncDiskFields(d)
+			list = append(list, d)
+		}
+		sort.Slice(list, func(i, j int) bool {
+			return list[i].Name < list[j].Name
+		})
+		return list, nil
+	}
+
+	disks, err := m.scanLinuxDisks()
+	if err == nil {
+		sort.Slice(disks, func(i, j int) bool {
+			return disks[i].Name < disks[j].Name
+		})
+	}
+	return disks, err
+}
+
+// RescanDisks forces a hardware rescan of all block devices
+func (m *Manager) RescanDisks() ([]*DiskInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if m.mockMode {
 		var list []*DiskInfo
 		for _, d := range m.cachedDisks {
+			syncDiskFields(d)
 			list = append(list, d)
 		}
+		sort.Slice(list, func(i, j int) bool {
+			return list[i].Name < list[j].Name
+		})
 		return list, nil
 	}
 
-	if runtime.GOOS == "windows" {
-		return m.scanWindowsDisks()
+	disks, err := m.scanLinuxDisks()
+	if err == nil {
+		sort.Slice(disks, func(i, j int) bool {
+			return disks[i].Name < disks[j].Name
+		})
 	}
-
-	return m.scanLinuxDisks()
+	return disks, err
 }
 
 func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
@@ -308,12 +448,13 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 
 	byIDMap := m.buildByIDMap()
 	poolMap := m.buildDiskPoolMap()
+	sysMap := m.buildSystemDiskMap()
 	var disks []*DiskInfo
 
 	for _, entry := range entries {
 		name := entry.Name()
 		// Only consider sdX, nvmeXnY, vdX, xvdX
-		if !strings.HasPrefix(name, "sd") && !strings.HasPrefix(name, "nvme") && !strings.HasPrefix(name, "vd") {
+		if !strings.HasPrefix(name, "sd") && !strings.HasPrefix(name, "nvme") && !strings.HasPrefix(name, "vd") && !strings.HasPrefix(name, "xvd") {
 			continue
 		}
 
@@ -356,15 +497,16 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 		realloc := 0
 		pending := 0
 		smartStatus := "PASSED (Standby Safe)"
+		smartLastTest := ""
 
 		if rotational {
 			state = m.checkStandbySafe(devPath)
 			if state == StateActive {
-				temp, powerHours, realloc, pending, smartStatus = m.readSmartAttributesSafe(devPath)
+				temp, powerHours, realloc, pending, smartStatus, smartLastTest = m.readSmartAttributesSafe(devPath)
 			}
 		} else {
 			state = StateActive
-			temp, powerHours, realloc, pending, smartStatus = m.readSmartAttributesSafe(devPath)
+			temp, powerHours, realloc, pending, smartStatus, smartLastTest = m.readSmartAttributesSafe(devPath)
 		}
 
 		poolName := poolMap[name]
@@ -379,6 +521,9 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 				spindownSec = existing.SpindownSeconds
 			}
 			locateLed = existing.LocateLed
+			if smartLastTest == "" && existing.SmartLastTest != "" {
+				smartLastTest = existing.SmartLastTest
+			}
 		}
 
 		slotIdx := len(disks) + 1
@@ -389,11 +534,20 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 			busType = "SAS 12.0 Gb/s (LSI HBA)"
 		}
 
+		isSystem := sysMap[name] || sysMap[devPath] || sysMap[filepath.Base(byID)]
+		vdevType := "unassigned (Ready for Pool)"
+		if poolName != "" {
+			vdevType = "assigned (" + poolName + ")"
+		} else if isSystem {
+			vdevType = "OS / System Drive"
+		}
+
 		disk := &DiskInfo{
 			Name:               name,
 			Device:             name,
 			Path:               devPath,
 			ByIDPath:           byID,
+			Vendor:             vendor,
 			Model:              fullModel,
 			Serial:             serial,
 			SizeBytes:          sizeBytes,
@@ -403,17 +557,21 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 			TemperatureC:       temp,
 			SpindownSeconds:    spindownSec,
 			ZfsPool:            poolName,
+			Pool:               poolName,
 			Slot:               slotIdx,
 			Enclosure:          fmt.Sprintf("Bay %02d (Front Hot-Swap)", slotIdx),
 			BusType:            busType,
 			SmartStatus:        smartStatus,
+			SmartLastTest:      smartLastTest,
 			PowerOnHours:       powerHours,
 			ReallocatedSectors: realloc,
 			PendingSectors:     pending,
 			LocateLed:          locateLed,
-			VdevType:           "assigned",
+			VdevType:           vdevType,
+			IsSystemDisk:       isSystem,
 			LastStateCheck:     time.Now(),
 		}
+		syncDiskFields(disk)
 
 		disks = append(disks, disk)
 		m.cachedDisks[name] = disk
@@ -424,11 +582,15 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 
 // checkStandbySafe runs 'hdparm -C' to query drive status without spinning it up
 func (m *Manager) checkStandbySafe(devPath string) DiskState {
-	cmd := exec.Command("hdparm", "-C", devPath)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "hdparm", "-C", devPath)
 	out, err := cmd.Output()
 	if err != nil {
 		// Fallback check: smartctl with -n standby
-		smartCmd := exec.Command("smartctl", "-n", "standby", "-i", devPath)
+		sCtx, sCancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer sCancel()
+		smartCmd := exec.CommandContext(sCtx, "smartctl", "-n", "standby", "-i", devPath)
 		_ = smartCmd.Run()
 		if smartCmd.ProcessState != nil && smartCmd.ProcessState.ExitCode() == 2 {
 			return StateStandby
@@ -448,18 +610,61 @@ func (m *Manager) checkStandbySafe(devPath string) DiskState {
 	return StateUnknown
 }
 
-// readSmartAttributesSafe reads SMART attributes without spinning up sleeping drives
-func (m *Manager) readSmartAttributesSafe(devPath string) (temp, powerOnHours, realloc, pending int, status string) {
+// readSmartAttributesSafe reads SMART attributes (ATA, NVMe, SAS) without spinning up sleeping drives
+func (m *Manager) readSmartAttributesSafe(devPath string) (temp, powerOnHours, realloc, pending int, status, lastTest string) {
 	temp = -1
 	status = "PASSED"
-	cmd := exec.Command("smartctl", "-n", "standby", "-A", devPath)
-	out, err := cmd.Output()
-	if err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "smartctl", "-n", "standby", "-a", devPath)
+	out, _ := cmd.Output()
+	if len(out) == 0 {
 		return
 	}
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := strings.TrimSpace(scanner.Text())
+		lower := strings.ToLower(line)
+
+		// Check overall health assessment
+		if strings.Contains(lower, "overall-health self-assessment test result:") || strings.Contains(lower, "smart health status:") {
+			if strings.Contains(lower, "failed") {
+				status = "FAILED"
+			} else if strings.Contains(lower, "passed") || strings.Contains(lower, "ok") {
+				status = "PASSED"
+			}
+		}
+
+		// Check NVMe / SAS temperature lines: e.g. "Temperature: 34 Celsius" or "Current Drive Temperature: 31 C"
+		if strings.HasPrefix(lower, "temperature:") || strings.HasPrefix(lower, "current drive temperature:") {
+			parts := strings.Fields(line)
+			for _, p := range parts {
+				if v, err := strconv.Atoi(strings.Trim(p, ",")); err == nil && v > 0 && v < 120 {
+					temp = v
+					break
+				}
+			}
+		}
+
+		// Check NVMe / SAS power on hours: e.g. "Power On Hours: 4,200"
+		if strings.HasPrefix(lower, "power on hours:") {
+			parts := strings.Fields(line)
+			if len(parts) > 0 {
+				cleanNum := strings.ReplaceAll(strings.ReplaceAll(parts[len(parts)-1], ",", ""), ".", "")
+				if v, err := strconv.Atoi(cleanNum); err == nil && v >= 0 {
+					powerOnHours = v
+				}
+			}
+		}
+
+		// Check self-test execution status
+		if strings.Contains(lower, "self-test routine in progress") || strings.Contains(lower, "of test remaining") {
+			lastTest = "Self-test in progress"
+		} else if strings.HasPrefix(line, "# 1") && lastTest == "" {
+			lastTest = strings.TrimSpace(strings.TrimPrefix(line, "# 1"))
+		}
+
+		// Parse ATA Attribute table (IDs 5, 9, 190/194, 197)
 		fields := strings.Fields(line)
 		if len(fields) >= 10 {
 			id, err1 := strconv.Atoi(fields[0])
@@ -487,6 +692,20 @@ func (m *Manager) readSmartAttributesSafe(devPath string) (temp, powerOnHours, r
 	return
 }
 
+func (m *Manager) findDiskLocked(devPath string) *DiskInfo {
+	devPath = strings.TrimSpace(devPath)
+	if devPath == "" {
+		return nil
+	}
+	diskName := filepath.Base(devPath)
+	for _, d := range m.cachedDisks {
+		if d.Path == devPath || d.ByIDPath == devPath || d.Name == devPath || d.Device == devPath || d.Name == diskName {
+			return d
+		}
+	}
+	return nil
+}
+
 // TriggerSmartTest triggers a short or long SMART self-test
 func (m *Manager) TriggerSmartTest(devPath, testType string) error {
 	m.mu.Lock()
@@ -496,16 +715,9 @@ func (m *Manager) TriggerSmartTest(devPath, testType string) error {
 		testType = "short"
 	}
 
-	diskName := filepath.Base(devPath)
-	var target *DiskInfo
-	for _, d := range m.cachedDisks {
-		if d.Path == devPath || d.ByIDPath == devPath || d.Name == devPath || d.Name == diskName {
-			target = d
-			break
-		}
-	}
-
+	target := m.findDiskLocked(devPath)
 	if target != nil {
+		devPath = target.Path
 		target.SmartStatus = fmt.Sprintf("TESTING (%s Self-Test running...)", strings.ToUpper(testType))
 		if m.mockMode {
 			go func(d *DiskInfo) {
@@ -519,16 +731,25 @@ func (m *Manager) TriggerSmartTest(devPath, testType string) error {
 	}
 
 	if m.mockMode {
+		if target == nil {
+			return fmt.Errorf("disk %s not found", devPath)
+		}
 		return nil
 	}
 
-	cmd := exec.Command("smartctl", "-t", testType, devPath)
+	if err := validate.DevicePath(devPath); err != nil {
+		return fmt.Errorf("invalid disk device path: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "smartctl", "-t", testType, devPath)
 	return cmd.Run()
 }
 
 // readTemperatureSafe uses smartctl with '-n standby' so it exits with code 2 if disk is sleeping!
 func (m *Manager) readTemperatureSafe(devPath string) int {
-	t, _, _, _, _ := m.readSmartAttributesSafe(devPath)
+	t, _, _, _, _, _ := m.readSmartAttributesSafe(devPath)
 	return t
 }
 
@@ -537,23 +758,31 @@ func (m *Manager) SetSpindown(devPath string, seconds int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	diskName := filepath.Base(devPath)
-	for _, d := range m.cachedDisks {
-		if d.Path == devPath || d.ByIDPath == devPath || d.Name == devPath || d.Name == diskName {
-			d.SpindownSeconds = seconds
-			devPath = d.Path
-			break
-		}
+	target := m.findDiskLocked(devPath)
+	if target != nil {
+		target.SpindownSeconds = seconds
+		target.SpindownTimeoutSeconds = seconds
+		devPath = target.Path
 	}
 
 	if m.mockMode {
+		if target == nil {
+			return fmt.Errorf("disk %s not found", devPath)
+		}
 		return nil
 	}
 
-	// hdparm standby value formula:
+	if err := validate.DevicePath(devPath); err != nil {
+		return fmt.Errorf("invalid disk device path: %w", err)
+	}
+
+	// hdparm standby value formula (-S):
 	// 0 = disabled
-	// 1-240 = value * 5 seconds (5s to 20 mins)
+	// 1-240 = multiples of 5 seconds (5s to 20 mins)
 	// 241-251 = 1 to 11 units of 30 minutes (30m to 5.5 hours)
+	// 252 = 21 minutes (vendor specific)
+	// 253 = vendor-defined timeout between 8 and 12 hours
+	// 255 = 21 minutes plus 15 seconds
 	var val int
 	if seconds <= 0 {
 		val = 0
@@ -561,14 +790,29 @@ func (m *Manager) SetSpindown(devPath string, seconds int) error {
 		val = seconds / 5
 		if val < 1 {
 			val = 1
+		} else if val > 240 {
+			val = 240
 		}
 	} else if seconds <= 19800 {
-		val = 240 + (seconds-1200)/1800
+		// 1800s (30m) -> 241, 3600s (1h) -> 242, ..., 19800s (5.5h) -> 251
+		units := (seconds + 899) / 1800
+		if units < 1 {
+			units = 1
+		} else if units > 11 {
+			units = 11
+		}
+		val = 240 + units
+	} else if seconds >= 28800 {
+		// Vendor-defined 8-12 hours
+		val = 253
 	} else {
-		val = 252 // 21 minutes
+		// Between 5.5h and 8h: cap at 251 (5.5h) instead of 252 (which means 21 minutes!)
+		val = 251
 	}
 
-	cmd := exec.Command("hdparm", "-S", fmt.Sprintf("%d", val), devPath)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "hdparm", "-S", fmt.Sprintf("%d", val), devPath)
 	_ = cmd.Run()
 
 	// Persist settings
@@ -581,21 +825,28 @@ func (m *Manager) ForceStandby(devPath string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	diskName := filepath.Base(devPath)
-	for _, d := range m.cachedDisks {
-		if d.Path == devPath || d.ByIDPath == devPath || d.Name == devPath || d.Name == diskName {
-			d.State = StateStandby
-			d.TemperatureC = -1
-			devPath = d.Path
-			break
-		}
+	target := m.findDiskLocked(devPath)
+	if target != nil {
+		target.State = StateStandby
+		target.PowerState = "STANDBY"
+		target.TemperatureC = -1
+		devPath = target.Path
 	}
 
 	if m.mockMode {
+		if target == nil {
+			return fmt.Errorf("disk %s not found", devPath)
+		}
 		return nil
 	}
 
-	cmd := exec.Command("hdparm", "-y", devPath)
+	if err := validate.DevicePath(devPath); err != nil {
+		return fmt.Errorf("invalid disk device path: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "hdparm", "-y", devPath)
 	return cmd.Run()
 }
 
@@ -604,15 +855,7 @@ func (m *Manager) ToggleLocate(devPath string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	diskName := filepath.Base(devPath)
-	var target *DiskInfo
-	for _, d := range m.cachedDisks {
-		if d.Path == devPath || d.ByIDPath == devPath || d.Name == devPath || d.Name == diskName {
-			target = d
-			break
-		}
-	}
-
+	target := m.findDiskLocked(devPath)
 	if target == nil {
 		return false, fmt.Errorf("disk %s not found", devPath)
 	}
@@ -623,15 +866,78 @@ func (m *Manager) ToggleLocate(devPath string) (bool, error) {
 		return target.LocateLed, nil
 	}
 
+	if err := validate.DevicePath(target.Path); err != nil {
+		return false, fmt.Errorf("invalid disk device path: %w", err)
+	}
+
 	// Real Linux: use ledctl locate or sas2ircu / smartctl activity
 	action := "off"
 	if target.LocateLed {
 		action = "locate"
 	}
-	cmd := exec.Command("ledctl", fmt.Sprintf("%s=%s", action, target.Path))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ledctl", fmt.Sprintf("%s=%s", action, target.Path))
 	_ = cmd.Run()
 
 	return target.LocateLed, nil
+}
+
+// WipeDisk erases partition tables and ZFS labels from an unallocated non-system disk
+func (m *Manager) WipeDisk(devPath, mode string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	target := m.findDiskLocked(devPath)
+	if target == nil {
+		return fmt.Errorf("disk '%s' not found", devPath)
+	}
+	if target.IsSystemDisk {
+		return fmt.Errorf("cannot wipe system/boot disk '%s'", target.Name)
+	}
+	if target.ZfsPool != "" || target.Pool != "" {
+		return fmt.Errorf("cannot wipe disk '%s' while it is assigned to active ZFS pool '%s'", target.Name, target.ZfsPool)
+	}
+
+	if m.mockMode {
+		target.VdevType = "unassigned (Wiped Clean)"
+		target.State = StateActive
+		target.PowerState = "ACTIVE"
+		return nil
+	}
+
+	if err := validate.DevicePath(target.Path); err != nil {
+		return fmt.Errorf("invalid disk device path: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Clear ZFS labels on whole disk and common ZFS partitions (part1, part9)
+	_ = exec.CommandContext(ctx, "zpool", "labelclear", "-f", target.Path).Run()
+	if strings.HasPrefix(target.Name, "nvme") {
+		_ = exec.CommandContext(ctx, "zpool", "labelclear", "-f", target.Path+"p1").Run()
+		_ = exec.CommandContext(ctx, "zpool", "labelclear", "-f", target.Path+"p9").Run()
+	} else {
+		_ = exec.CommandContext(ctx, "zpool", "labelclear", "-f", target.Path+"1").Run()
+		_ = exec.CommandContext(ctx, "zpool", "labelclear", "-f", target.Path+"9").Run()
+	}
+
+	if out, err := exec.CommandContext(ctx, "wipefs", "-a", "-f", target.Path).CombinedOutput(); err != nil {
+		return fmt.Errorf("wipefs failed on %s: %v (%s)", target.Path, err, strings.TrimSpace(string(out)))
+	}
+	_ = exec.CommandContext(ctx, "sgdisk", "--zap-all", target.Path).Run()
+
+	if mode == "zero" {
+		// Zero first 16 MiB
+		_ = exec.CommandContext(ctx, "dd", "if=/dev/zero", "of="+target.Path, "bs=1M", "count=16", "conv=notrunc").Run()
+	}
+
+	_ = exec.CommandContext(ctx, "partprobe", target.Path).Run()
+	_ = exec.CommandContext(ctx, "udevadm", "settle").Run()
+
+	target.VdevType = "unassigned (Wiped Clean)"
+	return nil
 }
 
 func (m *Manager) startMonitorLoop() {
@@ -639,7 +945,7 @@ func (m *Manager) startMonitorLoop() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		if m.mockMode || runtime.GOOS != "linux" {
+		if m.mockMode {
 			continue
 		}
 		m.mu.Lock()
@@ -649,11 +955,42 @@ func (m *Manager) startMonitorLoop() {
 				state := m.checkStandbySafe(d.Path)
 				d.State = state
 				if state == StateActive {
-					d.TemperatureC = m.readTemperatureSafe(d.Path)
+					temp, hours, realloc, pending, status, lastTest := m.readSmartAttributesSafe(d.Path)
+					d.TemperatureC = temp
+					if hours > 0 {
+						d.PowerOnHours = hours
+					}
+					d.ReallocatedSectors = realloc
+					d.PendingSectors = pending
+					if status != "" {
+						d.SmartStatus = status
+					}
+					if lastTest != "" {
+						d.SmartLastTest = lastTest
+					}
 				} else {
 					d.TemperatureC = -1
 				}
 				d.LastStateCheck = time.Now()
+				syncDiskFields(d)
+			} else {
+				temp, hours, realloc, pending, status, lastTest := m.readSmartAttributesSafe(d.Path)
+				if temp > 0 {
+					d.TemperatureC = temp
+				}
+				if hours > 0 {
+					d.PowerOnHours = hours
+				}
+				d.ReallocatedSectors = realloc
+				d.PendingSectors = pending
+				if status != "" {
+					d.SmartStatus = status
+				}
+				if lastTest != "" {
+					d.SmartLastTest = lastTest
+				}
+				d.LastStateCheck = time.Now()
+				syncDiskFields(d)
 			}
 		}
 		m.mu.Unlock()
@@ -662,7 +999,9 @@ func (m *Manager) startMonitorLoop() {
 
 func (m *Manager) buildDiskPoolMap() map[string]string {
 	res := make(map[string]string)
-	cmd := exec.Command("zpool", "status", "-P")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "zpool", "status", "-P")
 	out, err := cmd.Output()
 	if err != nil {
 		return res
@@ -678,10 +1017,12 @@ func (m *Manager) buildDiskPoolMap() map[string]string {
 			parts := strings.Fields(line)
 			if len(parts) >= 1 {
 				devName := filepath.Base(parts[0])
-				// Strip partition suffix (e.g. sda1 -> sda, nvme0n1p1 -> nvme0n1)
 				cleanDev := stripPartition(devName)
 				res[cleanDev] = currentPool
 				res[parts[0]] = currentPool
+				if resolved, err := filepath.EvalSymlinks(parts[0]); err == nil {
+					res[stripPartition(filepath.Base(resolved))] = currentPool
+				}
 			}
 		}
 	}
@@ -689,12 +1030,15 @@ func (m *Manager) buildDiskPoolMap() map[string]string {
 }
 
 func stripPartition(name string) string {
+	if idx := strings.Index(name, "-part"); idx > 0 {
+		return name[:idx]
+	}
 	if strings.HasPrefix(name, "nvme") {
 		idx := strings.LastIndex(name, "p")
-		if idx > 0 {
+		if idx > 4 {
 			return name[:idx]
 		}
-	} else if strings.HasPrefix(name, "sd") {
+	} else if strings.HasPrefix(name, "sd") || strings.HasPrefix(name, "vd") || strings.HasPrefix(name, "xvd") {
 		return strings.TrimRight(name, "0123456789")
 	}
 	return name
@@ -718,6 +1062,36 @@ func (m *Manager) buildByIDMap() map[string]string {
 			devName := filepath.Base(target)
 			if _, exists := res[devName]; !exists || !strings.HasPrefix(entry.Name(), "wwn-") {
 				res[devName] = fullPath
+			}
+		}
+	}
+	return res
+}
+
+func (m *Manager) buildSystemDiskMap() map[string]bool {
+	res := make(map[string]bool)
+	files := []string{"/proc/mounts", "/proc/swaps"}
+	for _, fPath := range files {
+		data, err := os.ReadFile(fPath)
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(bytes.NewReader(data))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if !strings.HasPrefix(line, "/dev/") {
+				continue
+			}
+			parts := strings.Fields(line)
+			if len(parts) >= 1 {
+				dev := filepath.Base(parts[0])
+				cleanDev := stripPartition(dev)
+				// If mounted as root, boot, or swap, it's a critical system drive
+				if fPath == "/proc/swaps" || (len(parts) >= 2 && (parts[1] == "/" || strings.HasPrefix(parts[1], "/boot"))) {
+					res[cleanDev] = true
+					res[dev] = true
+					res[parts[0]] = true
+				}
 			}
 		}
 	}

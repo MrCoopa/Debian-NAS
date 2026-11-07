@@ -40,6 +40,9 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
   nfs-kernel-server \
   hdparm \
   smartmontools \
+  gdisk \
+  parted \
+  util-linux \
   fio \
   rclone \
   golang-go
@@ -48,6 +51,9 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
 DEBIAN_FRONTEND=noninteractive apt-get install -y hd-idle ledmon || true
 
 echo "[+] 3/6: System-Optimierungen für HDD-Standby & ZFS..."
+# 0. Gruppe nasusers für Samba/NAS-Speicherzugriffe anlegen
+groupadd -f nasusers || true
+
 # 1. Samba conf.d Ordner erstellen
 mkdir -p /etc/samba/conf.d
 if ! grep -q "include = /etc/samba/conf.d/\*.conf" /etc/samba/smb.conf; then
@@ -61,8 +67,9 @@ fi
 # 2. NFS Exports Ordner
 mkdir -p /etc/exports.d
 
-# 3. Config-Verzeichnis für nasd
+# 3. Config-Verzeichnis für nasd (restriktive Rechte 0700)
 mkdir -p /etc/nas
+chmod 0700 /etc/nas
 
 # 4. hd-idle Spindown nach 15 Minuten (900 Sekunden) standardmäßig aktivieren
 cat << 'EOF' > /etc/default/hd-idle

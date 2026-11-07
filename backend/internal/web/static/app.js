@@ -49,12 +49,31 @@ function formatUptime(seconds) {
   return `${m}m`;
 }
 
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function setHtmlIfChanged(el, html) {
+  if (!el) return;
+  if (el._lastHtml === html) return;
+  el._lastHtml = html;
+  el.innerHTML = html;
+}
+
 function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
   if (!container) return;
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
-  toast.innerHTML = `<span>${message}</span>`;
+  const span = document.createElement('span');
+  span.textContent = message;
+  toast.appendChild(span);
   container.appendChild(toast);
   setTimeout(() => {
     toast.style.opacity = '0';
@@ -82,9 +101,10 @@ document.addEventListener('DOMContentLoaded', () => {
   setupDiskDrawer();
   setupDiagnostics();
 
-  // Initial fetch and 2-second telemetry loop
+  // Initial full load, 2-second dynamic telemetry loop, and 30-second static background sync
   refreshAll();
-  setInterval(refreshAll, 2000);
+  setInterval(refreshTelemetry, 2000);
+  setInterval(refreshStaticData, 30000);
 });
 
 // ==============================================================================
@@ -112,6 +132,21 @@ window.showTab = function (tab) {
   switchTab(tab);
 };
 
+window.rescanDisks = async function () {
+  showToast('Rescanning hardware block devices...', 'info');
+  try {
+    const res = await fetch(`${API_BASE}/disks?rescan=true`);
+    if (res.ok) {
+      state.disks = await res.json();
+      renderDisks();
+      renderDashboard();
+      showToast('Hardware block devices rescanned', 'info');
+    }
+  } catch (err) {
+    showToast(`Rescan failed: ${err.message}`, 'error');
+  }
+};
+
 window.switchTab = function (tab) {
   state.activeTab = tab;
   document.querySelectorAll('.nav-item').forEach((b) => {
@@ -130,32 +165,44 @@ window.switchTab = function (tab) {
   if (targetPane) {
     targetPane.classList.add('active');
   }
+
+  // Refresh relevant data immediately on tab activation
+  if (tab === 'shares') {
+    renderShares();
+    refreshStaticData();
+  } else if (tab === 'protection') {
+    renderProtection();
+    refreshStaticData();
+  } else if (tab === 'pools') {
+    renderPools();
+    refreshStaticData();
+  } else if (tab === 'disks') {
+    renderDisks();
+  } else if (tab === 'dashboard') {
+    renderDashboard();
+  } else if (tab === 'network') {
+    renderNetwork();
+  } else if (tab === 'system') {
+    renderSystem();
+  }
 };
 
 // ==============================================================================
-// Central Telemetry Refresh Engine
+// Telemetry & Data Refresh Engine (Standby & Polling Optimized)
 // ==============================================================================
-async function refreshAll() {
+
+// Fast 2-second telemetry loop (CPU, Disks cache, Pool status)
+async function refreshTelemetry() {
   try {
-    const [sys, disks, pools, datasets, smb, nfs, snaps, users] = await Promise.all([
+    const [sys, disks, pools] = await Promise.all([
       fetch(`${API_BASE}/system`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
       fetch(`${API_BASE}/disks`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
       fetch(`${API_BASE}/zfs/pools`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
-      fetch(`${API_BASE}/zfs/datasets`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
-      fetch(`${API_BASE}/shares/smb`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
-      fetch(`${API_BASE}/shares/nfs`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
-      fetch(`${API_BASE}/zfs/snapshots`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
-      fetch(`${API_BASE}/shares/users`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
     ]);
 
     if (sys) state.system = sys;
-    state.disks = Array.isArray(disks) ? disks : [];
-    state.pools = Array.isArray(pools) ? pools : [];
-    state.datasets = Array.isArray(datasets) ? datasets : [];
-    state.smbShares = Array.isArray(smb) ? smb : [];
-    state.nfsExports = Array.isArray(nfs) ? nfs : [];
-    state.snapshots = Array.isArray(snaps) ? snaps : [];
-    state.users = Array.isArray(users) ? users : [];
+    state.disks = (Array.isArray(disks) ? disks : []).sort((a, b) => (a.name || a.device || '').localeCompare(b.name || b.device || ''));
+    state.pools = (Array.isArray(pools) ? pools : []).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
     // Track rolling CPU history
     if (sys && sys.cpu) {
@@ -201,16 +248,62 @@ async function refreshAll() {
     }
 
     renderTopbar();
-    renderDashboard();
-    renderPools();
-    renderDisks();
-    renderShares();
-    renderProtection();
-    renderNetwork();
-    renderSystem();
+    if (state.activeTab === 'dashboard') {
+      renderDashboard();
+    } else if (state.activeTab === 'pools') {
+      renderPools();
+    } else if (state.activeTab === 'disks') {
+      renderDisks();
+    } else if (state.activeTab === 'network') {
+      renderNetwork();
+    } else if (state.activeTab === 'system') {
+      renderSystem();
+    }
   } catch (err) {
     console.error('Telemetry refresh error:', err);
   }
+}
+
+// Slower / On-demand refresh for static or expensive ZFS/Samba data
+async function refreshStaticData() {
+  try {
+    const [datasets, smb, nfs, snaps, users] = await Promise.all([
+      fetch(`${API_BASE}/zfs/datasets`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`${API_BASE}/shares/smb`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`${API_BASE}/shares/nfs`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`${API_BASE}/zfs/snapshots`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`${API_BASE}/shares/users`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+    ]);
+
+    state.datasets = (Array.isArray(datasets) ? datasets : []).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    state.smbShares = (Array.isArray(smb) ? smb : []).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    state.nfsExports = (Array.isArray(nfs) ? nfs : []).sort((a, b) => (a.path || '').localeCompare(b.path || ''));
+    state.snapshots = (Array.isArray(snaps) ? snaps : []).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    state.users = (Array.isArray(users) ? users : []).sort((a, b) => (a.username || '').localeCompare(b.username || ''));
+
+    if (state.activeTab === 'shares') {
+      renderShares();
+    } else if (state.activeTab === 'protection') {
+      renderProtection();
+    } else if (state.activeTab === 'pools') {
+      renderPools();
+    }
+  } catch (err) {
+    console.error('Static data refresh error:', err);
+  }
+}
+
+// Full refresh: combines telemetry and static data (invoked on init, mutations, or manual refresh)
+async function refreshAll() {
+  await Promise.all([refreshTelemetry(), refreshStaticData()]);
+  renderTopbar();
+  renderDashboard();
+  renderPools();
+  renderDisks();
+  renderShares();
+  renderProtection();
+  renderNetwork();
+  renderSystem();
 }
 
 // ==============================================================================
@@ -466,6 +559,12 @@ function renderDiskFilterPills() {
   const container = document.getElementById('disk-selector-pills');
   if (!container) return;
 
+  const pillSignature = state.disks.map((d) => d.device || d.name).join(',') + ':' + state.selectedDiskTarget;
+  if (container.dataset.renderedState === pillSignature) {
+    return;
+  }
+  container.dataset.renderedState = pillSignature;
+
   const isAll = state.selectedDiskTarget === 'all';
   let html = `<button class="disk-pill ${isAll ? 'active' : ''}" onclick="selectDiskGraph('all')">All Disks (Aggregate)</button>`;
 
@@ -528,11 +627,11 @@ function renderProDiskMatrix() {
   const devMap = (sys && sys.disk_io && sys.disk_io.devices) ? sys.disk_io.devices : {};
 
   if (!state.disks || state.disks.length === 0) {
-    grid.innerHTML = `<span class="text-dim" style="font-size: 0.78rem;">Scanning physical disks...</span>`;
+    setHtmlIfChanged(grid, `<span class="text-dim" style="font-size: 0.78rem;">Scanning physical disks...</span>`);
     return;
   }
 
-  grid.innerHTML = state.disks
+  const html = state.disks
     .map((disk, idx) => {
       const diskKey = String(disk.name || disk.device || '');
       let devStats = null;
@@ -590,6 +689,8 @@ function renderProDiskMatrix() {
       `;
     })
     .join('');
+
+  setHtmlIfChanged(grid, html);
 }
 
 function renderDashboardPoolsTable() {
@@ -597,22 +698,27 @@ function renderDashboardPoolsTable() {
   if (!tbody) return;
 
   if (state.pools.length === 0) {
-    tbody.innerHTML = `
+    setHtmlIfChanged(
+      tbody,
+      `
       <tr>
         <td colspan="6" class="text-dim" style="text-align: center; padding: 1.5rem;">
           No OpenZFS storage pools configured yet. Click "Manage Pools" to create one.
         </td>
       </tr>
-    `;
+    `
+    );
     return;
   }
 
-  tbody.innerHTML = state.pools
+  const html = state.pools
     .map((p) => {
-      const isOnline = p.health === 'ONLINE';
-      const healthBadge = isOnline
-        ? `<span class="badge-status green">ONLINE</span>`
-        : `<span class="badge-status red">${p.health || 'FAULTED'}</span>`;
+      const healthBadge =
+        p.health === 'ONLINE'
+          ? `<span class="badge-status green">ONLINE</span>`
+          : p.health === 'DEGRADED'
+          ? `<span class="badge-status amber">DEGRADED</span>`
+          : `<span class="badge-status red">${p.health || 'FAULTED'}</span>`;
 
       const alloc = p.alloc_human || formatBytes(p.allocated || p.allocated_bytes || 0);
       const cap = p.size_human || formatBytes(p.size_bytes || 0);
@@ -641,6 +747,8 @@ function renderDashboardPoolsTable() {
     `;
     })
     .join('');
+
+  setHtmlIfChanged(tbody, html);
 }
 
 // ==============================================================================
@@ -651,7 +759,9 @@ function renderPools() {
   if (!container) return;
 
   if (state.pools.length === 0) {
-    container.innerHTML = `
+    setHtmlIfChanged(
+      container,
+      `
       <div class="table-card" style="padding: 2.5rem; text-align: center;">
         <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">No Active ZFS Storage Pools</h3>
         <p class="text-dim" style="margin-bottom: 1.5rem; max-width: 450px; margin-left: auto; margin-right: auto;">
@@ -659,16 +769,19 @@ function renderPools() {
         </p>
         <button class="btn btn-primary" onclick="openCreatePoolModal()">+ Create New Storage Pool</button>
       </div>
-    `;
+    `
+    );
     return;
   }
 
-  container.innerHTML = state.pools
+  const html = state.pools
     .map((p) => {
-      const isOnline = p.health === 'ONLINE';
-      const healthBadge = isOnline
-        ? `<span class="badge-status green">ONLINE</span>`
-        : `<span class="badge-status red">${p.health || 'FAULTED'}</span>`;
+      const healthBadge =
+        p.health === 'ONLINE'
+          ? `<span class="badge-status green">ONLINE</span>`
+          : p.health === 'DEGRADED'
+          ? `<span class="badge-status amber">DEGRADED</span>`
+          : `<span class="badge-status red">${p.health || 'FAULTED'}</span>`;
 
       const alloc = p.alloc_human || formatBytes(p.allocated || p.allocated_bytes || 0);
       const cap = p.size_human || formatBytes(p.size_bytes || 0);
@@ -678,24 +791,35 @@ function renderPools() {
 
       const poolDatasets = state.datasets.filter((ds) => ds.pool === p.name || ds.name.startsWith(p.name + '/'));
 
-      const vdevRows = (p.vdevs || [])
+      const diskVdevs = (p.vdevs || []).filter(
+        (v) => v.is_disk !== false && !/^(mirror|raidz\d?|logs|cache|special|spares|draid)(-|$)/i.test(v.name || '')
+      );
+
+      const vdevRows = diskVdevs
         .map((v) => {
-          const isOnline = v.state === 'ONLINE';
-          const roleBadge = v.type === 'log'
-            ? `<span class="badge-status amber">SLOG (Write Log)</span>`
-            : v.type === 'cache'
-            ? `<span class="badge-status blue">L2ARC (Read Cache)</span>`
-            : v.type === 'special'
-            ? `<span class="badge-status green">Special (Metadata)</span>`
-            : v.type === 'spare'
-            ? `<span class="badge-status slate">Hot Spare</span>`
-            : `<span class="badge-status slate">${v.type || 'mirror'}</span>`;
+          const vState = v.state || v.health || 'ONLINE';
+          const isOnline = vState === 'ONLINE';
+          const roleKey = (v.role || v.type || 'mirror').toLowerCase();
+          const roleBadge =
+            roleKey === 'log' || roleKey.startsWith('logs')
+              ? `<span class="badge-status amber">SLOG (Write Log)</span>`
+              : roleKey === 'cache'
+              ? `<span class="badge-status blue">L2ARC (Read Cache)</span>`
+              : roleKey === 'special'
+              ? `<span class="badge-status green">Special (Metadata)</span>`
+              : roleKey === 'spare' || roleKey === 'spares'
+              ? `<span class="badge-status slate">Hot Spare</span>`
+              : `<span class="badge-status slate">${escapeHtml(v.role || v.type || 'data')}</span>`;
+
+          const diskInfo = state.disks.find((d) => d.name === v.name || d.device === v.name || d.path === v.path);
+          const diskBytes = v.size_bytes || (diskInfo ? diskInfo.size_bytes : 0);
 
           const diskActions = isOnline
             ? `
               <button class="btn btn-secondary btn-xs" onclick="offlineDisk('${p.name}', '${v.name}')" title="Offline this disk">Offline</button>
               <button class="btn btn-secondary btn-xs" onclick="openDiskActionModal('${p.name}', '${v.name}', 'replace')" title="Replace disk">Replace</button>
               <button class="btn btn-secondary btn-xs" onclick="openDiskActionModal('${p.name}', '${v.name}', 'attach')" title="Attach mirror member">Attach Mirror</button>
+              <button class="btn btn-danger btn-xs" onclick="detachDisk('${p.name}', '${v.name}')" title="Detach disk from mirror">Detach</button>
             `
             : `
               <button class="btn btn-secondary btn-xs" onclick="onlineDisk('${p.name}', '${v.name}')" title="Bring disk online">Online</button>
@@ -707,15 +831,15 @@ function renderPools() {
           <tr>
             <td>
               <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <span class="font-mono" style="font-weight: 700; color: #ffffff;">${v.name}</span>
-                <span class="text-dim font-mono" style="font-size: 0.7rem;">(${v.path || '/dev/' + v.name})</span>
+                <span class="font-mono" style="font-weight: 700; color: #ffffff;">${escapeHtml(v.name)}</span>
+                <span class="text-dim font-mono" style="font-size: 0.7rem;">(${escapeHtml(v.path || '/dev/' + v.name)})</span>
               </div>
             </td>
             <td>${roleBadge}</td>
-            <td>${formatBytes(v.size_bytes || 0)}</td>
+            <td>${diskBytes > 0 ? formatBytes(diskBytes) : '--'}</td>
             <td><span class="font-mono ${v.read_errors > 0 ? 'text-amber' : 'text-dim'}">${v.read_errors || 0}</span></td>
-            <td><span class="font-mono ${v.write_errors > 0 ? 'text-amber' : 'text-dim'}">${v.write_errors || 0}</span></td>
-            <td><span class="badge-status ${isOnline ? 'green' : 'amber'}">${v.state || 'ONLINE'}</span></td>
+            <td><span class="font-mono ${(v.write_errors || 0) + (v.cksum_errors || 0) > 0 ? 'text-amber' : 'text-dim'}">${v.write_errors || 0}${v.cksum_errors ? ` (cksum: ${v.cksum_errors})` : ''}</span></td>
+            <td><span class="badge-status ${isOnline ? 'green' : 'amber'}">${escapeHtml(vState)}</span></td>
             <td class="col-actions">
               <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
                 ${diskActions}
@@ -728,35 +852,38 @@ function renderPools() {
 
       const datasetRows = poolDatasets
         .map((ds) => {
-          const isZvol = ds.mountpoint && (ds.mountpoint.startsWith('/dev/zvol') || ds.mountpoint === '-');
+          const isZvol = ds.type === 'volume' || (ds.mountpoint && (ds.mountpoint.startsWith('/dev/zvol') || ds.mountpoint === '-'));
           const typeBadge = isZvol
             ? `<span class="badge-status amber">Block Zvol</span>`
             : `<span class="badge-status blue">Filesystem</span>`;
+          const roBadge = ds.readonly === 'on' ? `<span class="badge-status amber" title="Immutable Read-Only Dataset">RO</span>` : '';
 
           return `
           <tr>
             <td>
               <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <strong class="font-mono text-blue">${ds.name}</strong>
+                <strong class="font-mono text-blue">${escapeHtml(ds.name)}</strong>
                 ${typeBadge}
+                ${roBadge}
               </div>
             </td>
-            <td><span class="font-mono text-dim" style="font-size: 0.72rem;">${ds.mountpoint || '-'}</span></td>
+            <td><span class="font-mono text-dim" style="font-size: 0.72rem;">${escapeHtml(ds.mountpoint || '-')}</span></td>
             <td><strong>${ds.used_human || formatBytes(ds.used_bytes || 0)}</strong></td>
             <td>${ds.avail_human || formatBytes(ds.available_bytes || 0)}</td>
-            <td><span class="badge-status slate">${ds.compression || 'lz4'}</span></td>
+            <td><span class="badge-status slate">${escapeHtml(ds.compression || 'lz4')}</span></td>
             <td>
               <div style="font-size: 0.72rem;">
-                <span class="text-dim">atime:</span> <strong class="font-mono">${ds.atime || 'off'}</strong>
-                ${ds.recordsize ? `• <span class="text-dim">bs:</span> <span class="font-mono">${ds.recordsize}</span>` : ''}
+                <span class="text-dim">atime:</span> <strong class="font-mono">${escapeHtml(ds.atime || 'off')}</strong>
+                ${ds.recordsize ? `• <span class="text-dim">bs:</span> <span class="font-mono">${escapeHtml(ds.recordsize)}</span>` : ''}
+                ${ds.quota && ds.quota !== 'none' ? `• <span class="text-dim">quota:</span> <strong class="font-mono text-amber">${escapeHtml(ds.quota)}</strong>` : ''}
               </div>
             </td>
             <td class="col-actions">
               <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
-                <button class="btn btn-secondary btn-sm" onclick="promptCreateShare('${ds.name.split('/').pop()}', '${ds.mountpoint || '/' + ds.name}')" title="Share via SMB or NFS">Share</button>
-                <button class="btn btn-secondary btn-sm" onclick="promptCreateSnapshot('${ds.name}')">Snapshot</button>
-                <button class="btn btn-secondary btn-sm" onclick="openDatasetPropsModal('${ds.name}')">Properties</button>
-                <button class="btn btn-danger btn-sm" onclick="destroyDataset('${ds.name}')">Delete</button>
+                ${!isZvol ? `<button class="btn btn-secondary btn-sm" onclick="promptCreateShare('${escapeHtml(ds.name.split('/').pop())}', '${escapeHtml(ds.mountpoint || '/' + ds.name)}')" title="Share via SMB or NFS">Share</button>` : ''}
+                <button class="btn btn-secondary btn-sm" onclick="promptCreateSnapshot('${escapeHtml(ds.name)}')">Snapshot</button>
+                <button class="btn btn-secondary btn-sm" onclick="openDatasetPropsModal('${escapeHtml(ds.name)}')">Properties</button>
+                <button class="btn btn-danger btn-sm" onclick="destroyDataset('${escapeHtml(ds.name)}')">Delete</button>
               </div>
             </td>
           </tr>
@@ -764,19 +891,39 @@ function renderPools() {
         })
         .join('');
 
-      const isScrubbing = p.scrub_status && p.scrub_status.toLowerCase().includes('in progress');
+      const isScrubbing = Boolean(
+        (p.scrub && p.scrub.active) || (p.scrub_status && p.scrub_status.toLowerCase().includes('in progress'))
+      );
+      const scrubPct = p.scrub && p.scrub.percentage !== undefined ? p.scrub.percentage : 0;
       const scrubBtn = isScrubbing
-        ? `<button class="btn btn-warning btn-sm" onclick="stopScrub('${p.name}')">Stop Scrub</button>`
+        ? `<button class="btn btn-warning btn-sm" onclick="stopScrub('${p.name}')">Stop Scrub (${scrubPct.toFixed(1)}%)</button>`
         : `<button class="btn btn-secondary btn-sm" onclick="scrubPool('${p.name}')">Scrub Pool</button>`;
+
+      const scrubBanner = p.scrub_status
+        ? `
+          <div style="display: flex; justify-content: space-between; align-items: center; background: var(--pf-bg-input); border: 1px solid var(--pf-border-color); border-radius: var(--pf-radius-sm); padding: 0.5rem 0.75rem; margin-bottom: 1rem; font-size: 0.76rem;">
+            <div>
+              <strong class="text-dim">Data Integrity Scrub:</strong>
+              <span class="font-mono ${isScrubbing ? 'text-amber' : 'text-green'}" style="margin-left: 0.4rem;">${escapeHtml(p.scrub_status)}</span>
+            </div>
+            ${
+              isScrubbing
+                ? `<div class="meter-track" style="width: 140px; margin: 0;"><div class="meter-bar amber" style="width: ${Math.min(100, scrubPct)}%"></div></div>`
+                : `<span class="badge-status green" style="font-size: 0.65rem;">0 Checksum Errors</span>`
+            }
+          </div>
+        `
+        : '';
 
       return `
       <div class="pool-card">
         <div class="pool-header">
           <div class="pool-identity">
-            <h2>${p.name}</h2>
+            <h2>${escapeHtml(p.name)}</h2>
             ${healthBadge}
-            <span class="badge-status slate">${p.topology || 'ZFS Native Pool'}</span>
+            <span class="badge-status slate">${escapeHtml(p.topology || 'ZFS Native Pool')}</span>
             ${p.autotrim === 'on' ? '<span class="badge-status green">Autotrim ON</span>' : ''}
+            ${p.autoexpand === 'on' ? '<span class="badge-status blue">Autoexpand ON</span>' : ''}
           </div>
           <div class="toolbar-actions">
             ${scrubBtn}
@@ -808,6 +955,8 @@ function renderPools() {
               <span class="val">${frag}</span>
             </div>
           </div>
+
+          ${scrubBanner}
 
           <!-- Capacity Bar -->
           <div style="margin-bottom: 1.25rem;">
@@ -860,7 +1009,7 @@ function renderPools() {
                   <th>Role</th>
                   <th>Capacity</th>
                   <th>Read Errors</th>
-                  <th>Write Errors</th>
+                  <th>Write / Checksum Errors</th>
                   <th>State</th>
                   <th class="col-actions">Disk Actions</th>
                 </tr>
@@ -875,6 +1024,8 @@ function renderPools() {
     `;
     })
     .join('');
+
+  setHtmlIfChanged(container, html);
 }
 
 // ==============================================================================
@@ -891,11 +1042,11 @@ function setupDiskDrawer() {
         const res = await fetch(`${API_BASE}/disks/spindown`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ device: state.selectedDisk.device, timeout_seconds: timeout }),
+          body: JSON.stringify({ device: state.selectedDisk.device || state.selectedDisk.name, timeout_seconds: timeout }),
         });
         if (res.ok) {
           showToast(`Spindown timeout for ${state.selectedDisk.name} updated to ${timeout}s`, 'info');
-          audit(`Configured spindown timeout ${timeout}s on ${state.selectedDisk.device}`);
+          audit(`Configured spindown timeout ${timeout}s on ${state.selectedDisk.device || state.selectedDisk.name}`);
           refreshAll();
         }
       } catch (err) {
@@ -908,26 +1059,75 @@ function setupDiskDrawer() {
   const btnDrawerSmart = document.getElementById('btn-drawer-smart');
   if (btnDrawerSmart) {
     btnDrawerSmart.addEventListener('click', () => {
-      if (state.selectedDisk) runSmartTest(state.selectedDisk.device);
+      if (state.selectedDisk) runSmartTest(state.selectedDisk.device || state.selectedDisk.name, 'short');
+    });
+  }
+
+  const btnDrawerSmartLong = document.getElementById('btn-drawer-smart-long');
+  if (btnDrawerSmartLong) {
+    btnDrawerSmartLong.addEventListener('click', () => {
+      if (state.selectedDisk) runSmartTest(state.selectedDisk.device || state.selectedDisk.name, 'long');
     });
   }
 
   const btnDrawerStandby = document.getElementById('btn-drawer-standby');
   if (btnDrawerStandby) {
     btnDrawerStandby.addEventListener('click', () => {
-      if (state.selectedDisk) forceStandby(state.selectedDisk.device);
+      if (state.selectedDisk) forceStandby(state.selectedDisk.device || state.selectedDisk.name);
     });
   }
 
   const btnDrawerLocate = document.getElementById('btn-drawer-locate');
   if (btnDrawerLocate) {
     btnDrawerLocate.addEventListener('click', () => {
-      if (state.selectedDisk) toggleLocate(state.selectedDisk.device);
+      if (state.selectedDisk) toggleLocate(state.selectedDisk.device || state.selectedDisk.name);
+    });
+  }
+
+  const btnDrawerWipe = document.getElementById('btn-drawer-wipe');
+  if (btnDrawerWipe) {
+    btnDrawerWipe.addEventListener('click', () => {
+      if (state.selectedDisk) wipeDisk(state.selectedDisk.device || state.selectedDisk.name);
     });
   }
 }
 
+function updateSelectedDiskDrawer() {
+  if (!state.selectedDisk) return;
+  const key = state.selectedDisk.name || state.selectedDisk.device;
+  const fresh = state.disks.find((d) => d.name === key || d.device === key);
+  if (!fresh) return;
+  state.selectedDisk = fresh;
+
+  const nameEl = document.getElementById('drawer-disk-name');
+  const pathEl = document.getElementById('drawer-disk-path');
+  const byIdEl = document.getElementById('drawer-disk-byid');
+  const poolEl = document.getElementById('drawer-disk-pool');
+  const hoursEl = document.getElementById('drawer-disk-hours');
+  const smartTestEl = document.getElementById('drawer-disk-smart-test');
+  const spindownSelect = document.getElementById('drawer-spindown-select');
+
+  if (nameEl) nameEl.textContent = `${fresh.model || fresh.name} (${formatBytes(fresh.size_bytes || 0)})`;
+  if (pathEl) pathEl.textContent = fresh.path || ('/dev/' + (fresh.device || fresh.name));
+  if (byIdEl) byIdEl.textContent = fresh.by_id_path || fresh.serial || '-';
+  if (poolEl) {
+    if (fresh.is_system_disk) {
+      poolEl.textContent = 'OS / Boot Disk';
+    } else if (fresh.zfs_pool || fresh.pool) {
+      poolEl.textContent = `${fresh.zfs_pool || fresh.pool} (${fresh.vdev_type || 'member'})`;
+    } else {
+      poolEl.textContent = 'Unallocated';
+    }
+  }
+  if (hoursEl) hoursEl.textContent = fresh.power_on_hours ? `${fresh.power_on_hours} Hours` : 'N/A';
+  if (smartTestEl) smartTestEl.textContent = fresh.smart_last_test || 'None recorded';
+  if (spindownSelect && fresh.spindown_timeout_seconds !== undefined && document.activeElement !== spindownSelect) {
+    spindownSelect.value = String(fresh.spindown_timeout_seconds);
+  }
+}
+
 function renderDisks() {
+  updateSelectedDiskDrawer();
   renderDisksTable();
 }
 
@@ -936,54 +1136,72 @@ function renderDisksTable() {
   if (!tbody) return;
 
   if (state.disks.length === 0) {
-    tbody.innerHTML = `
+    setHtmlIfChanged(
+      tbody,
+      `
       <tr>
         <td colspan="10" class="text-dim" style="text-align: center; padding: 1.5rem;">
           No physical block devices detected. Checking controller bus...
         </td>
       </tr>
-    `;
+    `
+    );
     return;
   }
 
-  tbody.innerHTML = state.disks
+  const html = state.disks
     .map((d) => {
       const devKey = d.name || d.device;
       const tableDiskStandby = d.state === 'STANDBY' || d.state === 'SLEEPING' || d.power_state === 'STANDBY' || d.power_state === 'SLEEP';
       const powerBadge = tableDiskStandby
         ? `<span class="badge-status amber">STANDBY (0W)</span>`
         : `<span class="badge-status green">ACTIVE</span>`;
+      const locateBadge = d.locate_led
+        ? ` <span class="badge-status amber" title="Enclosure Locate LED Blinking">LOCATE ON</span>`
+        : '';
 
-      const smartBadge =
-        d.smart_status && d.smart_status.includes('PASSED')
-          ? `<span class="badge-status green">${d.smart_status}</span>`
-          : d.smart_status && d.smart_status.includes('FAILED')
-          ? `<span class="badge-status red">FAILED</span>`
-          : `<span class="badge-status slate">${d.smart_status || 'OK'}</span>`;
+      const smartTestRunning = d.smart_last_test && d.smart_last_test.toLowerCase().includes('in progress');
+      const smartBadge = smartTestRunning
+        ? `<span class="badge-status amber" title="${escapeHtml(d.smart_last_test)}">TESTING...</span>`
+        : d.smart_status && (d.smart_status.includes('PASSED') || d.smart_status === 'HEALTHY')
+        ? `<span class="badge-status green" title="${escapeHtml(d.smart_last_test || 'SMART Healthy')}">${escapeHtml(d.smart_status)}</span>`
+        : d.smart_status && d.smart_status.includes('FAILED')
+        ? `<span class="badge-status red">FAILED</span>`
+        : `<span class="badge-status slate">${escapeHtml(d.smart_status || 'OK')}</span>`;
 
       const cap = d.size_human || formatBytes(d.size_bytes || 0);
       const isSelected = state.selectedDisk && (state.selectedDisk.name === devKey || state.selectedDisk.device === devKey);
+      const inPool = Boolean(d.zfs_pool || d.pool);
+      const poolCell = d.is_system_disk
+        ? `<span class="badge-status amber">OS / Boot</span>`
+        : inPool
+        ? `<span class="badge-status blue">${escapeHtml(d.zfs_pool || d.pool)}</span> <span class="text-dim" style="font-size:0.7rem;">(${escapeHtml(d.vdev_type || 'vdev')})</span>`
+        : '<span class="text-dim">Unallocated</span>';
 
       return `
       <tr style="cursor: pointer; ${isSelected ? 'background: rgba(0, 102, 204, 0.08);' : ''}" onclick="selectDisk('${devKey}')">
-        <td><strong class="font-mono text-blue">${devKey}</strong></td>
-        <td>${d.model || 'Unknown Model'} <span class="text-dim">(${d.vendor || 'Generic'})</span></td>
-        <td><span class="font-mono text-dim">${d.serial || '-'}</span></td>
+        <td><strong class="font-mono text-blue">${escapeHtml(devKey)}</strong>${locateBadge}</td>
+        <td>${escapeHtml(d.model || 'Unknown Model')} <span class="text-dim">(${escapeHtml(d.vendor || 'Generic')})</span></td>
+        <td><span class="font-mono text-dim">${escapeHtml(d.serial || '-')}</span></td>
         <td><strong>${cap}</strong></td>
-        <td><span class="badge-status slate">${d.bus_type || d.type || 'SATA'}</span></td>
-        <td>${d.zfs_pool || d.pool ? `<span class="badge-status blue">${d.zfs_pool || d.pool}</span>` : '<span class="text-dim">Unallocated</span>'}</td>
-        <td><span class="font-mono">${d.temperature_c !== undefined && d.temperature_c >= 0 ? d.temperature_c + ' °C' : '--'}</span></td>
+        <td><span class="badge-status slate">${escapeHtml(d.bus_type || d.type || 'SATA')}</span></td>
+        <td>${poolCell}</td>
+        <td><span class="font-mono">${d.temperature_c !== undefined && d.temperature_c > 0 ? d.temperature_c + ' °C' : '--'}</span></td>
         <td>${powerBadge}</td>
         <td>${smartBadge}</td>
         <td class="col-actions" onclick="event.stopPropagation()">
           <button class="btn btn-secondary btn-sm" onclick="selectDisk('${devKey}')">Inspect</button>
           <button class="btn btn-secondary btn-sm" onclick="forceStandby('${devKey}')" title="Spin down HDD (0W)">Standby</button>
-          <button class="btn btn-secondary btn-sm" onclick="runSmartTest('${devKey}')">SMART</button>
+          <button class="btn btn-secondary btn-sm" onclick="runSmartTest('${devKey}', 'short')">SMART</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleLocate('${devKey}')" title="Blink drive bay LED">Locate</button>
+          ${!inPool && !d.is_system_disk ? `<button class="btn btn-danger btn-sm" onclick="wipeDisk('${devKey}')" title="Quick wipe ZFS labels &amp; partition table">Wipe</button>` : ''}
         </td>
       </tr>
     `;
     })
     .join('');
+
+  setHtmlIfChanged(tbody, html);
 }
 
 window.selectDisk = function (device) {
@@ -994,22 +1212,8 @@ window.selectDisk = function (device) {
   const drawer = document.getElementById('disk-drawer-card');
   if (drawer) {
     drawer.style.display = 'block';
-
-    const nameEl = document.getElementById('drawer-disk-name');
-    const pathEl = document.getElementById('drawer-disk-path');
-    const byIdEl = document.getElementById('drawer-disk-byid');
-    const hoursEl = document.getElementById('drawer-disk-hours');
-    const spindownSelect = document.getElementById('drawer-spindown-select');
-
-    if (nameEl) nameEl.textContent = `${disk.model || disk.name} (${formatBytes(disk.size_bytes || 0)})`;
-    if (pathEl) pathEl.textContent = disk.device || disk.path || '-';
-    if (byIdEl) byIdEl.textContent = disk.by_id_path || disk.serial || '-';
-    if (hoursEl) hoursEl.textContent = disk.power_on_hours ? `${disk.power_on_hours} Hours` : 'N/A';
-    if (spindownSelect && disk.spindown_timeout_seconds !== undefined) {
-      spindownSelect.value = String(disk.spindown_timeout_seconds);
-    }
   }
-
+  updateSelectedDiskDrawer();
   renderDisksTable();
 };
 
@@ -1025,25 +1229,29 @@ window.forceStandby = async function (device) {
       audit(`Direct hdparm spindown triggered on block device ${device}`);
       refreshAll();
     } else {
-      showToast('Standby command failed', 'error');
+      const err = await res.json().catch(() => ({}));
+      showToast(`Standby command failed: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
     showToast('Failed to contact daemon', 'error');
   }
 };
 
-window.runSmartTest = async function (device) {
+window.runSmartTest = async function (device, testType = 'short') {
   try {
-    showToast(`SMART short self-test scheduled for ${device}`, 'info');
-    audit(`Initiated smartctl short background test on ${device}`);
+    showToast(`SMART ${testType} self-test scheduled for ${device}`, 'info');
+    audit(`Initiated smartctl ${testType} background test on ${device}`);
     const res = await fetch(`${API_BASE}/disks/smart-test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device, test_type: 'short' }),
+      body: JSON.stringify({ device, type: testType, test_type: testType }),
     });
     if (res.ok) {
-      showToast(`SMART test started for ${device}`, 'info');
+      showToast(`SMART ${testType} test started for ${device}`, 'info');
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`SMART test failed: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
     showToast('Failed to start SMART test', 'error');
@@ -1060,9 +1268,33 @@ window.toggleLocate = async function (device) {
     if (res.ok) {
       showToast(`Toggled chassis LED locator for ${device}`, 'info');
       audit(`Toggled enclosure LED locate pin on ${device}`);
+      refreshAll();
     }
   } catch (err) {
     showToast('Failed to toggle locate LED', 'error');
+  }
+};
+
+window.wipeDisk = async function (device) {
+  if (!confirm(`WARNING: Wipe all partition tables and ZFS labels on disk "${device}"?\n\nThis will erase existing filesystem signatures so the disk can be cleanly reused.`)) {
+    return;
+  }
+  try {
+    const res = await fetch(`${API_BASE}/disks/wipe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device, mode: 'quick' }),
+    });
+    if (res.ok) {
+      showToast(`Disk ${device} wiped cleanly (ZFS labels & GPT cleared)`, 'info');
+      audit(`Wiped partition tables and ZFS labels on ${device}`);
+      refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Disk wipe failed: ${err.error || res.statusText}`, 'error');
+    }
+  } catch (err) {
+    showToast(`Disk wipe failed: ${err.message}`, 'error');
   }
 };
 
@@ -1077,9 +1309,9 @@ function renderNetwork() {
   const tbody = document.getElementById('network-ifaces-table-body');
   if (tbody) {
     if (ifaces.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" class="text-dim" style="text-align: center; padding: 1.5rem;">No network interfaces discovered.</td></tr>`;
+      setHtmlIfChanged(tbody, `<tr><td colspan="7" class="text-dim" style="text-align: center; padding: 1.5rem;">No network interfaces discovered.</td></tr>`);
     } else {
-      tbody.innerHTML = ifaces
+      const html = ifaces
         .map((n) => {
           const isUp = n.state === 'UP';
           return `
@@ -1095,6 +1327,7 @@ function renderNetwork() {
         `;
         })
         .join('');
+      setHtmlIfChanged(tbody, html);
     }
   }
 
@@ -1177,32 +1410,39 @@ function renderShares() {
       let html = '';
 
       state.smbShares.forEach((s) => {
+        const safeName = escapeHtml(s.name);
+        const safePath = escapeHtml(s.path);
+        const safeUsers = s.valid_users && s.valid_users.length ? escapeHtml(s.valid_users.join(', ')) : 'All Authenticated';
+        const encName = encodeURIComponent(s.name);
         html += `
           <tr>
             <td><span class="badge-status blue">SMB / CIFS</span></td>
-            <td><strong>${s.name}</strong></td>
-            <td><span class="font-mono text-dim">${s.path}</span></td>
+            <td><strong>${safeName}</strong></td>
+            <td><span class="font-mono text-dim">${safePath}</span></td>
             <td><span class="badge-status ${s.read_only ? 'slate' : 'green'}">${s.read_only ? 'Read Only' : 'Read / Write'}</span></td>
-            <td>${s.valid_users && s.valid_users.length ? s.valid_users.join(', ') : 'All Authenticated'}</td>
+            <td>${safeUsers}</td>
             <td><span class="badge-status green">Active</span></td>
             <td class="col-actions">
-              <button class="btn btn-danger btn-sm" onclick="deleteSmbShare('${s.name}')">Delete</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteSmbShare(decodeURIComponent('${encName}'))">Delete</button>
             </td>
           </tr>
         `;
       });
 
       state.nfsExports.forEach((n) => {
+        const safePath = escapeHtml(n.path);
+        const safeClients = escapeHtml(n.allowed_clients || n.allowed_hosts || '*');
+        const encPath = encodeURIComponent(n.path);
         html += `
           <tr>
             <td><span class="badge-status amber">NFSv4</span></td>
-            <td><strong>${n.path.split('/').pop() || 'Export'}</strong></td>
-            <td><span class="font-mono text-dim">${n.path}</span></td>
+            <td><strong>${escapeHtml(n.path.split('/').pop() || 'Export')}</strong></td>
+            <td><span class="font-mono text-dim">${safePath}</span></td>
             <td><span class="badge-status ${n.read_only ? 'slate' : 'green'}">${n.read_only ? 'Read Only' : 'Read / Write'}</span></td>
-            <td>${n.allowed_hosts || '*'}</td>
+            <td>${safeClients}</td>
             <td><span class="badge-status green">Active</span></td>
             <td class="col-actions">
-              <button class="btn btn-danger btn-sm" onclick="deleteNfsExport('${n.path}')">Delete</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteNfsExport(decodeURIComponent('${encPath}'))">Delete</button>
             </td>
           </tr>
         `;
@@ -1226,15 +1466,17 @@ function renderShares() {
     } else {
       usersBody.innerHTML = state.users
         .map((u) => {
+          const safeUser = escapeHtml(u.username);
+          const encUser = encodeURIComponent(u.username);
           return `
           <tr>
-            <td><strong class="font-mono text-blue">${u.username}</strong></td>
-            <td><span class="font-mono text-dim">${u.uid || 1000}</span></td>
+            <td><strong class="font-mono text-blue">${safeUser}</strong></td>
+            <td><span class="font-mono text-dim">${escapeHtml(u.uid || 1000)}</span></td>
             <td><span class="badge-status green">Enabled</span></td>
-            <td><span class="font-mono text-dim">${u.primary_group || 'storage'}</span></td>
-            <td class="text-dim">${u.created_at || 'Native'}</td>
+            <td><span class="font-mono text-dim">${escapeHtml(u.primary_group || 'nasusers')}</span></td>
+            <td class="text-dim">${escapeHtml(u.created_at || 'Native')}</td>
             <td class="col-actions">
-              <button class="btn btn-danger btn-sm" onclick="deleteStorageUser('${u.username}')">Delete</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteStorageUser(decodeURIComponent('${encUser}'))">Delete</button>
             </td>
           </tr>
         `;
@@ -1590,6 +1832,21 @@ function openDangerConfirmModal(type, targetName) {
   const input = document.getElementById('input-danger-confirm');
   const warning = document.getElementById('danger-modal-warning');
 
+  // Find any active network shares pointing to this pool/dataset
+  const ds = (state.datasets || []).find((d) => d.name === targetName);
+  const targetMount = ds && ds.mountpoint ? ds.mountpoint : `/${targetName}`;
+  const linkedSmb = (state.smbShares || []).filter((s) => s.path === targetMount || s.path.startsWith(targetMount + '/'));
+  const linkedNfs = (state.nfsExports || []).filter((n) => n.path === targetMount || n.path.startsWith(targetMount + '/'));
+
+  let sharesWarning = '';
+  if (linkedSmb.length > 0 || linkedNfs.length > 0) {
+    const shareList = [
+      ...linkedSmb.map((s) => `SMB: ${escapeHtml(s.name)} (${escapeHtml(s.path)})`),
+      ...linkedNfs.map((n) => `NFS: ${escapeHtml(n.path)}`),
+    ].join('<br>');
+    sharesWarning = `<div style="margin-top:0.75rem; padding:0.5rem; background:rgba(239,68,68,0.15); border:1px solid #ef4444; border-radius:4px; font-size:0.75rem; color:#fca5a5;"><strong>Warning:</strong> Active shares are mounted on this target and will be removed:<br>${shareList}</div>`;
+  }
+
   if (!modal) {
     if (confirm(`DANGER: Destroy ${type} "${targetName}"? This will permanently delete all data!`)) {
       executeDirectDestroy(type, targetName);
@@ -1600,15 +1857,15 @@ function openDangerConfirmModal(type, targetName) {
   if (type === 'pool') {
     title.innerHTML = `
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-      Destroy Storage Pool "${targetName}"
+      Destroy Storage Pool "${escapeHtml(targetName)}"
     `;
-    warning.innerHTML = `Destroying storage pool <strong>${targetName}</strong> will unmount and permanently erase ALL datasets, zvols, and snapshots residing on it. This action cannot be undone.`;
+    warning.innerHTML = `Destroying storage pool <strong>${escapeHtml(targetName)}</strong> will unmount and permanently erase ALL datasets, zvols, and snapshots residing on it. This action cannot be undone.${sharesWarning}`;
   } else {
     title.innerHTML = `
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-      Destroy Dataset "${targetName}"
+      Destroy Dataset "${escapeHtml(targetName)}"
     `;
-    warning.innerHTML = `Destroying dataset <strong>${targetName}</strong> will permanently delete this filesystem and any child snapshots/datasets.`;
+    warning.innerHTML = `Destroying dataset <strong>${escapeHtml(targetName)}</strong> will permanently delete this filesystem and any child snapshots/datasets.${sharesWarning}`;
   }
 
   if (targetDisplay) targetDisplay.textContent = targetName;
@@ -1618,6 +1875,12 @@ function openDangerConfirmModal(type, targetName) {
 }
 
 async function executeDirectDestroy(type, targetName) {
+  // Find linked shares to clean up after destroy
+  const ds = (state.datasets || []).find((d) => d.name === targetName);
+  const targetMount = ds && ds.mountpoint ? ds.mountpoint : `/${targetName}`;
+  const linkedSmb = (state.smbShares || []).filter((s) => s.path === targetMount || s.path.startsWith(targetMount + '/'));
+  const linkedNfs = (state.nfsExports || []).filter((n) => n.path === targetMount || n.path.startsWith(targetMount + '/'));
+
   if (type === 'pool') {
     try {
       showToast(`Destroying pool ${targetName}...`, 'info');
@@ -1629,6 +1892,15 @@ async function executeDirectDestroy(type, targetName) {
       if (res.ok) {
         showToast(`Pool ${targetName} permanently destroyed`, 'info');
         audit(`PERMANENT ACTION: ZFS pool destroyed: ${targetName}`);
+
+        // Cleanup linked shares from state and backend
+        for (const s of linkedSmb) {
+          await fetch(`${API_BASE}/shares/smb?name=${encodeURIComponent(s.name)}`, { method: 'DELETE' }).catch(() => {});
+        }
+        for (const n of linkedNfs) {
+          await fetch(`${API_BASE}/shares/nfs?path=${encodeURIComponent(n.path)}`, { method: 'DELETE' }).catch(() => {});
+        }
+
         state.pools = (state.pools || []).filter((p) => p.name !== targetName);
         state.datasets = (state.datasets || []).filter(
           (ds) => ds.pool !== targetName && !ds.name.startsWith(targetName + '/')
@@ -1654,6 +1926,15 @@ async function executeDirectDestroy(type, targetName) {
       if (res.ok) {
         showToast(`Dataset ${targetName} destroyed`, 'info');
         audit(`Destroyed ZFS dataset: ${targetName}`);
+
+        // Cleanup linked shares from state and backend
+        for (const s of linkedSmb) {
+          await fetch(`${API_BASE}/shares/smb?name=${encodeURIComponent(s.name)}`, { method: 'DELETE' }).catch(() => {});
+        }
+        for (const n of linkedNfs) {
+          await fetch(`${API_BASE}/shares/nfs?path=${encodeURIComponent(n.path)}`, { method: 'DELETE' }).catch(() => {});
+        }
+
         state.datasets = (state.datasets || []).filter(
           (ds) => ds.name !== targetName && !ds.name.startsWith(targetName + '/')
         );
@@ -1783,13 +2064,23 @@ function setupModals() {
       } else {
         diskBox.innerHTML = state.disks
           .map((d) => {
-            const diskVal = d.name || d.device || (d.path ? d.path.replace('/dev/', '') : '');
+            const diskVal = d.by_id_path || d.path || ('/dev/' + (d.name || d.device));
+            const inUse = Boolean(d.zfs_pool || d.pool || d.is_system_disk);
+            let badge = '<span class="badge-status green" style="font-size:0.68rem;">Available</span>';
+            if (d.is_system_disk) {
+              badge = '<span class="badge-status amber" style="font-size:0.68rem;">OS / Boot Protected</span>';
+            } else if (d.zfs_pool || d.pool) {
+              badge = `<span class="badge-status blue" style="font-size:0.68rem;">In Pool: ${escapeHtml(d.zfs_pool || d.pool)}</span>`;
+            }
+            const disabled = inUse ? 'disabled' : '';
+            const dimStyle = inUse ? 'opacity: 0.55; cursor: not-allowed;' : '';
             return `
-            <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.78rem;">
-              <input type="checkbox" name="pool_disks" value="${diskVal}">
-              <strong class="font-mono text-blue">${d.name || d.device}</strong>
-              <span>${d.model || ''}</span>
+            <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; font-size: 0.78rem; ${dimStyle}">
+              <input type="checkbox" name="pool_disks" value="${escapeHtml(diskVal)}" ${disabled}>
+              <strong class="font-mono text-blue">${escapeHtml(d.name || d.device)}</strong>
+              <span>${escapeHtml(d.model || '')}</span>
               <span class="text-blue font-mono">(${formatBytes(d.size_bytes || 0)})</span>
+              ${badge}
             </label>
           `;
           })
@@ -1842,6 +2133,14 @@ function setupModals() {
   const btnCloseShare = document.getElementById('btn-close-share');
   const btnCancelShare = document.getElementById('btn-cancel-share');
   const formCreateShare = document.getElementById('form-create-share');
+  const selectShareProto = document.getElementById('select-share-proto');
+  const groupNfsClients = document.getElementById('group-nfs-clients');
+
+  if (selectShareProto && groupNfsClients) {
+    selectShareProto.addEventListener('change', () => {
+      groupNfsClients.style.display = selectShareProto.value === 'nfs' ? 'block' : 'none';
+    });
+  }
 
   function populateSharePathSuggestions() {
     const datalist = document.getElementById('share-path-suggestions');
@@ -1897,10 +2196,12 @@ function setupModals() {
 
         if (proto === 'nfs') {
           endpoint = `${API_BASE}/shares/nfs`;
+          const nfsInput = document.getElementById('input-nfs-clients');
+          const clients = nfsInput && nfsInput.value.trim() ? nfsInput.value.trim() : '*';
           payload = {
             path,
-            allowed_clients: '*',
-            allowed_hosts: '*',
+            allowed_clients: clients,
+            allowed_hosts: clients,
             read_only: access === 'readonly',
           };
         }
@@ -2054,14 +2355,22 @@ function setupModals() {
         diskBox.innerHTML = state.disks
           .map((d) => {
             const diskVal = d.name || d.device || (d.path ? d.path.replace('/dev/', '') : '');
-            const isAssigned = d.pool && d.pool !== '';
+            const inUse = Boolean(d.zfs_pool || d.pool || d.is_system_disk);
+            let badge = '<span class="badge-status green" style="font-size: 0.65rem;">Available</span>';
+            if (d.is_system_disk) {
+              badge = '<span class="badge-status amber" style="font-size: 0.65rem;">OS / Boot Protected</span>';
+            } else if (d.zfs_pool || d.pool) {
+              badge = `<span class="badge-status slate" style="font-size: 0.65rem;">in ${escapeHtml(d.zfs_pool || d.pool)}</span>`;
+            }
+            const disabled = inUse ? 'disabled' : '';
+            const dimStyle = inUse ? 'opacity: 0.55; cursor: not-allowed;' : '';
             return `
-            <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.78rem;">
-              <input type="checkbox" name="vdev_disks" value="${diskVal}">
-              <strong class="font-mono text-blue">${d.name || d.device}</strong>
-              <span>${d.model || ''}</span>
+            <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.78rem; ${dimStyle}">
+              <input type="checkbox" name="vdev_disks" value="${escapeHtml(diskVal)}" ${disabled}>
+              <strong class="font-mono text-blue">${escapeHtml(d.name || d.device)}</strong>
+              <span>${escapeHtml(d.model || '')}</span>
               <span class="text-blue font-mono">(${formatBytes(d.size_bytes || 0)})</span>
-              ${isAssigned ? `<span class="badge-status slate" style="font-size: 0.65rem;">in ${d.pool}</span>` : '<span class="badge-status green" style="font-size: 0.65rem;">Available</span>'}
+              ${badge}
             </label>
           `;
           })
@@ -2098,8 +2407,8 @@ function setupModals() {
           formAddVdev.reset();
           refreshAll();
         } else {
-          const err = await res.text();
-          showToast(`Failed to add VDEV: ${err}`, 'error');
+          const err = await res.json().catch(() => ({}));
+          showToast(`Failed to add VDEV: ${err.error || res.statusText}`, 'error');
         }
       } catch (err) {
         showToast('Error adding VDEV', 'error');
@@ -2139,14 +2448,14 @@ function setupModals() {
 
     const selectTarget = document.getElementById('select-da-new-dev');
     if (selectTarget) {
-      const candidates = state.disks.filter((d) => (d.name || d.device) !== device);
+      const candidates = state.disks.filter((d) => (d.name || d.device) !== device && !d.is_system_disk && !(d.zfs_pool || d.pool));
       if (candidates.length === 0) {
-        selectTarget.innerHTML = `<option value="">No other physical disks available</option>`;
+        selectTarget.innerHTML = `<option value="">No unallocated replacement disks available</option>`;
       } else {
         selectTarget.innerHTML = candidates
           .map((d) => {
             const diskVal = d.name || d.device || (d.path ? d.path.replace('/dev/', '') : '');
-            return `<option value="${diskVal}">${d.name || d.device} - ${d.model || ''} (${formatBytes(d.size_bytes || 0)})</option>`;
+            return `<option value="${escapeHtml(diskVal)}">${escapeHtml(d.name || d.device)} - ${escapeHtml(d.model || '')} (${formatBytes(d.size_bytes || 0)}) [Available]</option>`;
           })
           .join('');
       }
@@ -2166,7 +2475,7 @@ function setupModals() {
       const action = document.getElementById('input-da-action').value;
       const newDev = document.getElementById('select-da-new-dev').value;
 
-      if (!newDev) return alert('Please select a target disk');
+      if (!newDev) return alert('Please select an unallocated target disk');
 
       try {
         let endpoint = `${API_BASE}/zfs/pools/disk/replace`;
@@ -2189,8 +2498,8 @@ function setupModals() {
           audit(`Disk ${action}: ${oldDev} -> ${newDev} in pool ${pool}`);
           refreshAll();
         } else {
-          const err = await res.text();
-          showToast(`Disk operation failed: ${err}`, 'error');
+          const err = await res.json().catch(() => ({}));
+          showToast(`Disk operation failed: ${err.error || res.statusText}`, 'error');
         }
       } catch (err) {
         showToast('Error executing disk operation', 'error');
@@ -2222,6 +2531,8 @@ function setupModals() {
       const rawName = document.getElementById('input-ds-name').value.trim();
       const compression = document.getElementById('select-ds-compression').value;
       const recordsize = document.getElementById('select-ds-recordsize').value;
+      const atimeEl = document.getElementById('select-ds-atime');
+      const atime = atimeEl ? atimeEl.value : 'off';
 
       if (!rawName) return alert('Dataset name is required');
       const fullName = `${pool}/${rawName}`;
@@ -2230,18 +2541,18 @@ function setupModals() {
         const res = await fetch(`${API_BASE}/zfs/datasets`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: fullName, compression, recordsize }),
+          body: JSON.stringify({ name: fullName, compression, recordsize, atime }),
         });
 
         if (res.ok) {
           modalDataset.classList.remove('open');
           showToast(`Dataset ${fullName} created successfully`, 'info');
-          audit(`Created ZFS dataset: ${fullName} (compression=${compression}, recordsize=${recordsize})`);
+          audit(`Created ZFS dataset: ${fullName} (compression=${compression}, recordsize=${recordsize}, atime=${atime})`);
           formCreateDataset.reset();
           refreshAll();
         } else {
-          const err = await res.text();
-          showToast(`Failed to create dataset: ${err}`, 'error');
+          const err = await res.json().catch(() => ({}));
+          showToast(`Failed to create dataset: ${err.error || res.statusText}`, 'error');
         }
       } catch (err) {
         showToast('Error creating dataset', 'error');
@@ -2305,8 +2616,8 @@ function setupModals() {
           formCreateZvol.reset();
           refreshAll();
         } else {
-          const err = await res.text();
-          showToast(`Failed to create zvol: ${err}`, 'error');
+          const err = await res.json().catch(() => ({}));
+          showToast(`Failed to create zvol: ${err.error || res.statusText}`, 'error');
         }
       } catch (err) {
         showToast('Error creating zvol', 'error');
@@ -2328,6 +2639,7 @@ function setupModals() {
     const p = state.pools.find((x) => x.name === poolName);
     if (p) {
       document.getElementById('select-pp-autotrim').value = p.autotrim === 'on' ? 'on' : 'off';
+      document.getElementById('select-pp-autoexpand').value = p.autoexpand === 'off' ? 'off' : 'on';
     }
     modalPoolProps.classList.add('open');
   };
@@ -2377,8 +2689,24 @@ function setupModals() {
 
     const ds = state.datasets.find((d) => d.name === datasetName);
     if (ds) {
-      if (ds.compression) document.getElementById('select-dp-compression').value = ds.compression;
-      if (ds.atime) document.getElementById('select-dp-atime').value = ds.atime;
+      const compEl = document.getElementById('select-dp-compression');
+      const recEl = document.getElementById('select-dp-recordsize');
+      const quotaEl = document.getElementById('input-dp-quota');
+      const atimeEl = document.getElementById('select-dp-atime');
+      const roEl = document.getElementById('select-dp-readonly');
+      const isZvol = ds.type === 'volume' || (ds.mountpoint && ds.mountpoint.startsWith('/dev/zvol'));
+
+      if (compEl && ds.compression) compEl.value = ds.compression;
+      if (recEl) {
+        recEl.disabled = Boolean(isZvol);
+        if (ds.recordsize) recEl.value = ds.recordsize.toUpperCase();
+      }
+      if (quotaEl) quotaEl.value = ds.quota && ds.quota !== 'none' ? ds.quota : 'none';
+      if (atimeEl) {
+        atimeEl.disabled = Boolean(isZvol);
+        atimeEl.value = ds.atime || 'off';
+      }
+      if (roEl) roEl.value = ds.readonly || 'off';
     }
     modalDsProps.classList.add('open');
   };
@@ -2391,8 +2719,11 @@ function setupModals() {
       e.preventDefault();
       const dataset = document.getElementById('input-dp-name').value;
       const compression = document.getElementById('select-dp-compression').value;
+      const recEl = document.getElementById('select-dp-recordsize');
+      const recordsize = recEl && !recEl.disabled ? recEl.value : '';
       const quota = document.getElementById('input-dp-quota').value.trim();
-      const atime = document.getElementById('select-dp-atime').value;
+      const atimeEl = document.getElementById('select-dp-atime');
+      const atime = atimeEl && !atimeEl.disabled ? atimeEl.value : '';
       const readonly = document.getElementById('select-dp-readonly').value;
 
       try {
@@ -2401,11 +2732,20 @@ function setupModals() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ dataset, property: 'compression', value: compression }),
         });
-        await fetch(`${API_BASE}/zfs/datasets/property`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dataset, property: 'atime', value: atime }),
-        });
+        if (recordsize) {
+          await fetch(`${API_BASE}/zfs/datasets/property`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dataset, property: 'recordsize', value: recordsize }),
+          });
+        }
+        if (atime) {
+          await fetch(`${API_BASE}/zfs/datasets/property`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dataset, property: 'atime', value: atime }),
+          });
+        }
         await fetch(`${API_BASE}/zfs/datasets/property`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2467,8 +2807,8 @@ function setupModals() {
           audit(`Cloned snapshot ${snapshot} -> ${targetDataset}`);
           refreshAll();
         } else {
-          const err = await res.text();
-          showToast(`Failed to clone snapshot: ${err}`, 'error');
+          const err = await res.json().catch(() => ({}));
+          showToast(`Failed to clone snapshot: ${err.error || res.statusText}`, 'error');
         }
       } catch (err) {
         showToast('Error cloning snapshot', 'error');
@@ -2522,6 +2862,9 @@ window.stopScrub = async function (pool) {
       showToast(`Scrub stopped on ${pool}`, 'info');
       audit(`Stopped pool scrub: ${pool}`);
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Failed to stop scrub: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
     showToast('Failed to stop scrub', 'error');
@@ -2540,6 +2883,9 @@ window.offlineDisk = async function (pool, device) {
       showToast(`Disk ${device} set to OFFLINE`, 'info');
       audit(`zpool offline ${pool} ${device}`);
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Failed to offline disk: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
     showToast('Failed to offline disk', 'error');
@@ -2557,6 +2903,9 @@ window.onlineDisk = async function (pool, device) {
       showToast(`Disk ${device} brought ONLINE`, 'info');
       audit(`zpool online ${pool} ${device}`);
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Failed to bring disk online: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
     showToast('Failed to online disk', 'error');
@@ -2575,6 +2924,9 @@ window.detachDisk = async function (pool, device) {
       showToast(`Disk ${device} detached from mirror`, 'info');
       audit(`zpool detach ${pool} ${device}`);
       refreshAll();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(`Failed to detach disk: ${err.error || res.statusText}`, 'error');
     }
   } catch (err) {
     showToast('Failed to detach disk', 'error');

@@ -3,15 +3,48 @@ package zfs
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"debian-nas/internal/validate"
 )
+
+const (
+	fastZfsTimeout    = 10 * time.Second
+	defaultZfsTimeout = 25 * time.Second
+	longZfsTimeout    = 120 * time.Second
+)
+
+func runCommand(timeout time.Duration, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("command '%s %s' timed out after %v", name, strings.Join(args, " "), timeout)
+	}
+	return out, err
+}
+
+func runCommandOutput(timeout time.Duration, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	out, err := cmd.Output()
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("command '%s %s' timed out after %v", name, strings.Join(args, " "), timeout)
+	}
+	return out, err
+}
 
 type PoolHealth string
 
@@ -24,10 +57,17 @@ const (
 )
 
 type Vdev struct {
-	Name   string `json:"name"`
-	Type   string `json:"type"` // disk, mirror, raidz1, raidz2
-	Health string `json:"health"`
-	Path   string `json:"path,omitempty"`
+	Name        string `json:"name"`
+	Type        string `json:"type"` // disk, mirror, raidz1, raidz2, log, cache, special, spare
+	Role        string `json:"role"` // e.g. "mirror-0", "raidz1-0", "stripe", "log", "cache", "special", "spare"
+	Health      string `json:"health"`
+	State       string `json:"state"`
+	Path        string `json:"path,omitempty"`
+	SizeBytes   uint64 `json:"size_bytes"`
+	ReadErrors  uint64 `json:"read_errors"`
+	WriteErrors uint64 `json:"write_errors"`
+	CksumErrors uint64 `json:"cksum_errors"`
+	IsDisk      bool   `json:"is_disk"`
 }
 
 type ScrubStatus struct {
@@ -44,6 +84,7 @@ type ScrubStatus struct {
 type Pool struct {
 	Name          string      `json:"name"`
 	Health        PoolHealth  `json:"health"`
+	Topology      string      `json:"topology"`
 	SizeBytes     uint64      `json:"size_bytes"`
 	SizeHuman     string      `json:"size_human"`
 	Allocated     uint64      `json:"allocated"`
@@ -54,30 +95,187 @@ type Pool struct {
 	CapPercent    int         `json:"cap_percent"`
 	Vdevs         []Vdev      `json:"vdevs"`
 	Scrub         ScrubStatus `json:"scrub"`
+	ScrubStatus   string      `json:"scrub_status"`
 	AtimeDefault  string      `json:"atime_default"`
+	Autotrim      string      `json:"autotrim"`
+	Autoexpand    string      `json:"autoexpand"`
+	Compression   string      `json:"compression"`
 }
 
 type Dataset struct {
-	Name        string            `json:"name"`
-	Pool        string            `json:"pool"`
-	Mountpoint  string            `json:"mountpoint"`
-	UsedBytes   uint64            `json:"used_bytes"`
-	UsedHuman   string            `json:"used_human"`
-	AvailBytes  uint64            `json:"avail_bytes"`
-	AvailHuman  string            `json:"avail_human"`
-	Compression string            `json:"compression"`
-	Atime       string            `json:"atime"`
-	RecordSize  string            `json:"recordsize"`
-	Snapshots   int               `json:"snapshots_count"`
-	Properties  map[string]string `json:"properties,omitempty"`
+	Name           string            `json:"name"`
+	Pool           string            `json:"pool"`
+	Type           string            `json:"type"` // filesystem or volume
+	Mountpoint     string            `json:"mountpoint"`
+	UsedBytes      uint64            `json:"used_bytes"`
+	UsedHuman      string            `json:"used_human"`
+	AvailBytes     uint64            `json:"avail_bytes"`
+	AvailableBytes uint64            `json:"available_bytes"`
+	AvailHuman     string            `json:"avail_human"`
+	Quota          string            `json:"quota"`
+	ReadOnly       string            `json:"readonly"`
+	Compression    string            `json:"compression"`
+	Atime          string            `json:"atime"`
+	RecordSize     string            `json:"recordsize"`
+	Sync           string            `json:"sync"`
+	Snapshots      int               `json:"snapshots_count"`
+	Properties     map[string]string `json:"properties,omitempty"`
 }
 
 type Snapshot struct {
-	Name       string    `json:"name"`
-	Dataset    string    `json:"dataset"`
-	Created    time.Time `json:"created"`
-	UsedHuman  string    `json:"used_human"`
-	Referenced string    `json:"referenced"`
+	Name            string    `json:"name"`
+	Dataset         string    `json:"dataset"`
+	Created         time.Time `json:"created"`
+	UsedBytes       uint64    `json:"used_bytes"`
+	UsedHuman       string    `json:"used_human"`
+	ReferencedBytes uint64    `json:"referenced_bytes"`
+	Referenced      string    `json:"referenced"`
+}
+
+func syncPoolFields(p *Pool) {
+	if p == nil {
+		return
+	}
+	if p.Autotrim == "" {
+		p.Autotrim = "off"
+	}
+	if p.Autoexpand == "" {
+		p.Autoexpand = "on"
+	}
+	if p.AtimeDefault == "" {
+		p.AtimeDefault = "off"
+	}
+
+	var currentGroup string
+	hasMirror := false
+	hasRaidz1 := false
+	hasRaidz2 := false
+	hasRaidz3 := false
+	diskCount := 0
+	offlineCount := 0
+
+	for i := range p.Vdevs {
+		v := &p.Vdevs[i]
+		if v.Health == "" && v.State != "" {
+			v.Health = v.State
+		}
+		if v.Health == "" {
+			v.Health = "ONLINE"
+		}
+		v.State = v.Health
+
+		isGroup := strings.HasPrefix(v.Name, "mirror") || strings.HasPrefix(v.Name, "raidz") ||
+			v.Name == "logs" || v.Name == "cache" || v.Name == "special" || v.Name == "spares" || v.Name == "dedup"
+		v.IsDisk = !isGroup
+
+		if isGroup {
+			currentGroup = v.Name
+			if strings.HasPrefix(v.Name, "mirror") {
+				hasMirror = true
+			} else if strings.HasPrefix(v.Name, "raidz1") {
+				hasRaidz1 = true
+			} else if strings.HasPrefix(v.Name, "raidz2") {
+				hasRaidz2 = true
+			} else if strings.HasPrefix(v.Name, "raidz3") {
+				hasRaidz3 = true
+			}
+		} else {
+			diskCount++
+			if v.Health != "ONLINE" && v.Type != "spare" {
+				offlineCount++
+			}
+			if v.Role == "" {
+				if v.Type == "log" || v.Type == "cache" || v.Type == "special" || v.Type == "spare" {
+					v.Role = v.Type
+				} else if currentGroup != "" {
+					v.Role = currentGroup
+				} else if v.Type != "" && v.Type != "disk" {
+					v.Role = v.Type
+				} else {
+					v.Role = "stripe"
+				}
+			}
+			if v.SizeBytes == 0 && p.SizeBytes > 0 {
+				v.SizeBytes = p.SizeBytes
+			}
+			if v.Path == "" {
+				v.Path = "/dev/" + v.Name
+			}
+		}
+	}
+
+	if p.Topology == "" {
+		switch {
+		case hasRaidz3:
+			p.Topology = fmt.Sprintf("RAID-Z3 (%d Disks)", diskCount)
+		case hasRaidz2:
+			p.Topology = fmt.Sprintf("RAID-Z2 (%d Disks)", diskCount)
+		case hasRaidz1:
+			p.Topology = fmt.Sprintf("RAID-Z1 (%d Disks)", diskCount)
+		case hasMirror:
+			p.Topology = fmt.Sprintf("MIRROR (%d Disks)", diskCount)
+		case diskCount == 1:
+			p.Topology = "SINGLE DISK"
+		default:
+			p.Topology = fmt.Sprintf("STRIPE (%d Disks)", diskCount)
+		}
+	}
+
+	if offlineCount > 0 {
+		if hasMirror || hasRaidz1 || hasRaidz2 || hasRaidz3 {
+			if offlineCount >= diskCount {
+				p.Health = HealthFaulted
+			} else {
+				p.Health = HealthDegraded
+			}
+		} else {
+			p.Health = HealthFaulted
+		}
+	} else if p.Health == HealthDegraded || p.Health == HealthOffline {
+		p.Health = HealthOnline
+	}
+
+	if p.Scrub.Active {
+		speed := p.Scrub.Speed
+		if speed == "" {
+			speed = "480 MB/s"
+		}
+		p.ScrubStatus = fmt.Sprintf("IN PROGRESS (%.1f%% done, %s)", p.Scrub.Percentage, speed)
+	} else if !p.Scrub.LastRun.IsZero() {
+		p.ScrubStatus = fmt.Sprintf("COMPLETED (%d errors on %s)", p.Scrub.Errors, p.Scrub.LastRun.Format("2006-01-02 15:04"))
+	} else {
+		p.ScrubStatus = "IDLE (0 errors)"
+	}
+}
+
+func syncDatasetFields(ds *Dataset) {
+	if ds == nil {
+		return
+	}
+	if ds.Type == "" {
+		if strings.HasPrefix(ds.Mountpoint, "/dev/zvol") || ds.Mountpoint == "-" {
+			ds.Type = "volume"
+		} else {
+			ds.Type = "filesystem"
+		}
+	}
+	if ds.AvailableBytes == 0 && ds.AvailBytes > 0 {
+		ds.AvailableBytes = ds.AvailBytes
+	} else if ds.AvailBytes == 0 && ds.AvailableBytes > 0 {
+		ds.AvailBytes = ds.AvailableBytes
+	}
+	if ds.Quota == "" {
+		ds.Quota = "none"
+	}
+	if ds.ReadOnly == "" {
+		ds.ReadOnly = "off"
+	}
+	if ds.Atime == "" {
+		ds.Atime = "off"
+	}
+	if ds.Sync == "" {
+		ds.Sync = "standard"
+	}
 }
 
 type ImportablePool struct {
@@ -125,6 +323,7 @@ func (m *Manager) initMockZFS() {
 		"DATA": {
 			Name:          "DATA",
 			Health:        HealthOnline,
+			Topology:      "MIRROR (2 Disks)",
 			SizeBytes:     2000398934016,
 			SizeHuman:     "1.82 TiB",
 			Allocated:     348356784128,
@@ -134,10 +333,13 @@ func (m *Manager) initMockZFS() {
 			Fragmentation: 1,
 			CapPercent:    18,
 			AtimeDefault:  "off",
+			Autotrim:      "off",
+			Autoexpand:    "on",
+			Compression:   "lz4",
 			Vdevs: []Vdev{
-				{Name: "mirror-0", Type: "mirror", Health: "ONLINE"},
-				{Name: "sda", Type: "disk", Health: "ONLINE", Path: "/dev/disk/by-id/ata-WDC_WD20EFAX-68B29N0_WD-WCC4M123"},
-				{Name: "sdb", Type: "disk", Health: "ONLINE", Path: "/dev/disk/by-id/ata-WDC_WD20EFAX-68B29N0_WD-WCC4M124"},
+				{Name: "mirror-0", Type: "mirror", Health: "ONLINE", State: "ONLINE", IsDisk: false},
+				{Name: "sda", Type: "disk", Role: "mirror-0", Health: "ONLINE", State: "ONLINE", SizeBytes: 2000398934016, Path: "/dev/disk/by-id/ata-WDC_WD20EFAX-68B29N0_WD-WCC4M123", IsDisk: true},
+				{Name: "sdb", Type: "disk", Role: "mirror-0", Health: "ONLINE", State: "ONLINE", SizeBytes: 2000398934016, Path: "/dev/disk/by-id/ata-WDC_WD20EFAX-68B29N0_WD-WCC4M124", IsDisk: true},
 			},
 			Scrub: ScrubStatus{
 				Active:     false,
@@ -149,6 +351,7 @@ func (m *Manager) initMockZFS() {
 		"MEDIA-12TB": {
 			Name:          "MEDIA-12TB",
 			Health:        HealthOnline,
+			Topology:      "SINGLE DISK",
 			SizeBytes:     11852504285184,
 			SizeHuman:     "10.78 TiB",
 			Allocated:     3507421839360,
@@ -158,8 +361,11 @@ func (m *Manager) initMockZFS() {
 			Fragmentation: 3,
 			CapPercent:    30,
 			AtimeDefault:  "off",
+			Autotrim:      "off",
+			Autoexpand:    "on",
+			Compression:   "lz4",
 			Vdevs: []Vdev{
-				{Name: "sdc", Type: "disk", Health: "ONLINE", Path: "/dev/disk/by-id/ata-TOSHIBA_MG08ACA12TE_20E0A099"},
+				{Name: "sdc", Type: "disk", Role: "stripe", Health: "ONLINE", State: "ONLINE", SizeBytes: 12000138625024, Path: "/dev/disk/by-id/ata-TOSHIBA_MG08ACA12TE_20E0A099", IsDisk: true},
 			},
 			Scrub: ScrubStatus{
 				Active:     false,
@@ -171,6 +377,7 @@ func (m *Manager) initMockZFS() {
 		"SSD-MIRROR": {
 			Name:          "SSD-MIRROR",
 			Health:        HealthOnline,
+			Topology:      "MIRROR (2 Disks)",
 			SizeBytes:     245553198080,
 			SizeHuman:     "228.69 GiB",
 			Allocated:     1095216640,
@@ -180,10 +387,13 @@ func (m *Manager) initMockZFS() {
 			Fragmentation: 0,
 			CapPercent:    1,
 			AtimeDefault:  "off",
+			Autotrim:      "on",
+			Autoexpand:    "on",
+			Compression:   "lz4",
 			Vdevs: []Vdev{
-				{Name: "mirror-0", Type: "mirror", Health: "ONLINE"},
-				{Name: "nvme0n1", Type: "disk", Health: "ONLINE", Path: "/dev/disk/by-id/nvme-Samsung_SSD_980_250GB_S5GXNF0T111"},
-				{Name: "nvme1n1", Type: "disk", Health: "ONLINE", Path: "/dev/disk/by-id/nvme-Samsung_SSD_980_250GB_S5GXNF0T112"},
+				{Name: "mirror-0", Type: "mirror", Health: "ONLINE", State: "ONLINE", IsDisk: false},
+				{Name: "nvme0n1", Type: "disk", Role: "mirror-0", Health: "ONLINE", State: "ONLINE", SizeBytes: 1000204886016, Path: "/dev/disk/by-id/nvme-Samsung_SSD_980_250GB_S5GXNF0T111", IsDisk: true},
+				{Name: "nvme1n1", Type: "disk", Role: "mirror-0", Health: "ONLINE", State: "ONLINE", SizeBytes: 1000204886016, Path: "/dev/disk/by-id/nvme-Samsung_SSD_980_250GB_S5GXNF0T112", IsDisk: true},
 			},
 			Scrub: ScrubStatus{
 				Active:     false,
@@ -193,15 +403,20 @@ func (m *Manager) initMockZFS() {
 			},
 		},
 	}
+	for _, p := range m.mockPools {
+		syncPoolFields(p)
+	}
 
 	m.mockDS = map[string]*Dataset{
 		"DATA": {
 			Name:        "DATA",
 			Pool:        "DATA",
 			Mountpoint:  "/mnt/DATA",
+			UsedBytes:   348356784128,
 			UsedHuman:   "324.43 GiB",
+			AvailBytes:  1546188226560,
 			AvailHuman:  "1.44 TiB",
-			Compression: "1.01x (LZ4)",
+			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "128K",
 			Snapshots:   14,
@@ -210,9 +425,11 @@ func (m *Manager) initMockZFS() {
 			Name:        "DATA/Backup",
 			Pool:        "DATA",
 			Mountpoint:  "/mnt/DATA/Backup",
+			UsedBytes:   107277531545,
 			UsedHuman:   "99.91 GiB",
+			AvailBytes:  1546188226560,
 			AvailHuman:  "1.44 TiB",
-			Compression: "1.00x (LZ4)",
+			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "128K",
 			Snapshots:   14,
@@ -221,9 +438,11 @@ func (m *Manager) initMockZFS() {
 			Name:        "DATA/Fileshare",
 			Pool:        "DATA",
 			Mountpoint:  "/mnt/DATA/Fileshare",
+			UsedBytes:   241065789030,
 			UsedHuman:   "224.51 GiB",
+			AvailBytes:  1546188226560,
 			AvailHuman:  "1.44 TiB",
-			Compression: "1.01x (LZ4)",
+			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "128K",
 			Snapshots:   14,
@@ -232,9 +451,11 @@ func (m *Manager) initMockZFS() {
 			Name:        "DATA/Fileshare/Milena",
 			Pool:        "DATA",
 			Mountpoint:  "/mnt/DATA/Fileshare/Milena",
+			UsedBytes:   118326358016,
 			UsedHuman:   "110.20 GiB",
+			AvailBytes:  1546188226560,
 			AvailHuman:  "1.44 TiB",
-			Compression: "LZ4",
+			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "128K",
 			Snapshots:   14,
@@ -243,9 +464,11 @@ func (m *Manager) initMockZFS() {
 			Name:        "DATA/Fileshare/Niklas",
 			Pool:        "DATA",
 			Mountpoint:  "/mnt/DATA/Fileshare/Niklas",
+			UsedBytes:   122739431014,
 			UsedHuman:   "114.31 GiB",
+			AvailBytes:  1546188226560,
 			AvailHuman:  "1.44 TiB",
-			Compression: "LZ4",
+			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "128K",
 			Snapshots:   14,
@@ -254,9 +477,11 @@ func (m *Manager) initMockZFS() {
 			Name:        "MEDIA-12TB",
 			Pool:        "MEDIA-12TB",
 			Mountpoint:  "/mnt/MEDIA-12TB",
+			UsedBytes:   3507421839360,
 			UsedHuman:   "3.19 TiB",
+			AvailBytes:  8345082445824,
 			AvailHuman:  "7.59 TiB",
-			Compression: "1.00x (LZ4)",
+			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "1M",
 			Snapshots:   14,
@@ -265,9 +490,11 @@ func (m *Manager) initMockZFS() {
 			Name:        "MEDIA-12TB/data",
 			Pool:        "MEDIA-12TB",
 			Mountpoint:  "/mnt/MEDIA-12TB/data",
+			UsedBytes:   3507421839360,
 			UsedHuman:   "3.19 TiB",
+			AvailBytes:  8345082445824,
 			AvailHuman:  "7.59 TiB",
-			Compression: "1.00x (LZ4)",
+			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "1M",
 			Snapshots:   14,
@@ -276,9 +503,11 @@ func (m *Manager) initMockZFS() {
 			Name:        "SSD-MIRROR",
 			Pool:        "SSD-MIRROR",
 			Mountpoint:  "/mnt/SSD-MIRROR",
+			UsedBytes:   1095216640,
 			UsedHuman:   "1.02 GiB",
+			AvailBytes:  244457981440,
 			AvailHuman:  "227.67 GiB",
-			Compression: "1.00x (LZ4)",
+			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "128K",
 			Snapshots:   14,
@@ -287,38 +516,177 @@ func (m *Manager) initMockZFS() {
 			Name:        "SSD-MIRROR/mail-archiver",
 			Pool:        "SSD-MIRROR",
 			Mountpoint:  "/mnt/SSD-MIRROR/mail-archiver",
+			UsedBytes:   1095216640,
 			UsedHuman:   "1.02 GiB",
+			AvailBytes:  244457981440,
 			AvailHuman:  "227.67 GiB",
-			Compression: "1.00x (LZ4)",
+			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "128K",
 			Snapshots:   14,
 		},
 	}
+	for _, ds := range m.mockDS {
+		syncDatasetFields(ds)
+	}
 
 	m.mockSnaps = []*Snapshot{
 		{
-			Name:       "DATA@auto-2026-10-27-0000",
-			Dataset:    "DATA",
-			Created:    time.Now().Add(-11 * time.Hour),
-			UsedHuman:  "1.2 MiB",
-			Referenced: "324.43 GiB",
+			Name:            "DATA@auto-2026-10-27-0000",
+			Dataset:         "DATA",
+			Created:         time.Now().Add(-11 * time.Hour),
+			UsedBytes:       1258291,
+			UsedHuman:       "1.2 MiB",
+			ReferencedBytes: 348356784128,
+			Referenced:      "324.43 GiB",
 		},
 		{
-			Name:       "MEDIA-12TB@auto-2026-10-27-0000",
-			Dataset:    "MEDIA-12TB",
-			Created:    time.Now().Add(-11 * time.Hour),
-			UsedHuman:  "96 KiB",
-			Referenced: "3.19 TiB",
+			Name:            "MEDIA-12TB@auto-2026-10-27-0000",
+			Dataset:         "MEDIA-12TB",
+			Created:         time.Now().Add(-11 * time.Hour),
+			UsedBytes:       98304,
+			UsedHuman:       "96 KiB",
+			ReferencedBytes: 3507421839360,
+			Referenced:      "3.19 TiB",
 		},
 		{
-			Name:       "SSD-MIRROR@auto-2026-10-27-0000",
-			Dataset:    "SSD-MIRROR",
-			Created:    time.Now().Add(-11 * time.Hour),
-			UsedHuman:  "32 KiB",
-			Referenced: "1.02 GiB",
+			Name:            "SSD-MIRROR@auto-2026-10-27-0000",
+			Dataset:         "SSD-MIRROR",
+			Created:         time.Now().Add(-11 * time.Hour),
+			UsedBytes:       32768,
+			UsedHuman:       "32 KiB",
+			ReferencedBytes: 1095216640,
+			Referenced:      "1.02 GiB",
 		},
 	}
+}
+
+// stripZfsPartition strips ZFS auto-created partition suffixes (-part1, p1, 1) from device names
+func stripZfsPartition(name string) string {
+	if idx := strings.LastIndex(name, "-part"); idx > 0 {
+		suffix := name[idx+5:]
+		allDigits := len(suffix) > 0
+		for _, c := range suffix {
+			if c < '0' || c > '9' {
+				allDigits = false
+				break
+			}
+		}
+		if allDigits {
+			return name[:idx]
+		}
+	}
+	base := filepath.Base(name)
+	if idx := strings.LastIndexByte(name, '/'); idx >= 0 {
+		base = name[idx+1:]
+	}
+	strippedBase := base
+	if strings.HasPrefix(base, "nvme") || strings.HasPrefix(base, "loop") || strings.HasPrefix(base, "mmcblk") {
+		if idx := strings.LastIndexByte(base, 'p'); idx > 3 {
+			suffix := base[idx+1:]
+			allDigits := len(suffix) > 0
+			for _, c := range suffix {
+				if c < '0' || c > '9' {
+					allDigits = false
+					break
+				}
+			}
+			if allDigits {
+				strippedBase = base[:idx]
+			}
+		}
+	} else if strings.HasPrefix(base, "sd") || strings.HasPrefix(base, "hd") || strings.HasPrefix(base, "vd") || strings.HasPrefix(base, "xvd") {
+		trimmed := strings.TrimRight(base, "0123456789")
+		if len(trimmed) >= 3 && len(trimmed) < len(base) {
+			strippedBase = trimmed
+		}
+	}
+	if idx := strings.LastIndexByte(name, '/'); idx >= 0 {
+		return name[:idx+1] + strippedBase
+	}
+	return strippedBase
+}
+
+// resolvePoolMember resolves a disk identifier (e.g. "sda", "/dev/sda", or by-id path)
+// to the exact vdev path/name registered in the pool on Debian Linux (e.g. "/dev/sda1" or "/dev/disk/by-id/...-part1").
+func (m *Manager) resolvePoolMember(pool, dev string) string {
+	dev = strings.TrimSpace(dev)
+	devBase := stripZfsPartition(filepath.Base(dev))
+	vdevs, _ := m.scanPoolStatus(pool)
+	for _, v := range vdevs {
+		if !v.IsDisk {
+			continue
+		}
+		if v.Path == dev || v.Name == dev || filepath.Base(v.Path) == dev {
+			if v.Path != "" {
+				return v.Path
+			}
+			return v.Name
+		}
+		vBase := stripZfsPartition(filepath.Base(v.Path))
+		vNameStripped := stripZfsPartition(v.Name)
+		if vBase == devBase || vNameStripped == devBase {
+			if v.Path != "" {
+				return v.Path
+			}
+			return v.Name
+		}
+		if v.Path != "" {
+			if resolved, err := filepath.EvalSymlinks(v.Path); err == nil {
+				resBase := stripZfsPartition(filepath.Base(resolved))
+				if resolved == dev || resBase == devBase {
+					return v.Path
+				}
+			}
+		}
+	}
+	if !strings.HasPrefix(dev, "/") {
+		return "/dev/" + dev
+	}
+	return dev
+}
+
+// GetDiskPoolMap returns maps of disk -> poolName and disk -> role for all active pools
+func (m *Manager) GetDiskPoolMap() (map[string]string, map[string]string) {
+	poolMap := make(map[string]string)
+	roleMap := make(map[string]string)
+
+	pools, err := m.ListPools()
+	if err != nil {
+		return poolMap, roleMap
+	}
+	for _, p := range pools {
+		for _, v := range p.Vdevs {
+			if !v.IsDisk {
+				continue
+			}
+			for _, key := range []string{v.Name, stripZfsPartition(v.Name)} {
+				if key != "" {
+					poolMap[key] = p.Name
+					roleMap[key] = v.Role
+				}
+			}
+			if v.Path != "" {
+				base := filepath.Base(v.Path)
+				for _, key := range []string{v.Path, stripZfsPartition(v.Path), base, stripZfsPartition(base)} {
+					if key != "" {
+						poolMap[key] = p.Name
+						roleMap[key] = v.Role
+					}
+				}
+				if resolved, err := filepath.EvalSymlinks(v.Path); err == nil && resolved != "" {
+					resBase := filepath.Base(resolved)
+					for _, key := range []string{resolved, stripZfsPartition(resolved), resBase, stripZfsPartition(resBase)} {
+						if key != "" {
+							poolMap[key] = p.Name
+							roleMap[key] = v.Role
+						}
+					}
+				}
+			}
+		}
+	}
+	return poolMap, roleMap
 }
 
 // ListPools retrieves all pools and their health
@@ -329,23 +697,39 @@ func (m *Manager) ListPools() ([]*Pool, error) {
 	if m.mockMode {
 		var list []*Pool
 		for _, p := range m.mockPools {
+			syncPoolFields(p)
 			list = append(list, p)
 		}
+		sort.Slice(list, func(i, j int) bool {
+			return list[i].Name < list[j].Name
+		})
 		return list, nil
 	}
 
-	return m.scanLinuxPools()
+	pools, err := m.scanLinuxPools()
+	if err == nil {
+		for _, p := range pools {
+			syncPoolFields(p)
+		}
+		sort.Slice(pools, func(i, j int) bool {
+			return pools[i].Name < pools[j].Name
+		})
+	}
+	return pools, err
 }
 
 func (m *Manager) scanLinuxPools() ([]*Pool, error) {
-	cmd := exec.Command("zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,frag,cap,health")
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(fastZfsTimeout, "zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,frag,cap,health,autotrim,autoexpand")
 	if err != nil {
-		outStr := strings.TrimSpace(string(out))
-		if strings.Contains(outStr, "no pools available") || strings.Contains(outStr, "no pools found") || outStr == "" {
-			return []*Pool{}, nil
+		// Fallback without autotrim/autoexpand if older zpool
+		out, err = runCommand(fastZfsTimeout, "zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,frag,cap,health")
+		if err != nil {
+			outStr := strings.TrimSpace(string(out))
+			if strings.Contains(outStr, "no pools available") || strings.Contains(outStr, "no pools found") || outStr == "" {
+				return []*Pool{}, nil
+			}
+			return nil, fmt.Errorf("zpool list: %w (%s)", err, outStr)
 		}
-		return nil, fmt.Errorf("zpool list: %w (%s)", err, outStr)
 	}
 
 	var pools []*Pool
@@ -354,9 +738,12 @@ func (m *Manager) scanLinuxPools() ([]*Pool, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		f := strings.Fields(line)
+		f := strings.Split(line, "\t")
 		if len(f) < 7 {
-			continue
+			f = strings.Fields(line)
+			if len(f) < 7 {
+				continue
+			}
 		}
 		var size, alloc, free uint64
 		var frag, cap int
@@ -365,6 +752,15 @@ func (m *Manager) scanLinuxPools() ([]*Pool, error) {
 		fmt.Sscanf(f[3], "%d", &free)
 		fmt.Sscanf(strings.TrimSuffix(f[4], "%"), "%d", &frag)
 		fmt.Sscanf(strings.TrimSuffix(f[5], "%"), "%d", &cap)
+
+		autotrim := "off"
+		autoexpand := "on"
+		if len(f) >= 8 {
+			autotrim = strings.TrimSpace(f[7])
+		}
+		if len(f) >= 9 {
+			autoexpand = strings.TrimSpace(f[8])
+		}
 
 		poolName := f[0]
 		vdevs, scrub := m.scanPoolStatus(poolName)
@@ -383,38 +779,51 @@ func (m *Manager) scanLinuxPools() ([]*Pool, error) {
 			Vdevs:         vdevs,
 			Scrub:         scrub,
 			AtimeDefault:  "off",
+			Autotrim:      autotrim,
+			Autoexpand:    autoexpand,
 		}
+		syncPoolFields(p)
 		pools = append(pools, p)
 	}
 	return pools, nil
 }
 
 func (m *Manager) scanPoolStatus(poolName string) ([]Vdev, ScrubStatus) {
+	out, err := runCommandOutput(fastZfsTimeout, "zpool", "status", "-P", poolName)
+	if err != nil {
+		return nil, ScrubStatus{}
+	}
+	return parseZpoolStatus(bytes.NewReader(out), poolName)
+}
+
+func parseZpoolStatus(r io.Reader, poolName string) ([]Vdev, ScrubStatus) {
 	var vdevs []Vdev
 	var scrub ScrubStatus
-	scrub.LastRun = time.Now()
 
-	cmd := exec.Command("zpool", "status", poolName)
-	out, err := cmd.Output()
-	if err != nil {
-		return vdevs, scrub
-	}
-
-	scanner := bufio.NewScanner(bytes.NewReader(out))
+	scanner := bufio.NewScanner(r)
+	inScan := false
 	inConfig := false
+	currentGroup := ""
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 
-		// Scrub line check
 		if strings.HasPrefix(trimmed, "scan:") {
-			if strings.Contains(trimmed, "scrub in progress") {
-				scrub.Active = true
+			inScan = true
+			scanContent := strings.TrimPrefix(trimmed, "scan:")
+			parseScanLine(scanContent, &scrub)
+			continue
+		}
+
+		if inScan {
+			if strings.HasPrefix(trimmed, "config:") {
+				inScan = false
+				inConfig = true
+				continue
 			}
-			if strings.Contains(trimmed, "repaired") {
-				// parse errors
-				scrub.Active = false
-			}
+			parseScanLine(trimmed, &scrub)
+			continue
 		}
 
 		if strings.HasPrefix(trimmed, "config:") {
@@ -438,23 +847,125 @@ func (m *Manager) scanPoolStatus(poolName string) ([]Vdev, ScrubStatus) {
 					continue
 				}
 
+				var readErr, writeErr, cksumErr uint64
+				if len(parts) >= 5 {
+					readErr, _ = strconv.ParseUint(parts[2], 10, 64)
+					writeErr, _ = strconv.ParseUint(parts[3], 10, 64)
+					cksumErr, _ = strconv.ParseUint(parts[4], 10, 64)
+				}
+
 				devType := "disk"
+				devPath := ""
+				isDisk := true
 				if strings.HasPrefix(name, "mirror") {
 					devType = "mirror"
+					currentGroup = name
+					isDisk = false
 				} else if strings.HasPrefix(name, "raidz") {
 					devType = name
+					currentGroup = name
+					isDisk = false
+				} else if name == "logs" || name == "spares" || name == "cache" || name == "special" || name == "dedup" {
+					devType = name
+					currentGroup = name
+					isDisk = false
+				} else {
+					if strings.HasPrefix(name, "/") {
+						devPath = name
+					} else {
+						devPath = "/dev/" + name
+					}
+					if currentGroup == "logs" {
+						devType = "log"
+					} else if currentGroup == "cache" {
+						devType = "cache"
+					} else if currentGroup == "special" {
+						devType = "special"
+					} else if currentGroup == "spares" {
+						devType = "spare"
+					}
+				}
+
+				displayName := name
+				if devPath != "" {
+					displayName = stripZfsPartition(filepath.Base(name))
+				}
+
+				role := currentGroup
+				if role == "" && isDisk {
+					role = "stripe"
 				}
 
 				vdevs = append(vdevs, Vdev{
-					Name:   name,
-					Type:   devType,
-					Health: health,
-					Path:   "/dev/" + filepath.Base(name),
+					Name:        displayName,
+					Type:        devType,
+					Role:        role,
+					Health:      health,
+					State:       health,
+					Path:        devPath,
+					ReadErrors:  readErr,
+					WriteErrors: writeErr,
+					CksumErrors: cksumErr,
+					IsDisk:      isDisk,
 				})
 			}
 		}
 	}
 	return vdevs, scrub
+}
+
+func parseScanLine(text string, scrub *ScrubStatus) {
+	lower := strings.ToLower(text)
+	if strings.Contains(lower, "scrub in progress") || strings.Contains(lower, "resilver in progress") {
+		scrub.Active = true
+	}
+	if strings.Contains(lower, "scrub repaired") || strings.Contains(lower, "resilver repaired") {
+		scrub.Active = false
+		scrub.Percentage = 100.0
+	}
+	if strings.Contains(lower, "scrub canceled") || strings.Contains(lower, "none requested") {
+		scrub.Active = false
+	}
+
+	// Parse errors: e.g. "with 0 errors" or "with 2 errors"
+	if idxWith := strings.Index(lower, "with "); idxWith != -1 {
+		rest := text[idxWith+5:]
+		if idxErr := strings.Index(strings.ToLower(rest), " error"); idxErr != -1 {
+			errStr := strings.TrimSpace(rest[:idxErr])
+			if e, err := strconv.ParseUint(errStr, 10, 64); err == nil {
+				scrub.Errors = e
+			}
+		}
+	}
+
+	// Parse percentage: e.g. "24.8% done" or "24.80% done"
+	if idxDone := strings.Index(lower, "% done"); idxDone != -1 {
+		prefix := strings.TrimSpace(text[:idxDone])
+		parts := strings.Fields(prefix)
+		if len(parts) > 0 {
+			numStr := strings.Trim(parts[len(parts)-1], ", ")
+			if p, err := strconv.ParseFloat(numStr, 64); err == nil {
+				scrub.Percentage = p
+			}
+		}
+	}
+
+	// Parse completion/progress timestamp: e.g. "on Sun Oct 15 01:31:42 2026"
+	if idxOn := strings.Index(lower, " on "); idxOn != -1 {
+		dateStr := strings.TrimSpace(text[idxOn+4:])
+		formats := []string{
+			time.ANSIC,
+			"Mon Jan 2 15:04:05 2006",
+			"Mon Jan _2 15:04:05 MST 2006",
+			"2006-01-02 15:04:05",
+		}
+		for _, f := range formats {
+			if t, err := time.Parse(f, dateStr); err == nil {
+				scrub.LastRun = t
+				break
+			}
+		}
+	}
 }
 
 // ListDatasets returns all datasets
@@ -465,21 +976,28 @@ func (m *Manager) ListDatasets() ([]*Dataset, error) {
 	if m.mockMode {
 		var list []*Dataset
 		for _, d := range m.mockDS {
+			syncDatasetFields(d)
 			list = append(list, d)
 		}
+		sort.Slice(list, func(i, j int) bool {
+			return list[i].Name < list[j].Name
+		})
 		return list, nil
 	}
 
 	snapCounts := m.getSnapshotCounts()
 
-	cmd := exec.Command("zfs", "list", "-H", "-o", "name,used,avail,mountpoint,compression,atime,recordsize")
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(fastZfsTimeout, "zfs", "list", "-H", "-p", "-o", "name,used,avail,mountpoint,compression,atime,recordsize,quota,readonly,type,volsize")
 	if err != nil {
-		outStr := strings.TrimSpace(string(out))
-		if strings.Contains(outStr, "no datasets available") || strings.Contains(outStr, "no pools available") || outStr == "" {
-			return []*Dataset{}, nil
+		// Fallback to basic columns
+		out, err = runCommand(fastZfsTimeout, "zfs", "list", "-H", "-p", "-o", "name,used,avail,mountpoint,compression,atime,recordsize")
+		if err != nil {
+			outStr := strings.TrimSpace(string(out))
+			if strings.Contains(outStr, "no datasets available") || strings.Contains(outStr, "no pools available") || outStr == "" {
+				return []*Dataset{}, nil
+			}
+			return nil, fmt.Errorf("zfs list: %w (%s)", err, outStr)
 		}
-		return nil, fmt.Errorf("zfs list: %w (%s)", err, outStr)
 	}
 
 	var datasets []*Dataset
@@ -488,33 +1006,85 @@ func (m *Manager) ListDatasets() ([]*Dataset, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		f := strings.Fields(line)
+		f := strings.Split(line, "\t")
 		if len(f) < 7 {
-			continue
+			f = strings.Fields(line)
+			if len(f) < 7 {
+				continue
+			}
 		}
 		parts := strings.Split(f[0], "/")
 		poolName := parts[0]
 
-		ds := &Dataset{
-			Name:        f[0],
-			Pool:        poolName,
-			UsedHuman:   f[1],
-			AvailHuman:  f[2],
-			Mountpoint:  f[3],
-			Compression: f[4],
-			Atime:       f[5],
-			RecordSize:  f[6],
-			Snapshots:   snapCounts[f[0]],
+		usedBytes, _ := strconv.ParseUint(strings.TrimSpace(f[1]), 10, 64)
+		availBytes, _ := strconv.ParseUint(strings.TrimSpace(f[2]), 10, 64)
+		mountpoint := strings.TrimSpace(f[3])
+
+		quota := "none"
+		readOnly := "off"
+		dsType := "filesystem"
+		if len(f) >= 8 && f[7] != "0" && f[7] != "-" && f[7] != "none" {
+			if qBytes, err := strconv.ParseUint(strings.TrimSpace(f[7]), 10, 64); err == nil && qBytes > 0 {
+				quota = formatZfsBytes(qBytes)
+			} else {
+				quota = strings.TrimSpace(f[7])
+			}
 		}
+		if len(f) >= 9 {
+			readOnly = strings.TrimSpace(f[8])
+		}
+		if len(f) >= 10 {
+			dsType = strings.TrimSpace(f[9])
+		}
+		if dsType == "volume" {
+			mountpoint = "/dev/zvol/" + f[0]
+			if len(f) >= 11 {
+				if volBytes, err := strconv.ParseUint(strings.TrimSpace(f[10]), 10, 64); err == nil && volBytes > 0 {
+					availBytes = volBytes
+				}
+			}
+		}
+
+		ds := &Dataset{
+			Name:           f[0],
+			Pool:           poolName,
+			Type:           dsType,
+			Mountpoint:     mountpoint,
+			UsedBytes:      usedBytes,
+			UsedHuman:      formatZfsBytes(usedBytes),
+			AvailBytes:     availBytes,
+			AvailableBytes: availBytes,
+			AvailHuman:     formatZfsBytes(availBytes),
+			Quota:          quota,
+			ReadOnly:       readOnly,
+			Compression:    f[4],
+			Atime:          f[5],
+			RecordSize:     formatRecordSize(f[6]),
+			Snapshots:      snapCounts[f[0]],
+		}
+		syncDatasetFields(ds)
 		datasets = append(datasets, ds)
 	}
+	sort.Slice(datasets, func(i, j int) bool {
+		return datasets[i].Name < datasets[j].Name
+	})
 	return datasets, nil
+}
+
+func formatRecordSize(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if b, err := strconv.ParseUint(raw, 10, 64); err == nil && b >= 1024 {
+		if b >= 1024*1024 {
+			return fmt.Sprintf("%dM", b/(1024*1024))
+		}
+		return fmt.Sprintf("%dK", b/1024)
+	}
+	return raw
 }
 
 func (m *Manager) getSnapshotCounts() map[string]int {
 	counts := make(map[string]int)
-	cmd := exec.Command("zfs", "list", "-t", "snapshot", "-H", "-o", "name")
-	out, err := cmd.Output()
+	out, err := runCommandOutput(fastZfsTimeout, "zfs", "list", "-t", "snapshot", "-H", "-o", "name")
 	if err != nil {
 		return counts
 	}
@@ -537,27 +1107,50 @@ func (m *Manager) CreateDataset(name string, compression, recordsize string) err
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	name = strings.TrimSpace(name)
+	if err := validate.DatasetName(name); err != nil {
+		return fmt.Errorf("invalid dataset name: %w", err)
+	}
+
 	if compression == "" {
 		compression = "lz4"
 	}
 	if recordsize == "" {
 		recordsize = "128K"
 	}
+	if err := validate.DatasetProperty("compression", compression); err != nil {
+		return err
+	}
+	if err := validate.DatasetProperty("recordsize", recordsize); err != nil {
+		return err
+	}
 
 	if m.mockMode {
 		parts := strings.Split(name, "/")
 		pool := parts[0]
-		m.mockDS[name] = &Dataset{
-			Name:        name,
-			Pool:        pool,
-			Mountpoint:  "/mnt/" + name,
-			UsedHuman:   "0 B",
-			AvailHuman:  "Available",
-			Compression: compression,
-			Atime:       "off", // Crucial for HDD Standby!
-			RecordSize:  recordsize,
-			Snapshots:   0,
+		var avail uint64 = 1546188226560
+		if p, ok := m.mockPools[pool]; ok && p.FreeBytes > 0 {
+			avail = p.FreeBytes
 		}
+		ds := &Dataset{
+			Name:           name,
+			Pool:           pool,
+			Type:           "filesystem",
+			Mountpoint:     "/mnt/" + name,
+			UsedBytes:      98304,
+			UsedHuman:      "96 KiB",
+			AvailBytes:     avail,
+			AvailableBytes: avail,
+			AvailHuman:     formatZfsBytes(avail),
+			Quota:          "none",
+			ReadOnly:       "off",
+			Compression:    compression,
+			Atime:          "off", // Crucial for HDD Standby!
+			RecordSize:     recordsize,
+			Snapshots:      0,
+		}
+		syncDatasetFields(ds)
+		m.mockDS[name] = ds
 		return nil
 	}
 
@@ -570,26 +1163,40 @@ func (m *Manager) CreateDataset(name string, compression, recordsize string) err
 		name,
 	}
 
-	cmd := exec.Command("zfs", args...)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zfs", args...)
 	if err != nil {
 		return fmt.Errorf("zfs create failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
-// DestroyDataset deletes a dataset
+// DestroyDataset deletes a dataset and its child datasets/snapshots
 func (m *Manager) DestroyDataset(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	name = strings.TrimSpace(name)
+	if err := validate.DatasetName(name); err != nil {
+		return fmt.Errorf("invalid dataset name: %w", err)
+	}
+
 	if m.mockMode {
-		delete(m.mockDS, name)
+		for k := range m.mockDS {
+			if k == name || strings.HasPrefix(k, name+"/") {
+				delete(m.mockDS, k)
+			}
+		}
+		var kept []*Snapshot
+		for _, s := range m.mockSnaps {
+			if s.Dataset != name && !strings.HasPrefix(s.Dataset, name+"/") {
+				kept = append(kept, s)
+			}
+		}
+		m.mockSnaps = kept
 		return nil
 	}
 
-	cmd := exec.Command("zfs", "destroy", "-r", name)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zfs", "destroy", "-r", name)
 	if err != nil {
 		return fmt.Errorf("zfs destroy failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -602,11 +1209,15 @@ func (m *Manager) ListSnapshots() ([]*Snapshot, error) {
 	defer m.mu.RUnlock()
 
 	if m.mockMode {
-		return m.mockSnaps, nil
+		list := make([]*Snapshot, len(m.mockSnaps))
+		copy(list, m.mockSnaps)
+		sort.Slice(list, func(i, j int) bool {
+			return list[i].Name < list[j].Name
+		})
+		return list, nil
 	}
 
-	cmd := exec.Command("zfs", "list", "-t", "snapshot", "-H", "-p", "-o", "name,used,refer,creation")
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(fastZfsTimeout, "zfs", "list", "-t", "snapshot", "-H", "-p", "-o", "name,used,refer,creation")
 	if err != nil {
 		outStr := strings.TrimSpace(string(out))
 		if strings.Contains(outStr, "no datasets available") || strings.Contains(outStr, "no snapshots available") || strings.Contains(outStr, "no pools available") || outStr == "" {
@@ -632,13 +1243,18 @@ func (m *Manager) ListSnapshots() ([]*Snapshot, error) {
 		fmt.Sscanf(f[2], "%d", &referBytes)
 
 		list = append(list, &Snapshot{
-			Name:       f[0],
-			Dataset:    datasetName,
-			Created:    created,
-			UsedHuman:  formatZfsBytes(usedBytes),
-			Referenced: formatZfsBytes(referBytes),
+			Name:            f[0],
+			Dataset:         datasetName,
+			Created:         created,
+			UsedBytes:       usedBytes,
+			UsedHuman:       formatZfsBytes(usedBytes),
+			ReferencedBytes: referBytes,
+			Referenced:      formatZfsBytes(referBytes),
 		})
 	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].Name < list[j].Name
+	})
 	return list, nil
 }
 
@@ -647,23 +1263,34 @@ func (m *Manager) CreateSnapshot(dataset, snapName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	dataset = strings.TrimSpace(dataset)
+	snapName = strings.TrimSpace(snapName)
+	if err := validate.SnapshotName(dataset, snapName); err != nil {
+		return fmt.Errorf("invalid snapshot target: %w", err)
+	}
+
 	fullName := fmt.Sprintf("%s@%s", dataset, snapName)
 	if m.mockMode {
-		m.mockSnaps = append(m.mockSnaps, &Snapshot{
-			Name:       fullName,
-			Dataset:    dataset,
-			Created:    time.Now(),
-			UsedHuman:  "0 B",
-			Referenced: "Available",
-		})
+		var referBytes uint64 = 1073741824
 		if ds, ok := m.mockDS[dataset]; ok {
+			if ds.UsedBytes > 0 {
+				referBytes = ds.UsedBytes
+			}
 			ds.Snapshots++
 		}
+		m.mockSnaps = append(m.mockSnaps, &Snapshot{
+			Name:            fullName,
+			Dataset:         dataset,
+			Created:         time.Now(),
+			UsedBytes:       0,
+			UsedHuman:       "0 B",
+			ReferencedBytes: referBytes,
+			Referenced:      formatZfsBytes(referBytes),
+		})
 		return nil
 	}
 
-	cmd := exec.Command("zfs", "snapshot", fullName)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zfs", "snapshot", fullName)
 	if err != nil {
 		return fmt.Errorf("zfs snapshot failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -675,12 +1302,20 @@ func (m *Manager) RollbackSnapshot(snapshot string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	snapshot = strings.TrimSpace(snapshot)
+	parts := strings.Split(snapshot, "@")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid snapshot target '%s': must contain exactly one '@'", snapshot)
+	}
+	if err := validate.SnapshotName(parts[0], parts[1]); err != nil {
+		return fmt.Errorf("invalid snapshot name: %w", err)
+	}
+
 	if m.mockMode {
 		return nil
 	}
 
-	cmd := exec.Command("zfs", "rollback", "-r", snapshot)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zfs", "rollback", "-r", snapshot)
 	if err != nil {
 		return fmt.Errorf("zfs rollback failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -692,18 +1327,29 @@ func (m *Manager) DestroySnapshot(snapshot string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	snapshot = strings.TrimSpace(snapshot)
+	parts := strings.Split(snapshot, "@")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid snapshot target '%s': must contain exactly one '@'", snapshot)
+	}
+	if err := validate.SnapshotName(parts[0], parts[1]); err != nil {
+		return fmt.Errorf("invalid snapshot name: %w", err)
+	}
+
 	if m.mockMode {
 		for i, s := range m.mockSnaps {
 			if s.Name == snapshot {
 				m.mockSnaps = append(m.mockSnaps[:i], m.mockSnaps[i+1:]...)
+				if ds, ok := m.mockDS[parts[0]]; ok && ds.Snapshots > 0 {
+					ds.Snapshots--
+				}
 				break
 			}
 		}
 		return nil
 	}
 
-	cmd := exec.Command("zfs", "destroy", snapshot)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zfs", "destroy", snapshot)
 	if err != nil {
 		return fmt.Errorf("zfs destroy failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -715,6 +1361,16 @@ func (m *Manager) SetDatasetProperty(dataset, property, value string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	dataset = strings.TrimSpace(dataset)
+	property = strings.TrimSpace(strings.ToLower(property))
+	value = strings.TrimSpace(value)
+	if err := validate.DatasetName(dataset); err != nil {
+		return fmt.Errorf("invalid dataset name: %w", err)
+	}
+	if err := validate.DatasetProperty(property, value); err != nil {
+		return fmt.Errorf("invalid dataset property: %w", err)
+	}
+
 	if m.mockMode {
 		if ds, ok := m.mockDS[dataset]; ok {
 			switch property {
@@ -722,13 +1378,21 @@ func (m *Manager) SetDatasetProperty(dataset, property, value string) error {
 				ds.Compression = value
 			case "recordsize":
 				ds.RecordSize = value
+			case "atime":
+				ds.Atime = value
+			case "quota":
+				ds.Quota = value
+			case "readonly":
+				ds.ReadOnly = value
+			case "sync":
+				ds.Sync = value
 			}
+			syncDatasetFields(ds)
 		}
 		return nil
 	}
 
-	cmd := exec.Command("zfs", "set", fmt.Sprintf("%s=%s", property, value), dataset)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zfs", "set", fmt.Sprintf("%s=%s", property, value), dataset)
 	if err != nil {
 		return fmt.Errorf("zfs set failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -740,18 +1404,23 @@ func (m *Manager) StartScrub(poolName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	poolName = strings.TrimSpace(poolName)
+	if err := validate.PoolName(poolName); err != nil {
+		return fmt.Errorf("invalid pool name: %w", err)
+	}
+
 	if m.mockMode {
 		if p, ok := m.mockPools[poolName]; ok {
 			p.Scrub.Active = true
-			p.Scrub.Percentage = 0.1
-			p.Scrub.Speed = "480 MB/s"
-			p.Scrub.TimeLeft = "3h 45m"
+			p.Scrub.Percentage = 14.5
+			p.Scrub.Speed = "512 MB/s"
+			p.Scrub.TimeLeft = "1h 12m"
+			syncPoolFields(p)
 		}
 		return nil
 	}
 
-	cmd := exec.Command("zpool", "scrub", poolName)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zpool", "scrub", poolName)
 	if err != nil {
 		return fmt.Errorf("zpool scrub failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -763,15 +1432,21 @@ func (m *Manager) StopScrub(poolName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	poolName = strings.TrimSpace(poolName)
+	if err := validate.PoolName(poolName); err != nil {
+		return fmt.Errorf("invalid pool name: %w", err)
+	}
+
 	if m.mockMode {
 		if p, ok := m.mockPools[poolName]; ok {
 			p.Scrub.Active = false
+			p.Scrub.LastRun = time.Now()
+			syncPoolFields(p)
 		}
 		return nil
 	}
 
-	cmd := exec.Command("zpool", "scrub", "-s", poolName)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zpool", "scrub", "-s", poolName)
 	if err != nil {
 		return fmt.Errorf("zpool scrub -s failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -783,43 +1458,104 @@ func (m *Manager) CreatePool(name, vdevType string, disks []string, ashift int, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if ashift <= 0 {
+	name = strings.TrimSpace(name)
+	if err := validate.PoolName(name); err != nil {
+		return fmt.Errorf("invalid pool name: %w", err)
+	}
+
+	if ashift < 9 || ashift > 16 {
 		ashift = 12 // Default 4K sectors
 	}
 	if compression == "" {
 		compression = "zstd"
 	}
+	if err := validate.DatasetProperty("compression", compression); err != nil {
+		return err
+	}
+
+	var cleanDisks []string
+	for _, d := range disks {
+		d = strings.TrimSpace(d)
+		if d == "" || d == "undefined" {
+			continue
+		}
+		if err := validate.DevicePath(d); err != nil {
+			return fmt.Errorf("invalid member device: %w", err)
+		}
+		if !strings.HasPrefix(d, "/") {
+			d = "/dev/" + d
+		}
+		cleanDisks = append(cleanDisks, d)
+	}
+	if len(cleanDisks) == 0 {
+		return fmt.Errorf("no valid block devices specified")
+	}
+
+	// Topology validation
+	vdevType = strings.ToLower(strings.TrimSpace(vdevType))
+	switch vdevType {
+	case "mirror":
+		if len(cleanDisks) < 2 {
+			return fmt.Errorf("mirror topology requires at least 2 member disks (got %d)", len(cleanDisks))
+		}
+	case "raidz1":
+		if len(cleanDisks) < 3 {
+			return fmt.Errorf("raidz1 topology requires at least 3 member disks (got %d)", len(cleanDisks))
+		}
+	case "raidz2":
+		if len(cleanDisks) < 4 {
+			return fmt.Errorf("raidz2 topology requires at least 4 member disks (got %d)", len(cleanDisks))
+		}
+	case "raidz3":
+		if len(cleanDisks) < 5 {
+			return fmt.Errorf("raidz3 topology requires at least 5 member disks (got %d)", len(cleanDisks))
+		}
+	case "single", "stripe", "":
+		vdevType = ""
+	default:
+		return fmt.Errorf("unsupported or invalid vdev topology: %s", vdevType)
+	}
 
 	if m.mockMode {
 		var vdevs []Vdev
-		if vdevType != "stripe" && vdevType != "single" {
+		role := "stripe"
+		if vdevType != "" {
+			role = vdevType + "-0"
 			vdevs = append(vdevs, Vdev{
-				Name:   vdevType + "-0",
+				Name:   role,
 				Type:   vdevType,
 				Health: "ONLINE",
+				State:  "ONLINE",
+				IsDisk: false,
 			})
 		}
-		for _, d := range disks {
+		for _, d := range cleanDisks {
 			vdevs = append(vdevs, Vdev{
-				Name:   d,
-				Type:   "disk",
-				Health: "ONLINE",
-				Path:   "/dev/" + d,
+				Name:      filepath.Base(d),
+				Type:      "disk",
+				Role:      role,
+				Health:    "ONLINE",
+				State:     "ONLINE",
+				SizeBytes: 16000900661248,
+				Path:      d,
+				IsDisk:    true,
 			})
 		}
 
-		rawSize := uint64(len(disks)) * 16000900661248 // 16 TB per disk mock
-		if vdevType == "mirror" && len(disks) > 0 {
+		rawSize := uint64(len(cleanDisks)) * 16000900661248 // 16 TB per disk mock
+		if vdevType == "mirror" && len(cleanDisks) > 0 {
 			rawSize = 16000900661248
-		} else if vdevType == "raidz1" && len(disks) > 1 {
-			rawSize = uint64(len(disks)-1) * 16000900661248
-		} else if vdevType == "raidz2" && len(disks) > 2 {
-			rawSize = uint64(len(disks)-2) * 16000900661248
+		} else if vdevType == "raidz1" && len(cleanDisks) > 1 {
+			rawSize = uint64(len(cleanDisks)-1) * 16000900661248
+		} else if vdevType == "raidz2" && len(cleanDisks) > 2 {
+			rawSize = uint64(len(cleanDisks)-2) * 16000900661248
+		} else if vdevType == "raidz3" && len(cleanDisks) > 3 {
+			rawSize = uint64(len(cleanDisks)-3) * 16000900661248
 		}
 		if rawSize == 0 {
-			rawSize = 32000000000000
+			rawSize = 16000900661248
 		}
-		m.mockPools[name] = &Pool{
+		p := &Pool{
 			Name:          name,
 			Health:        HealthOnline,
 			SizeBytes:     rawSize,
@@ -831,6 +1567,9 @@ func (m *Manager) CreatePool(name, vdevType string, disks []string, ashift int, 
 			Fragmentation: 0,
 			CapPercent:    0,
 			AtimeDefault:  "off",
+			Autotrim:      "off",
+			Autoexpand:    "on",
+			Compression:   compression,
 			Vdevs:         vdevs,
 			Scrub: ScrubStatus{
 				Active:     false,
@@ -839,52 +1578,45 @@ func (m *Manager) CreatePool(name, vdevType string, disks []string, ashift int, 
 				LastRun:    time.Now(),
 			},
 		}
+		syncPoolFields(p)
+		m.mockPools[name] = p
 
 		// Also create root dataset
-		m.mockDS[name] = &Dataset{
-			Name:        name,
-			Pool:        name,
-			Mountpoint:  "/mnt/" + name,
-			UsedHuman:   "1.0 MiB",
-			AvailHuman:  formatZfsBytes(rawSize - 1048576),
-			Compression: compression,
-			Atime:       "off",
-			RecordSize:  "128K",
-			Snapshots:   0,
+		ds := &Dataset{
+			Name:           name,
+			Pool:           name,
+			Type:           "filesystem",
+			Mountpoint:     "/mnt/" + name,
+			UsedBytes:      1048576,
+			UsedHuman:      "1.0 MiB",
+			AvailBytes:     rawSize - 1048576,
+			AvailableBytes: rawSize - 1048576,
+			AvailHuman:     formatZfsBytes(rawSize - 1048576),
+			Compression:    compression,
+			Atime:          "off",
+			RecordSize:     "128K",
+			Snapshots:      0,
 		}
+		syncDatasetFields(ds)
+		m.mockDS[name] = ds
 		return nil
 	}
 
 	args := []string{
-		"create",
-		"-f",
+		"create", "-f",
 		"-o", fmt.Sprintf("ashift=%d", ashift),
 		"-O", "atime=off",
 		"-O", "compression=" + compression,
+		"-O", "xattr=sa",
+		"-O", "acltype=posixacl",
 		name,
 	}
-	if vdevType != "stripe" && vdevType != "single" && vdevType != "" {
+	if vdevType != "" {
 		args = append(args, vdevType)
-	}
-
-	var cleanDisks []string
-	for _, d := range disks {
-		d = strings.TrimSpace(d)
-		if d == "" || d == "undefined" {
-			continue
-		}
-		if !strings.HasPrefix(d, "/") {
-			d = "/dev/" + d
-		}
-		cleanDisks = append(cleanDisks, d)
-	}
-	if len(cleanDisks) == 0 {
-		return fmt.Errorf("no valid block devices specified")
 	}
 	args = append(args, cleanDisks...)
 
-	cmd := exec.Command("zpool", args...)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(longZfsTimeout, "zpool", args...)
 	if err != nil {
 		return fmt.Errorf("zpool create failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -898,8 +1630,8 @@ func (m *Manager) DestroyPool(name string) error {
 
 	name = strings.TrimSpace(name)
 	name = strings.TrimPrefix(name, "/dev/")
-	if name == "" {
-		return fmt.Errorf("pool name is required")
+	if err := validate.PoolName(name); err != nil {
+		return fmt.Errorf("invalid pool name: %w", err)
 	}
 
 	if m.mockMode {
@@ -909,14 +1641,20 @@ func (m *Manager) DestroyPool(name string) error {
 				delete(m.mockDS, ds)
 			}
 		}
+		var kept []*Snapshot
+		for _, s := range m.mockSnaps {
+			if s.Dataset != name && !strings.HasPrefix(s.Dataset, name+"/") {
+				kept = append(kept, s)
+			}
+		}
+		m.mockSnaps = kept
 		return nil
 	}
 
 	// Unmount filesystems first to prevent busy lockouts
-	_ = exec.Command("zfs", "unmount", "-f", name).Run()
+	_, _ = runCommand(fastZfsTimeout, "zfs", "unmount", "-f", name)
 
-	cmd := exec.Command("zpool", "destroy", "-f", name)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zpool", "destroy", "-f", name)
 	if err != nil {
 		return fmt.Errorf("zpool destroy failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -928,6 +1666,11 @@ func (m *Manager) ExportPool(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	name = strings.TrimSpace(name)
+	if err := validate.PoolName(name); err != nil {
+		return fmt.Errorf("invalid pool name: %w", err)
+	}
+
 	if m.mockMode {
 		if p, ok := m.mockPools[name]; ok {
 			m.mockExported[name] = &ImportablePool{
@@ -935,15 +1678,14 @@ func (m *Manager) ExportPool(name string) error {
 				ID:     fmt.Sprintf("%d", time.Now().UnixNano()),
 				State:  string(p.Health),
 				Action: "The pool was exported cleanly and can be imported directly.",
-				Config: fmt.Sprintf("%s %s", name, p.Health),
+				Config: fmt.Sprintf("%s %s (%s)", name, p.Health, p.Topology),
 			}
 			delete(m.mockPools, name)
 		}
 		return nil
 	}
 
-	cmd := exec.Command("zpool", "export", name)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zpool", "export", name)
 	if err != nil {
 		return fmt.Errorf("zpool export failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -960,11 +1702,16 @@ func (m *Manager) FindImportablePools() ([]*ImportablePool, error) {
 		for _, p := range m.mockExported {
 			list = append(list, p)
 		}
+		sort.Slice(list, func(i, j int) bool {
+			return list[i].Name < list[j].Name
+		})
 		return list, nil
 	}
 
-	cmd := exec.Command("zpool", "import", "-d", "/dev/disk/by-id")
-	out, _ := cmd.CombinedOutput()
+	out, _ := runCommandOutput(fastZfsTimeout, "zpool", "import")
+	if len(out) == 0 {
+		out, _ = runCommandOutput(fastZfsTimeout, "zpool", "import", "-d", "/dev/disk/by-id")
+	}
 	var list []*ImportablePool
 	if len(out) == 0 {
 		return list, nil
@@ -1010,6 +1757,17 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	nameOrID = strings.TrimSpace(nameOrID)
+	newName = strings.TrimSpace(newName)
+	if nameOrID == "" {
+		return fmt.Errorf("pool name or ID is required")
+	}
+	if newName != "" {
+		if err := validate.PoolName(newName); err != nil {
+			return fmt.Errorf("invalid new pool name: %w", err)
+		}
+	}
+
 	if m.mockMode {
 		var found *ImportablePool
 		var foundKey string
@@ -1028,9 +1786,10 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
 		}
 
 		delete(m.mockExported, foundKey)
-		m.mockPools[targetName] = &Pool{
+		p := &Pool{
 			Name:          targetName,
 			Health:        HealthOnline,
+			Topology:      "MIRROR (2 Disks)",
 			SizeBytes:     16000900661248,
 			SizeHuman:     "14.55 TiB",
 			Allocated:     348356784128,
@@ -1040,10 +1799,13 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
 			Fragmentation: 1,
 			CapPercent:    2,
 			AtimeDefault:  "off",
+			Autotrim:      "off",
+			Autoexpand:    "on",
+			Compression:   "lz4",
 			Vdevs: []Vdev{
-				{Name: "mirror-0", Type: "mirror", Health: "ONLINE"},
-				{Name: "sdd", Type: "disk", Health: "ONLINE", Path: "/dev/sdd"},
-				{Name: "sde", Type: "disk", Health: "ONLINE", Path: "/dev/sde"},
+				{Name: "mirror-0", Type: "mirror", Health: "ONLINE", State: "ONLINE", IsDisk: false},
+				{Name: "sdd", Type: "disk", Role: "mirror-0", Health: "ONLINE", State: "ONLINE", SizeBytes: 16000900661248, Path: "/dev/sdd", IsDisk: true},
+				{Name: "sde", Type: "disk", Role: "mirror-0", Health: "ONLINE", State: "ONLINE", SizeBytes: 16000900661248, Path: "/dev/sde", IsDisk: true},
 			},
 			Scrub: ScrubStatus{
 				Active:     false,
@@ -1052,20 +1814,29 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
 				LastRun:    time.Now().Add(-24 * time.Hour),
 			},
 		}
-		m.mockDS[targetName] = &Dataset{
-			Name:        targetName,
-			Pool:        targetName,
-			Mountpoint:  "/mnt/" + targetName,
-			UsedHuman:   "324.43 GiB",
-			AvailHuman:  "14.23 TiB",
-			Compression: "lz4",
-			Atime:       "off",
-			RecordSize:  "128K",
+		syncPoolFields(p)
+		m.mockPools[targetName] = p
+
+		ds := &Dataset{
+			Name:           targetName,
+			Pool:           targetName,
+			Type:           "filesystem",
+			Mountpoint:     "/mnt/" + targetName,
+			UsedBytes:      348356784128,
+			UsedHuman:      "324.43 GiB",
+			AvailBytes:     15652543877120,
+			AvailableBytes: 15652543877120,
+			AvailHuman:     "14.23 TiB",
+			Compression:    "lz4",
+			Atime:          "off",
+			RecordSize:     "128K",
 		}
+		syncDatasetFields(ds)
+		m.mockDS[targetName] = ds
 		return nil
 	}
 
-	args := []string{"import", "-d", "/dev/disk/by-id"}
+	args := []string{"import"}
 	if force {
 		args = append(args, "-f")
 	}
@@ -1074,9 +1845,23 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
 		args = append(args, newName)
 	}
 
-	cmd := exec.Command("zpool", args...)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zpool", args...)
 	if err != nil {
+		// Fallback with -d /dev/disk/by-id
+		byIdArgs := []string{"import", "-d", "/dev/disk/by-id"}
+		if force {
+			byIdArgs = append(byIdArgs, "-f")
+		}
+		byIdArgs = append(byIdArgs, nameOrID)
+		if newName != "" {
+			byIdArgs = append(byIdArgs, newName)
+		}
+		if out2, err2 := runCommand(defaultZfsTimeout, "zpool", byIdArgs...); err2 == nil {
+			return nil
+		} else {
+			out = out2
+			err = err2
+		}
 		return fmt.Errorf("zpool import failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
@@ -1087,12 +1872,16 @@ func (m *Manager) TrimPool(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	name = strings.TrimSpace(name)
+	if err := validate.PoolName(name); err != nil {
+		return fmt.Errorf("invalid pool name: %w", err)
+	}
+
 	if m.mockMode {
 		return nil
 	}
 
-	cmd := exec.Command("zpool", "trim", name)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zpool", "trim", name)
 	if err != nil {
 		return fmt.Errorf("zpool trim failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -1104,16 +1893,26 @@ func (m *Manager) ClearPool(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	name = strings.TrimSpace(name)
+	if err := validate.PoolName(name); err != nil {
+		return fmt.Errorf("invalid pool name: %w", err)
+	}
+
 	if m.mockMode {
 		if p, ok := m.mockPools[name]; ok {
 			p.Health = HealthOnline
 			p.Scrub.Errors = 0
+			for i := range p.Vdevs {
+				p.Vdevs[i].ReadErrors = 0
+				p.Vdevs[i].WriteErrors = 0
+				p.Vdevs[i].CksumErrors = 0
+			}
+			syncPoolFields(p)
 		}
 		return nil
 	}
 
-	cmd := exec.Command("zpool", "clear", name)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zpool", "clear", name)
 	if err != nil {
 		return fmt.Errorf("zpool clear failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -1125,35 +1924,13 @@ func (m *Manager) AddVdev(pool, vdevType string, disks []string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	pool = strings.TrimSpace(pool)
+	if err := validate.PoolName(pool); err != nil {
+		return fmt.Errorf("invalid pool name: %w", err)
+	}
+
 	if len(disks) == 0 {
 		return fmt.Errorf("at least one disk required")
-	}
-
-	if m.mockMode {
-		if p, ok := m.mockPools[pool]; ok {
-			for _, d := range disks {
-				p.Vdevs = append(p.Vdevs, Vdev{
-					Name:   d,
-					Type:   vdevType,
-					Health: "ONLINE",
-					Path:   "/dev/" + d,
-				})
-			}
-			if vdevType == "cache" || vdevType == "log" || vdevType == "special" {
-				// auxiliary vdev
-			} else {
-				p.SizeBytes += uint64(len(disks)) * 16000900661248
-				p.FreeBytes += uint64(len(disks)) * 16000900661248
-				p.SizeHuman = formatZfsBytes(p.SizeBytes)
-				p.FreeHuman = formatZfsBytes(p.FreeBytes)
-			}
-		}
-		return nil
-	}
-
-	args := []string{"add", "-f", pool}
-	if vdevType != "stripe" && vdevType != "single" && vdevType != "disk" && vdevType != "data" {
-		args = append(args, vdevType)
 	}
 
 	var cleanDisks []string
@@ -1161,6 +1938,9 @@ func (m *Manager) AddVdev(pool, vdevType string, disks []string) error {
 		d = strings.TrimSpace(d)
 		if d == "" || d == "undefined" {
 			continue
+		}
+		if err := validate.DevicePath(d); err != nil {
+			return fmt.Errorf("invalid member device: %w", err)
 		}
 		if !strings.HasPrefix(d, "/") {
 			d = "/dev/" + d
@@ -1170,10 +1950,53 @@ func (m *Manager) AddVdev(pool, vdevType string, disks []string) error {
 	if len(cleanDisks) == 0 {
 		return fmt.Errorf("no valid block devices specified")
 	}
+
+	vdevType = strings.ToLower(strings.TrimSpace(vdevType))
+	if vdevType == "mirror" && len(cleanDisks) < 2 {
+		return fmt.Errorf("adding a mirror vdev requires at least 2 disks (got %d)", len(cleanDisks))
+	}
+
+	if m.mockMode {
+		if p, ok := m.mockPools[pool]; ok {
+			role := vdevType
+			if role == "" || role == "data" || role == "disk" || role == "single" {
+				role = "stripe"
+			}
+			for _, d := range cleanDisks {
+				p.Vdevs = append(p.Vdevs, Vdev{
+					Name:      filepath.Base(d),
+					Type:      role,
+					Role:      role,
+					Health:    "ONLINE",
+					State:     "ONLINE",
+					SizeBytes: 16000900661248,
+					Path:      d,
+					IsDisk:    true,
+				})
+			}
+			if vdevType != "cache" && vdevType != "log" && vdevType != "special" && vdevType != "spare" {
+				addedBytes := uint64(len(cleanDisks)) * 16000900661248
+				if vdevType == "mirror" {
+					addedBytes = 16000900661248
+				}
+				p.SizeBytes += addedBytes
+				p.FreeBytes += addedBytes
+				p.SizeHuman = formatZfsBytes(p.SizeBytes)
+				p.FreeHuman = formatZfsBytes(p.FreeBytes)
+				p.Topology = "" // recompute in syncPoolFields
+			}
+			syncPoolFields(p)
+		}
+		return nil
+	}
+
+	args := []string{"add", "-f", pool}
+	if vdevType != "stripe" && vdevType != "single" && vdevType != "disk" && vdevType != "data" && vdevType != "" {
+		args = append(args, vdevType)
+	}
 	args = append(args, cleanDisks...)
 
-	cmd := exec.Command("zpool", args...)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zpool", args...)
 	if err != nil {
 		return fmt.Errorf("zpool add failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -1185,20 +2008,61 @@ func (m *Manager) AttachDisk(pool, existingDev, newDev string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	pool = strings.TrimSpace(pool)
+	existingDev = strings.TrimSpace(existingDev)
+	newDev = strings.TrimSpace(newDev)
+	if err := validate.PoolName(pool); err != nil {
+		return fmt.Errorf("invalid pool name: %w", err)
+	}
+	if err := validate.DevicePath(existingDev); err != nil {
+		return fmt.Errorf("invalid existing device: %w", err)
+	}
+	if err := validate.DevicePath(newDev); err != nil {
+		return fmt.Errorf("invalid new device: %w", err)
+	}
+
 	if m.mockMode {
 		if p, ok := m.mockPools[pool]; ok {
+			newBase := filepath.Base(newDev)
+			hasMirrorGroup := false
+			for i := range p.Vdevs {
+				if strings.HasPrefix(p.Vdevs[i].Name, "mirror") {
+					hasMirrorGroup = true
+				}
+				if p.Vdevs[i].Name == existingDev || filepath.Base(p.Vdevs[i].Path) == existingDev {
+					p.Vdevs[i].Role = "mirror-0"
+				}
+			}
+			if !hasMirrorGroup {
+				p.Vdevs = append([]Vdev{{
+					Name:   "mirror-0",
+					Type:   "mirror",
+					Health: "ONLINE",
+					State:  "ONLINE",
+					IsDisk: false,
+				}}, p.Vdevs...)
+			}
 			p.Vdevs = append(p.Vdevs, Vdev{
-				Name:   newDev,
-				Type:   "mirror",
-				Health: "ONLINE",
-				Path:   "/dev/" + newDev,
+				Name:      newBase,
+				Type:      "disk",
+				Role:      "mirror-0",
+				Health:    "ONLINE",
+				State:     "ONLINE",
+				SizeBytes: p.SizeBytes,
+				Path:      "/dev/" + newBase,
+				IsDisk:    true,
 			})
+			p.Topology = "" // recompute
+			syncPoolFields(p)
 		}
 		return nil
 	}
 
-	cmd := exec.Command("zpool", "attach", pool, existingDev, newDev)
-	out, err := cmd.CombinedOutput()
+	existingMember := m.resolvePoolMember(pool, existingDev)
+	if !strings.HasPrefix(newDev, "/") {
+		newDev = "/dev/" + newDev
+	}
+	out, err := runCommand(defaultZfsTimeout, "zpool", "attach", "-f", pool, existingMember, newDev)
 	if err != nil {
 		return fmt.Errorf("zpool attach failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -1210,20 +2074,40 @@ func (m *Manager) DetachDisk(pool, device string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	pool = strings.TrimSpace(pool)
+	device = strings.TrimSpace(device)
+	if err := validate.PoolName(pool); err != nil {
+		return fmt.Errorf("invalid pool name: %w", err)
+	}
+	if err := validate.DevicePath(device); err != nil {
+		return fmt.Errorf("invalid device: %w", err)
+	}
+
 	if m.mockMode {
 		if p, ok := m.mockPools[pool]; ok {
+			diskCount := 0
+			for _, v := range p.Vdevs {
+				if v.IsDisk {
+					diskCount++
+				}
+			}
+			if diskCount <= 1 {
+				return fmt.Errorf("cannot detach the only remaining disk in pool '%s'", pool)
+			}
 			for i, v := range p.Vdevs {
-				if v.Name == device || v.Path == device {
+				if v.Name == device || v.Path == device || filepath.Base(v.Path) == device {
 					p.Vdevs = append(p.Vdevs[:i], p.Vdevs[i+1:]...)
 					break
 				}
 			}
+			p.Topology = ""
+			syncPoolFields(p)
 		}
 		return nil
 	}
 
-	cmd := exec.Command("zpool", "detach", pool, device)
-	out, err := cmd.CombinedOutput()
+	targetMember := m.resolvePoolMember(pool, device)
+	out, err := runCommand(defaultZfsTimeout, "zpool", "detach", pool, targetMember)
 	if err != nil {
 		return fmt.Errorf("zpool detach failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -1235,21 +2119,41 @@ func (m *Manager) ReplaceDisk(pool, oldDev, newDev string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	pool = strings.TrimSpace(pool)
+	oldDev = strings.TrimSpace(oldDev)
+	newDev = strings.TrimSpace(newDev)
+	if err := validate.PoolName(pool); err != nil {
+		return fmt.Errorf("invalid pool name: %w", err)
+	}
+	if err := validate.DevicePath(oldDev); err != nil {
+		return fmt.Errorf("invalid old device: %w", err)
+	}
+	if err := validate.DevicePath(newDev); err != nil {
+		return fmt.Errorf("invalid new device: %w", err)
+	}
+
 	if m.mockMode {
 		if p, ok := m.mockPools[pool]; ok {
+			newBase := filepath.Base(newDev)
 			for i, v := range p.Vdevs {
-				if v.Name == oldDev || v.Path == oldDev {
-					p.Vdevs[i].Name = newDev
-					p.Vdevs[i].Path = "/dev/" + newDev
+				if v.Name == oldDev || v.Path == oldDev || filepath.Base(v.Path) == oldDev {
+					p.Vdevs[i].Name = newBase
+					p.Vdevs[i].Path = "/dev/" + newBase
+					p.Vdevs[i].Health = "ONLINE"
+					p.Vdevs[i].State = "ONLINE"
 					break
 				}
 			}
+			syncPoolFields(p)
 		}
 		return nil
 	}
 
-	cmd := exec.Command("zpool", "replace", pool, oldDev, newDev)
-	out, err := cmd.CombinedOutput()
+	oldMember := m.resolvePoolMember(pool, oldDev)
+	if !strings.HasPrefix(newDev, "/") {
+		newDev = "/dev/" + newDev
+	}
+	out, err := runCommand(defaultZfsTimeout, "zpool", "replace", "-f", pool, oldMember, newDev)
 	if err != nil {
 		return fmt.Errorf("zpool replace failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -1261,20 +2165,31 @@ func (m *Manager) OfflineDisk(pool, device string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	pool = strings.TrimSpace(pool)
+	device = strings.TrimSpace(device)
+	if err := validate.PoolName(pool); err != nil {
+		return fmt.Errorf("invalid pool name: %w", err)
+	}
+	if err := validate.DevicePath(device); err != nil {
+		return fmt.Errorf("invalid device: %w", err)
+	}
+
 	if m.mockMode {
 		if p, ok := m.mockPools[pool]; ok {
 			for i, v := range p.Vdevs {
-				if v.Name == device || v.Path == device {
+				if v.Name == device || v.Path == device || filepath.Base(v.Path) == device {
 					p.Vdevs[i].Health = "OFFLINE"
+					p.Vdevs[i].State = "OFFLINE"
 					break
 				}
 			}
+			syncPoolFields(p)
 		}
 		return nil
 	}
 
-	cmd := exec.Command("zpool", "offline", pool, device)
-	out, err := cmd.CombinedOutput()
+	targetMember := m.resolvePoolMember(pool, device)
+	out, err := runCommand(defaultZfsTimeout, "zpool", "offline", pool, targetMember)
 	if err != nil {
 		return fmt.Errorf("zpool offline failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -1286,20 +2201,31 @@ func (m *Manager) OnlineDisk(pool, device string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	pool = strings.TrimSpace(pool)
+	device = strings.TrimSpace(device)
+	if err := validate.PoolName(pool); err != nil {
+		return fmt.Errorf("invalid pool name: %w", err)
+	}
+	if err := validate.DevicePath(device); err != nil {
+		return fmt.Errorf("invalid device: %w", err)
+	}
+
 	if m.mockMode {
 		if p, ok := m.mockPools[pool]; ok {
 			for i, v := range p.Vdevs {
-				if v.Name == device || v.Path == device {
+				if v.Name == device || v.Path == device || filepath.Base(v.Path) == device {
 					p.Vdevs[i].Health = "ONLINE"
+					p.Vdevs[i].State = "ONLINE"
 					break
 				}
 			}
+			syncPoolFields(p)
 		}
 		return nil
 	}
 
-	cmd := exec.Command("zpool", "online", pool, device)
-	out, err := cmd.CombinedOutput()
+	targetMember := m.resolvePoolMember(pool, device)
+	out, err := runCommand(defaultZfsTimeout, "zpool", "online", pool, targetMember)
 	if err != nil {
 		return fmt.Errorf("zpool online failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -1311,12 +2237,30 @@ func (m *Manager) SetPoolProperty(pool, property, value string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	pool = strings.TrimSpace(pool)
+	property = strings.TrimSpace(strings.ToLower(property))
+	value = strings.TrimSpace(value)
+	if err := validate.PoolName(pool); err != nil {
+		return fmt.Errorf("invalid pool name: %w", err)
+	}
+	if err := validate.PoolProperty(property, value); err != nil {
+		return fmt.Errorf("invalid pool property: %w", err)
+	}
+
 	if m.mockMode {
+		if p, ok := m.mockPools[pool]; ok {
+			switch property {
+			case "autotrim":
+				p.Autotrim = value
+			case "autoexpand":
+				p.Autoexpand = value
+			}
+			syncPoolFields(p)
+		}
 		return nil
 	}
 
-	cmd := exec.Command("zpool", "set", fmt.Sprintf("%s=%s", property, value), pool)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zpool", "set", fmt.Sprintf("%s=%s", property, value), pool)
 	if err != nil {
 		return fmt.Errorf("zpool set failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -1328,22 +2272,36 @@ func (m *Manager) CreateZvol(name string, sizeBytes uint64, volblocksize string,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	name = strings.TrimSpace(name)
+	if err := validate.DatasetName(name); err != nil {
+		return fmt.Errorf("invalid zvol name: %w", err)
+	}
+	if sizeBytes == 0 {
+		return fmt.Errorf("zvol size must be greater than 0")
+	}
+
 	if volblocksize == "" {
 		volblocksize = "16k"
 	}
 
 	if m.mockMode {
 		poolName := strings.Split(name, "/")[0]
-		m.mockDS[name] = &Dataset{
-			Name:        name,
-			Pool:        poolName,
-			Mountpoint:  "/dev/zvol/" + name,
-			UsedHuman:   "0 B",
-			AvailHuman:  formatZfsBytes(sizeBytes),
-			Compression: "lz4",
-			Atime:       "off",
-			RecordSize:  volblocksize,
+		ds := &Dataset{
+			Name:           name,
+			Pool:           poolName,
+			Type:           "volume",
+			Mountpoint:     "/dev/zvol/" + name,
+			UsedBytes:      65536,
+			UsedHuman:      "64 KiB",
+			AvailBytes:     sizeBytes,
+			AvailableBytes: sizeBytes,
+			AvailHuman:     formatZfsBytes(sizeBytes),
+			Compression:    "lz4",
+			Atime:          "off",
+			RecordSize:     volblocksize,
 		}
+		syncDatasetFields(ds)
+		m.mockDS[name] = ds
 		return nil
 	}
 
@@ -1353,8 +2311,7 @@ func (m *Manager) CreateZvol(name string, sizeBytes uint64, volblocksize string,
 	}
 	args = append(args, name)
 
-	cmd := exec.Command("zfs", args...)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zfs", args...)
 	if err != nil {
 		return fmt.Errorf("zfs create -V failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -1366,23 +2323,45 @@ func (m *Manager) CloneSnapshot(snapshot, targetDataset string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	snapshot = strings.TrimSpace(snapshot)
+	targetDataset = strings.TrimSpace(targetDataset)
+	parts := strings.Split(snapshot, "@")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid snapshot '%s': must be dataset@snap", snapshot)
+	}
+	if err := validate.SnapshotName(parts[0], parts[1]); err != nil {
+		return fmt.Errorf("invalid source snapshot: %w", err)
+	}
+	if err := validate.DatasetName(targetDataset); err != nil {
+		return fmt.Errorf("invalid target dataset: %w", err)
+	}
+
 	if m.mockMode {
 		poolName := strings.Split(targetDataset, "/")[0]
-		m.mockDS[targetDataset] = &Dataset{
-			Name:        targetDataset,
-			Pool:        poolName,
-			Mountpoint:  "/mnt/" + targetDataset,
-			UsedHuman:   "1.0 MiB",
-			AvailHuman:  "Available",
-			Compression: "lz4",
-			Atime:       "off",
-			RecordSize:  "128K",
+		var avail uint64 = 1546188226560
+		if p, ok := m.mockPools[poolName]; ok && p.FreeBytes > 0 {
+			avail = p.FreeBytes
 		}
+		ds := &Dataset{
+			Name:           targetDataset,
+			Pool:           poolName,
+			Type:           "filesystem",
+			Mountpoint:     "/mnt/" + targetDataset,
+			UsedBytes:      1048576,
+			UsedHuman:      "1.0 MiB",
+			AvailBytes:     avail,
+			AvailableBytes: avail,
+			AvailHuman:     formatZfsBytes(avail),
+			Compression:    "lz4",
+			Atime:          "off",
+			RecordSize:     "128K",
+		}
+		syncDatasetFields(ds)
+		m.mockDS[targetDataset] = ds
 		return nil
 	}
 
-	cmd := exec.Command("zfs", "clone", snapshot, targetDataset)
-	out, err := cmd.CombinedOutput()
+	out, err := runCommand(defaultZfsTimeout, "zfs", "clone", "-o", "atime=off", snapshot, targetDataset)
 	if err != nil {
 		return fmt.Errorf("zfs clone failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
