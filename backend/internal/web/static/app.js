@@ -1412,17 +1412,29 @@ function renderShares() {
       state.smbShares.forEach((s) => {
         const safeName = escapeHtml(s.name);
         const safePath = escapeHtml(s.path);
-        const safeUsers = s.valid_users && s.valid_users.length ? escapeHtml(s.valid_users.join(', ')) : 'All Authenticated';
         const encName = encodeURIComponent(s.name);
+
+        let usersBadge = '';
+        if (s.guest_ok) {
+          usersBadge = '<span class="badge-status green" style="font-size:0.75rem;">🟢 Jeder (Gast / Ohne Passwort)</span>';
+        } else if (s.valid_users && s.valid_users.length > 0) {
+          usersBadge = s.valid_users
+            .map((u) => `<span class="badge font-mono" style="background:rgba(59,130,246,0.18);color:#93c5fd;border:1px solid rgba(59,130,246,0.35);padding:2px 7px;border-radius:4px;margin:1px 2px;display:inline-block;font-size:0.75rem;">👤 ${escapeHtml(u)}</span>`)
+            .join('');
+        } else {
+          usersBadge = '<span class="badge-status blue" style="font-size:0.75rem;">👥 Alle NAS-Benutzer (@nasusers)</span>';
+        }
+
         html += `
           <tr>
             <td><span class="badge-status blue">SMB / CIFS</span></td>
             <td><strong>${safeName}</strong></td>
             <td><span class="font-mono text-dim">${safePath}</span></td>
             <td><span class="badge-status ${s.read_only ? 'slate' : 'green'}">${s.read_only ? 'Read Only' : 'Read / Write'}</span></td>
-            <td>${safeUsers}</td>
+            <td>${usersBadge}</td>
             <td><span class="badge-status green">Active</span></td>
             <td class="col-actions">
+              <button class="btn btn-secondary btn-sm" onclick="openEditSmbShare(decodeURIComponent('${encName}'))" style="margin-right: 0.35rem;">Edit</button>
               <button class="btn btn-danger btn-sm" onclick="deleteSmbShare(decodeURIComponent('${encName}'))">Delete</button>
             </td>
           </tr>
@@ -1468,13 +1480,25 @@ function renderShares() {
         .map((u) => {
           const safeUser = escapeHtml(u.username);
           const encUser = encodeURIComponent(u.username);
+
+          // Find assigned shares for this user
+          const assignedShares = (state.smbShares || [])
+            .filter((s) => {
+              if (s.guest_ok) return false;
+              if (!s.valid_users || s.valid_users.length === 0) return true;
+              return s.valid_users.includes(u.username);
+            })
+            .map((s) => `<span class="badge font-mono" style="background:rgba(16,185,129,0.15);color:#6ee7b7;border:1px solid rgba(16,185,129,0.3);padding:2px 7px;border-radius:4px;margin:1px 3px;display:inline-block;font-size:0.75rem;">📁 ${escapeHtml(s.name)}</span>`);
+
+          const sharesDisplay = assignedShares.length > 0 ? assignedShares.join('') : '<span class="text-dim" style="font-size:0.75rem;">Keine privaten Freigaben</span>';
+
           return `
           <tr>
-            <td><strong class="font-mono text-blue">${safeUser}</strong></td>
+            <td><strong class="font-mono text-blue">👤 ${safeUser}</strong></td>
             <td><span class="font-mono text-dim">${escapeHtml(u.uid || 1000)}</span></td>
-            <td><span class="badge-status green">Enabled</span></td>
+            <td><span class="badge-status green">Aktiv</span></td>
             <td><span class="font-mono text-dim">${escapeHtml(u.primary_group || 'nasusers')}</span></td>
-            <td class="text-dim">${escapeHtml(u.created_at || 'Native')}</td>
+            <td>${sharesDisplay}</td>
             <td class="col-actions">
               <button class="btn btn-danger btn-sm" onclick="deleteStorageUser(decodeURIComponent('${encUser}'))">Delete</button>
             </td>
@@ -2127,19 +2151,48 @@ function setupModals() {
     });
   }
 
-  // Modal: Create Share
+  // Modal: Create / Edit Share
   const modalShare = document.getElementById('modal-share');
   const btnOpenCreateShare = document.getElementById('btn-open-create-share');
   const btnCloseShare = document.getElementById('btn-close-share');
   const btnCancelShare = document.getElementById('btn-cancel-share');
   const formCreateShare = document.getElementById('form-create-share');
   const selectShareProto = document.getElementById('select-share-proto');
+  const selectShareAccess = document.getElementById('select-share-access');
   const groupNfsClients = document.getElementById('group-nfs-clients');
+  const groupSmbUsers = document.getElementById('group-smb-users');
+  let editingShareName = null;
 
-  if (selectShareProto && groupNfsClients) {
-    selectShareProto.addEventListener('change', () => {
-      groupNfsClients.style.display = selectShareProto.value === 'nfs' ? 'block' : 'none';
-    });
+  function updateShareFormVisibility() {
+    const isNfs = selectShareProto && selectShareProto.value === 'nfs';
+    const isGuest = selectShareAccess && selectShareAccess.value === 'guest';
+
+    if (groupNfsClients) groupNfsClients.style.display = isNfs ? 'block' : 'none';
+    if (groupSmbUsers) groupSmbUsers.style.display = (!isNfs && !isGuest) ? 'block' : 'none';
+  }
+
+  if (selectShareProto) selectShareProto.addEventListener('change', updateShareFormVisibility);
+  if (selectShareAccess) selectShareAccess.addEventListener('change', updateShareFormVisibility);
+
+  function populateSmbUsersCheckboxes(selectedUsers = []) {
+    const container = document.getElementById('smb-users-checkboxes');
+    if (!container) return;
+    if (!state.users || state.users.length === 0) {
+      container.innerHTML = `<span class="text-dim" style="font-size:0.75rem;">Keine NAS-Benutzer vorhanden. Klicke unten auf "+ New Storage User".</span>`;
+      return;
+    }
+    container.innerHTML = state.users
+      .map((u) => {
+        const isChecked = selectedUsers.includes(u.username) || (selectedUsers.length === 0 && !editingShareName);
+        return `
+        <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.78rem; cursor: pointer;">
+          <input type="checkbox" name="smb_user" value="${escapeHtml(u.username)}" ${isChecked ? 'checked' : ''}>
+          <strong class="font-mono text-blue">👤 ${escapeHtml(u.username)}</strong>
+          <span class="text-dim">(${escapeHtml(u.role || 'user')})</span>
+        </label>
+      `;
+      })
+      .join('');
   }
 
   function populateSharePathSuggestions() {
@@ -2159,16 +2212,71 @@ function setupModals() {
 
   window.promptCreateShare = function (suggestedName, suggestedPath) {
     if (!modalShare) return;
-    populateSharePathSuggestions();
-    if (suggestedName) document.getElementById('input-share-name').value = suggestedName;
+    editingShareName = null;
+    const titleEl = document.getElementById('modal-share-title');
+    if (titleEl) titleEl.textContent = 'Create Network File Share';
+    const nameInput = document.getElementById('input-share-name');
+    if (nameInput) {
+      nameInput.value = suggestedName || '';
+      nameInput.readOnly = false;
+    }
     if (suggestedPath) document.getElementById('input-share-path').value = suggestedPath;
+    if (selectShareProto) {
+      selectShareProto.value = 'smb';
+      selectShareProto.disabled = false;
+    }
+    const submitBtn = document.getElementById('btn-save-share-submit');
+    if (submitBtn) submitBtn.textContent = 'Create Share';
+    populateSharePathSuggestions();
+    populateSmbUsersCheckboxes([]);
+    updateShareFormVisibility();
+    modalShare.classList.add('open');
+  };
+
+  window.openEditSmbShare = function (name) {
+    if (!modalShare) return;
+    const s = (state.smbShares || []).find((x) => x.name === name);
+    if (!s) return;
+
+    editingShareName = name;
+    const titleEl = document.getElementById('modal-share-title');
+    if (titleEl) titleEl.textContent = `Edit SMB Share: ${name}`;
+
+    const nameInput = document.getElementById('input-share-name');
+    if (nameInput) {
+      nameInput.value = s.name;
+      nameInput.readOnly = true;
+    }
+
+    document.getElementById('input-share-path').value = s.path;
+    if (selectShareProto) {
+      selectShareProto.value = 'smb';
+      selectShareProto.disabled = true;
+    }
+
+    if (selectShareAccess) {
+      if (s.guest_ok) {
+        selectShareAccess.value = 'guest';
+      } else if (s.read_only) {
+        selectShareAccess.value = 'readonly';
+      } else {
+        selectShareAccess.value = 'restricted';
+      }
+    }
+
+    populateSharePathSuggestions();
+    populateSmbUsersCheckboxes(s.valid_users || []);
+    updateShareFormVisibility();
+
+    const submitBtn = document.getElementById('btn-save-share-submit');
+    if (submitBtn) submitBtn.textContent = 'Save Changes';
+
     modalShare.classList.add('open');
   };
 
   if (btnOpenCreateShare) {
     btnOpenCreateShare.addEventListener('click', () => {
-      populateSharePathSuggestions();
-      modalShare.classList.add('open');
+      window.promptCreateShare();
     });
   }
   if (btnCloseShare) btnCloseShare.addEventListener('click', () => modalShare.classList.remove('open'));
@@ -2187,11 +2295,16 @@ function setupModals() {
 
       try {
         let endpoint = `${API_BASE}/shares/smb`;
+        const selectedUsers = access === 'guest'
+          ? []
+          : Array.from(document.querySelectorAll('input[name="smb_user"]:checked')).map((c) => c.value);
+
         let payload = {
           name,
           path,
           read_only: access === 'readonly',
           guest_ok: access === 'guest',
+          valid_users: selectedUsers,
         };
 
         if (proto === 'nfs') {
@@ -2214,13 +2327,15 @@ function setupModals() {
 
         if (res.ok) {
           modalShare.classList.remove('open');
-          showToast(`Network share "${name}" created`, 'info');
-          audit(`Created ${proto.toUpperCase()} export: ${name} -> ${path}`);
+          const actionWord = editingShareName ? 'updated' : 'created';
+          showToast(`Network share "${name}" ${actionWord}`, 'info');
+          audit(`${actionWord.toUpperCase()} ${proto.toUpperCase()} export: ${name} -> ${path}`);
           formCreateShare.reset();
+          editingShareName = null;
           refreshAll();
         } else {
           const err = await res.json().catch(() => ({}));
-          showToast(`Failed to create share: ${err.error || res.statusText}`, 'error');
+          showToast(`Failed to save share: ${err.error || res.statusText}`, 'error');
         }
       } catch (err) {
         showToast(`Error saving network share: ${err.message}`, 'error');

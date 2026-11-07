@@ -213,7 +213,14 @@ func (m *Manager) parseSmbConfigFile(filePath, name string) *SmbShare {
 		} else if strings.HasPrefix(line, "valid users") {
 			parts := strings.Split(line, "=")
 			if len(parts) >= 2 {
-				share.ValidUsers = strings.Fields(strings.TrimSpace(parts[1]))
+				raw := strings.Fields(strings.TrimSpace(parts[1]))
+				var uList []string
+				for _, u := range raw {
+					if u != "@nasusers" && u != "" {
+						uList = append(uList, u)
+					}
+				}
+				share.ValidUsers = uList
 			}
 		}
 	}
@@ -249,9 +256,9 @@ func (m *Manager) ListNfs() ([]*NfsExport, error) {
 }
 
 // syncSambaMasterConfig writes all active SMB shares into /etc/samba/nas-shares.conf
-// and ensures /etc/samba/smb.conf includes /etc/samba/nas-shares.conf cleanly.
+// and ensures /etc/samba/smb.conf includes /etc/samba/nas-shares.conf cleanly inside [global].
 // Note: Samba's "include =" directive does NOT expand "*" wildcards (like conf.d/*.conf),
-// so a single consolidated include file is required for Samba to expose the shares to Windows.
+// and placing "include =" at the end of smb.conf causes it to be trapped inside [printers]/[print$].
 func (m *Manager) syncSambaMasterConfig() error {
 	if m.mockMode {
 		return nil
@@ -287,26 +294,44 @@ func (m *Manager) syncSambaMasterConfig() error {
 		content := string(data)
 		modified := false
 
-		// Remove broken wildcard include if present from older versions
-		if strings.Contains(content, "include = /etc/samba/conf.d/*.conf") {
-			content = strings.ReplaceAll(content, "include = /etc/samba/conf.d/*.conf", "include = /etc/samba/nas-shares.conf")
-			modified = true
+		// Strip any existing include lines for nas-shares.conf or conf.d/*.conf
+		lines := strings.Split(content, "\n")
+		var cleanLines []string
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "include = /etc/samba/nas-shares.conf") ||
+				strings.HasPrefix(trimmed, "include = /etc/samba/conf.d/") ||
+				strings.Contains(trimmed, "Auto-include Debian NAS shares") ||
+				strings.Contains(trimmed, "Dynamic Debian NAS shares") {
+				modified = true
+				continue
+			}
+			cleanLines = append(cleanLines, line)
 		}
+		content = strings.Join(cleanLines, "\n")
 
-		// Ensure map to guest = Bad User is set in [global] so Windows can browse shares without auth block
-		if !strings.Contains(strings.ToLower(content), "map to guest") && strings.Contains(content, "[global]") {
-			content = strings.Replace(content, "[global]", "[global]\n   map to guest = Bad User", 1)
+		// Insert include into [global] so shares are globally recognized and not trapped in printer sections
+		if strings.Contains(content, "[global]") {
+			globalInjection := "[global]\n   # Dynamic Debian NAS shares include\n   include = /etc/samba/nas-shares.conf\n   map to guest = Bad User\n   usershare allow guests = yes\n   browseable = yes"
+			if !strings.Contains(content, "map to guest = Bad User") {
+				content = strings.Replace(content, "[global]", globalInjection, 1)
+			} else {
+				content = strings.Replace(content, "[global]", "[global]\n   # Dynamic Debian NAS shares include\n   include = /etc/samba/nas-shares.conf\n   browseable = yes", 1)
+			}
 			modified = true
-		}
-
-		if !strings.Contains(content, "include = /etc/samba/nas-shares.conf") {
-			content = strings.TrimRight(content, "\n") + "\n\n# Auto-include Debian NAS shares\ninclude = /etc/samba/nas-shares.conf\n"
+		} else {
+			content = "[global]\n   include = /etc/samba/nas-shares.conf\n   map to guest = Bad User\n   usershare allow guests = yes\n   browseable = yes\n\n" + content
 			modified = true
 		}
 
 		if modified {
 			_ = os.WriteFile(smbConfPath, []byte(content), 0644)
 		}
+	}
+
+	// Validate with testparm if available
+	if _, err := exec.LookPath("testparm"); err == nil {
+		_, _ = runCmdWithTimeout(5*time.Second, "testparm", "-s")
 	}
 
 	// Reload smbd and nmbd so Windows clients see changes immediately
@@ -423,21 +448,22 @@ func (m *Manager) generateSmbConfig(s *SmbShare) string {
 	sb.WriteString("   directory mask = 0775\n")
 	sb.WriteString("   force create mode = 0664\n")
 	sb.WriteString("   force directory mode = 0775\n")
-	if s.GuestOk && len(s.ValidUsers) == 0 {
+	if s.GuestOk {
 		sb.WriteString("   force user = root\n")
 		sb.WriteString("   force group = nasusers\n")
 	} else {
 		sb.WriteString("   force group = nasusers\n")
+		if len(s.ValidUsers) > 0 {
+			sb.WriteString(fmt.Sprintf("   valid users = %s\n", strings.Join(s.ValidUsers, " ")))
+		} else {
+			sb.WriteString("   valid users = @nasusers\n")
+		}
 	}
 
 	if s.TimeMachine {
 		sb.WriteString("   vfs objects = catia fruit streams_xattr\n")
 		sb.WriteString("   fruit:time machine = yes\n")
 		sb.WriteString("   fruit:aapl = yes\n")
-	}
-
-	if len(s.ValidUsers) > 0 {
-		sb.WriteString(fmt.Sprintf("   valid users = %s\n", strings.Join(s.ValidUsers, " ")))
 	}
 
 	return sb.String()

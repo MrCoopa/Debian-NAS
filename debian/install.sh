@@ -52,19 +52,36 @@ echo "[+] 3/6: System-Optimierungen für HDD-Standby & ZFS..."
 groupadd -f nasusers || true
 
 # 1. Samba conf.d Ordner & Master-Include (/etc/samba/nas-shares.conf) erstellen
-# Hinweis: Samba unterstützt KEINE Wildcards (*.conf) bei "include =", daher wird /etc/samba/nas-shares.conf genutzt
+# Hinweis: Samba unterstützt KEINE Wildcards (*.conf) bei "include =", daher wird /etc/samba/nas-shares.conf
+# direkt in der [global]-Sektion eingebunden (nicht am Dateiende, wo es von [printers] geschluckt wird).
 mkdir -p /etc/samba/conf.d
 touch /etc/samba/nas-shares.conf
-sed -i 's|include = /etc/samba/conf.d/\*.conf|include = /etc/samba/nas-shares.conf|g' /etc/samba/smb.conf || true
-if ! grep -q "include = /etc/samba/nas-shares.conf" /etc/samba/smb.conf; then
-  cat << 'EOF' >> /etc/samba/smb.conf
+chmod 0644 /etc/samba/nas-shares.conf
 
-# Include dynamic NAS shares
-include = /etc/samba/nas-shares.conf
+if [ -f /etc/samba/smb.conf ]; then
+  # Alte fehlerhafte Includes entfernen
+  sed -i '/include = \/etc\/samba\/conf\.d\/\*\.conf/d' /etc/samba/smb.conf || true
+  sed -i '/include = \/etc\/samba\/nas-shares\.conf/d' /etc/samba/smb.conf || true
+
+  # Direkt in die [global]-Sektion einfügen
+  if grep -q "\[global\]" /etc/samba/smb.conf; then
+    sed -i '/\[global\]/a \   include = /etc/samba/nas-shares.conf\n   map to guest = Bad User\n   usershare allow guests = yes\n   browseable = yes' /etc/samba/smb.conf || true
+  else
+    cat << 'EOF' > /etc/samba/smb.conf
+[global]
+   workgroup = WORKGROUP
+   server string = %h (Debian NAS)
+   server role = standalone server
+   include = /etc/samba/nas-shares.conf
+   map to guest = Bad User
+   usershare allow guests = yes
+   browseable = yes
 EOF
+  fi
 fi
-systemctl enable --now smbd nmbd || true
-systemctl enable --now wsdd 2>/dev/null || systemctl enable --now wsdd-server 2>/dev/null || true
+
+systemctl restart smbd nmbd || true
+systemctl restart wsdd 2>/dev/null || systemctl restart wsdd-server 2>/dev/null || true
 
 # 2. NFS Exports Ordner
 mkdir -p /etc/exports.d
