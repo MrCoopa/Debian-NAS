@@ -44,22 +44,27 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
   rclone \
   golang-go
 
-# Optional hardware tools
-DEBIAN_FRONTEND=noninteractive apt-get install -y hd-idle ledmon || true
+# Optional hardware & Windows 10/11 Network Discovery (wsdd) tools
+DEBIAN_FRONTEND=noninteractive apt-get install -y hd-idle ledmon wsdd || DEBIAN_FRONTEND=noninteractive apt-get install -y hd-idle ledmon wsdd-server || true
 
 echo "[+] 3/6: System-Optimierungen für HDD-Standby & ZFS..."
 # 0. Gruppe nasusers für Samba/NAS-Speicherzugriffe anlegen
 groupadd -f nasusers || true
 
-# 1. Samba conf.d Ordner erstellen
+# 1. Samba conf.d Ordner & Master-Include (/etc/samba/nas-shares.conf) erstellen
+# Hinweis: Samba unterstützt KEINE Wildcards (*.conf) bei "include =", daher wird /etc/samba/nas-shares.conf genutzt
 mkdir -p /etc/samba/conf.d
-if ! grep -q "include = /etc/samba/conf.d/\*.conf" /etc/samba/smb.conf; then
+touch /etc/samba/nas-shares.conf
+sed -i 's|include = /etc/samba/conf.d/\*.conf|include = /etc/samba/nas-shares.conf|g' /etc/samba/smb.conf || true
+if ! grep -q "include = /etc/samba/nas-shares.conf" /etc/samba/smb.conf; then
   cat << 'EOF' >> /etc/samba/smb.conf
 
 # Include dynamic NAS shares
-include = /etc/samba/conf.d/*.conf
+include = /etc/samba/nas-shares.conf
 EOF
 fi
+systemctl enable --now smbd nmbd || true
+systemctl enable --now wsdd 2>/dev/null || systemctl enable --now wsdd-server 2>/dev/null || true
 
 # 2. NFS Exports Ordner
 mkdir -p /etc/exports.d
