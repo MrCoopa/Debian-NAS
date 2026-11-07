@@ -99,11 +99,6 @@ type Collector struct {
 	lastStatTime time.Time
 	cachedStatus *SystemStatus
 
-	// Windows CPU calculation tracking
-	lastWinIdle   uint64
-	lastWinKernel uint64
-	lastWinUser   uint64
-
 	// Linux disk stats snapshot
 	lastLinuxDisk  linuxDiskSnapshot
 	lastLinuxDisks map[string]linuxDiskSnapshot
@@ -132,7 +127,7 @@ func NewCollector(mockMode bool) *Collector {
 		lastLinuxDisks:  make(map[string]linuxDiskSnapshot),
 	}
 	// Initial reading to prime delta counters
-	if !c.mockMode && runtime.GOOS == "linux" {
+	if !c.mockMode {
 		c.lastCPUStat = c.readCPUStatSnapshot()
 		c.lastNetStat = c.readNetStatSnapshot()
 	}
@@ -152,76 +147,7 @@ func (c *Collector) GetStatus() *SystemStatus {
 		return c.getMockStatus(daemonMB)
 	}
 
-	if runtime.GOOS == "windows" {
-		return c.getWindowsStatus(daemonMB)
-	}
-
 	return c.getLinuxStatus(daemonMB)
-}
-
-func (c *Collector) getWindowsStatus(daemonMB float64) *SystemStatus {
-	now := time.Now()
-	timeDelta := now.Sub(c.lastStatTime).Seconds()
-	if timeDelta < 0.1 {
-		timeDelta = 0.1
-	}
-
-	host, _ := os.Hostname()
-	uptimeSec, uptimeStr := c.readWindowsUptime()
-	cpuUsage := c.readWindowsCPUUsage()
-	cpuModel := c.readWindowsCPUModel()
-	memInfo := c.readWindowsMemory()
-	readMB, writeMB, rIOPS, wIOPS, devMap := c.readWindowsDiskIO()
-
-	totalThroughput := readMB + writeMB
-	c.ioHistory = append(c.ioHistory, totalThroughput)
-	if len(c.ioHistory) > 30 {
-		c.ioHistory = c.ioHistory[len(c.ioHistory)-30:]
-	}
-
-	currNet := c.readNetStatSnapshot()
-	netList := c.buildNetworkInfo(currNet, timeDelta)
-	c.lastNetStat = currNet
-	c.lastStatTime = now
-
-	threads := runtime.NumCPU()
-	cores := threads
-	if threads >= 20 {
-		cores = 14 // 13600KF has 14 physical cores, 20 logical threads
-	}
-
-	status := &SystemStatus{
-		Hostname:    host,
-		OS:          "Microsoft Windows 11 Enterprise (Storage Node)",
-		Kernel:      "Windows NT 10.0",
-		Arch:        runtime.GOARCH,
-		Uptime:      uptimeStr,
-		UptimeSec:   uptimeSec,
-		DaemonRamMB: daemonMB,
-		Goroutines:  runtime.NumGoroutine(),
-		CPU: CPUInfo{
-			Model:        cpuModel,
-			Cores:        cores,
-			Threads:      threads,
-			UsagePercent: cpuUsage,
-			TemperatureC: 32,
-			LoadAvg:      []float64{cpuUsage / 100.0, cpuUsage / 100.0 * 1.1, cpuUsage / 100.0 * 0.9},
-		},
-		Memory:  memInfo,
-		Network: netList,
-		DiskIO: DiskIOInfo{
-			ReadMBS:   readMB,
-			WriteMBS:  writeMB,
-			ReadIOPS:  rIOPS,
-			WriteIOPS: wIOPS,
-			History:   c.ioHistory,
-			Devices:   devMap,
-		},
-		LastUpdated: now,
-	}
-
-	c.cachedStatus = status
-	return status
 }
 
 func (c *Collector) getLinuxStatus(daemonMB float64) *SystemStatus {

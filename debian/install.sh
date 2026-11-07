@@ -79,17 +79,27 @@ HD_IDLE_OPTS="-i 900 -l /var/log/hd-idle.log"
 EOF
 systemctl enable --now hd-idle || true
 
-echo "[+] 4/6: Debian NAS Daemon kompilieren..."
+echo "[+] 4/6: Debian NAS Daemon unter /opt/debian-nas einrichten & kompilieren..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+INSTALL_DIR="/opt/debian-nas"
 
-cd "$PROJECT_ROOT/backend"
-# Build static binary
-CGO_ENABLED=0 go build -ldflags="-s -w" -o /usr/local/bin/nasd cmd/nasd/main.go
-chmod +x /usr/local/bin/nasd
+mkdir -p "$INSTALL_DIR/bin"
+
+# Falls das Skript außerhalb von /opt/debian-nas aufgerufen wurde, Projekt nach /opt/debian-nas synchronisieren
+if [ "$PROJECT_ROOT" != "$INSTALL_DIR" ]; then
+  cp -r "$PROJECT_ROOT/"* "$INSTALL_DIR/"
+fi
+
+cd "$INSTALL_DIR/backend"
+# Statische Linux-Binary direkt nach /opt/debian-nas/bin/nasd bauen (und Symlink nach /usr/local/bin/nasd)
+CGO_ENABLED=0 go build -ldflags="-s -w" -o "$INSTALL_DIR/bin/nasd" ./cmd/nasd
+chmod +x "$INSTALL_DIR/bin/nasd"
+ln -sf "$INSTALL_DIR/bin/nasd" /usr/local/bin/nasd
 
 echo "[+] 5/6: Systemd Service einrichten & aktivieren..."
-cp "$PROJECT_ROOT/debian/nasd.service" /etc/systemd/system/nasd.service
+systemctl stop nasd.service 2>/dev/null || true
+cp "$INSTALL_DIR/debian/nasd.service" /etc/systemd/system/nasd.service
 systemctl daemon-reload
 systemctl enable --now nasd.service
 

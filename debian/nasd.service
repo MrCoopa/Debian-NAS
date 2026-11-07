@@ -6,7 +6,8 @@ Wants=zfs-mount.service
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/nasd -port 8080 -config /etc/nas/config.json
+WorkingDirectory=/opt/debian-nas
+ExecStart=/opt/debian-nas/bin/nasd -port 8080 -config /etc/nas/config.json
 Restart=always
 RestartSec=5s
 # Appliance Service configuration (Storage Daemon needs write access to /etc for useradd, /var/lib/samba, /mnt)
