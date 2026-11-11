@@ -1,16 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
 
-mkdir -p "$INSTALL_DIR/bin"
+# ==============================================================================
+# Debian NAS 1-Click Installer (Target: Debian 13 Trixie)
+# Installs OpenZFS, Samba, NFS Kernel Server, Rclone, hd-idle and nasd Daemon
+# ==============================================================================
 
-# Falls das Skript außerhalb von /opt/debian-nas aufgerufen wurde, Projekt nach /opt/debian-nas synchronisieren
-if [ "$PROJECT_ROOT" != "$INSTALL_DIR" ]; then
-  cp -r "$PROJECT_ROOT/"* "$INSTALL_DIR/"
+if [ "$EUID" -ne 0 ]; then
+  echo "[-] Bitte als root ausführen (sudo ./install.sh)"
+  exit 1
 fi
 
-cd "$INSTALL_DIR/backend"
-# Statische Linux-Binary direkt nach /opt/debian-nas/bin/nasd bauen (und Symlink nach /usr/local/bin/nasd)
-CGO_ENABLED=0 go build -ldflags="-s -w" -o "$INSTALL_DIR/bin/nasd" ./cmd/nasd
-chmod +x "$INSTALL_DIR/bin/nasd"
-ln -sf "$INSTALL_DIR/bin/nasd" /usr/local/bin/nasd
+echo "[+] 1/6: Debian Repositories aktualisieren (contrib & non-free-firmware)..."
+apt-get update
+apt-get install -y curl wget git
 
 # Ensure contrib & non-free-firmware are active (Standard debian.sources or sources.list)
 if [ -f /etc/apt/sources.list.d/debian.sources ]; then
