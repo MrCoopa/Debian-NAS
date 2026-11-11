@@ -1,47 +1,4 @@
 <div id="disks-container" hx-get="/ui/partials/disks" hx-trigger="every 10s, diskUpdate from:body" hx-ext="morph" hx-swap="morph">
-  <!-- Chassis Drive Bay Matrix -->
-  <div style="background: var(--pf-bg-card); border: 1px solid var(--pf-border-color); border-radius: 4px; padding: 1.25rem; margin-bottom: 1.5rem;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-      <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0;">Chassis Drive Bay Matrix (Enterprise Enclosure)</h3>
-      <span class="text-dim" style="font-size: 0.75rem;">Click a drive bay slot for details &amp; actions</span>
-    </div>
-    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.75rem;">
-      {{range $i, $d := .Disks}}
-        <div class="bay-slot-card" style="background: var(--pf-bg-card-subtle); border: 1px solid {{if eq $d.State "STANDBY"}}rgba(240,171,0,0.3){{else}}var(--pf-border-color){{end}}; border-radius: 4px; padding: 0.75rem; cursor: pointer; transition: all 0.15s ease;"
-             @click="openDiskDrawer('{{$d.Name}}')">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
-            <strong class="font-mono text-blue" style="font-size: 0.85rem;">{{$d.Name}}</strong>
-            {{if eq $d.State "STANDBY"}}
-              <span class="badge-status amber" style="font-size: 0.65rem;">0W Sleep</span>
-            {{else}}
-              <span class="badge-status green" style="font-size: 0.65rem;">Active</span>
-            {{end}}
-          </div>
-          <div class="font-mono text-dim" style="font-size: 0.75rem; margin-bottom: 0.25rem;">{{formatBytes $d.SizeBytes}}</div>
-          <div style="display: flex; justify-content: space-between; font-size: 0.72rem;">
-            <span>{{if $d.IsRotational}}HDD{{else}}SSD{{end}}</span>
-            <span class="{{if lt $d.TemperatureC 0}}text-dim{{else if gt $d.TemperatureC 45}}text-red{{else}}text-green{{end}}">
-              {{if lt $d.TemperatureC 0}}-- &deg;C{{else}}{{$d.TemperatureC}} &deg;C{{end}}
-            </span>
-          </div>
-          {{if $d.ZfsPool}}
-            <div style="margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px solid var(--pf-border-light); font-size: 0.7rem;" class="text-blue font-mono">
-              Pool: {{$d.ZfsPool}}
-            </div>
-          {{else if $d.IsSystemDisk}}
-            <div style="margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px solid var(--pf-border-light); font-size: 0.7rem;" class="text-amber">
-              OS / Boot
-            </div>
-          {{else}}
-            <div style="margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px solid var(--pf-border-light); font-size: 0.7rem;" class="text-dim">
-              Unassigned
-            </div>
-          {{end}}
-        </div>
-      {{end}}
-    </div>
-  </div>
-
   <!-- Disks Table View -->
   <div class="table-card">
     <table class="pf-table">
