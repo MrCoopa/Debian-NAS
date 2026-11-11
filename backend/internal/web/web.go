@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 //go:embed static/*
@@ -277,6 +278,27 @@ func funcMap() template.FuncMap {
 		"formatPercent": func(v interface{}) string {
 			pct := toFloat64(v)
 			return fmt.Sprintf("%.1f", pct)
+		},
+		"formatTime": func(v interface{}) string {
+			switch t := v.(type) {
+			case time.Time:
+				if t.IsZero() {
+					return "-"
+				}
+				return t.Local().Format("2006-01-02 15:04")
+			case *time.Time:
+				if t == nil || t.IsZero() {
+					return "-"
+				}
+				return t.Local().Format("2006-01-02 15:04")
+			case string:
+				if strings.TrimSpace(t) == "" {
+					return "-"
+				}
+				return t
+			default:
+				return "-"
+			}
 		},
 		"lower":     strings.ToLower,
 		"upper":     strings.ToUpper,

@@ -1,0 +1,146 @@
+{{define "partials/snapshot_tasks.html"}}
+<div id="snapshot-tasks-container" class="table-card" hx-get="/ui/partials/snapshot-tasks" hx-trigger="snapshotTaskUpdate from:body" hx-ext="morph" hx-swap="morph" style="margin-bottom: 1.5rem; background: #1e1e1e; border-color: #2f2f2f;">
+  <div class="table-header" style="padding: 1rem 1.25rem; border-bottom: 1px solid #2f2f2f; display: flex; justify-content: space-between; align-items: center;">
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <h3 style="margin: 0; font-size: 1.05rem; font-weight: 600; color: #f8fafc;">Periodic Snapshot Tasks</h3>
+      <a href="#snapshots-container"
+         onclick="event.preventDefault(); document.getElementById('snapshots-container')?.scrollIntoView({ behavior: 'smooth', block: 'start' });"
+         title="Jump to OpenZFS Snapshots"
+         style="color: #94a3b8; display: inline-flex; align-items: center; text-decoration: none;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <line x1="10" y1="14" x2="21" y2="3"></line>
+        </svg>
+      </a>
+    </div>
+    <button type="button"
+            @click="openCreateSnapTask()"
+            style="background: #383838; color: #f1f5f9; border: 1px solid #484848; padding: 0.45rem 1.15rem; font-size: 0.85rem; font-weight: 500; border-radius: 3px; cursor: pointer; transition: background 0.15s;"
+            onmouseover="this.style.background='#474747'"
+            onmouseout="this.style.background='#383838'">
+      Add
+    </button>
+  </div>
+
+  <div style="overflow-x: auto;">
+    <table class="pf-table" style="width: 100%; border-collapse: collapse;">
+      <thead>
+        <tr style="border-bottom: 1px solid #2f2f2f; color: #cbd5e1; font-size: 0.78rem; text-transform: none; letter-spacing: 0;">
+          <th style="padding: 0.8rem 1.25rem; text-align: left; font-weight: 600;">Pool/Dataset</th>
+          <th style="padding: 0.8rem 1rem; text-align: left; font-weight: 600;">Keep for</th>
+          <th style="padding: 0.8rem 1rem; text-align: left; font-weight: 600;">Frequency</th>
+          <th style="padding: 0.8rem 1rem; text-align: left; font-weight: 600;">Next Run</th>
+          <th style="padding: 0.8rem 1rem; text-align: left; font-weight: 600;">Last Run</th>
+          <th style="padding: 0.8rem 1rem; text-align: left; font-weight: 600;">Enabled</th>
+          <th style="padding: 0.8rem 1rem; text-align: left; font-weight: 600;">State</th>
+          <th style="padding: 0.8rem 1rem; text-align: right; width: 48px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{if not .SnapshotTasks}}
+        <tr>
+          <td colspan="8" class="text-muted" style="text-align: center; padding: 2rem;">
+            No periodic snapshot tasks configured. Click "Add" to schedule automatic ZFS snapshots.
+          </td>
+        </tr>
+        {{end}}
+        {{range .SnapshotTasks}}
+        <tr style="border-bottom: 1px solid #282828; font-size: 0.86rem; color: #e2e8f0;">
+          <td style="padding: 0.9rem 1.25rem; max-width: 240px; word-break: break-word;" title="Recursive: {{.Recursive}} | Schema: {{.NamingSchema}}">
+            <span style="font-weight: 400; color: #e2e8f0;">{{.Dataset}}</span>
+          </td>
+          <td style="padding: 0.9rem 1rem; color: #e2e8f0; white-space: nowrap;">
+            {{.GetKeepFor}}
+          </td>
+          <td style="padding: 0.9rem 1rem; max-width: 220px; line-height: 1.45; color: #cbd5e1;" title="Cron: {{.Schedule}}">
+            {{.GetFrequency}}
+          </td>
+          <td style="padding: 0.9rem 1rem; color: #cbd5e1; white-space: nowrap;">
+            {{.GetNextRun}}
+          </td>
+          <td style="padding: 0.9rem 1rem; color: #cbd5e1; white-space: nowrap;" title="{{.LastMessage}}">
+            {{.GetLastRun}}
+          </td>
+          <td style="padding: 0.9rem 1rem;">
+            <label class="truenas-switch" title="Enable / Disable Snapshot Task">
+              <input type="checkbox"
+                     {{if .Enabled}}checked{{end}}
+                     hx-post="/ui/actions/zfs/snapshot-tasks/toggle"
+                     hx-vals='{"id": "{{.ID}}"}'
+                     hx-target="#snapshot-tasks-container"
+                     hx-swap="morph">
+              <span class="truenas-slider"></span>
+            </label>
+          </td>
+          <td style="padding: 0.9rem 1rem;">
+            <span class="truenas-state-pill {{.GetStateClass}}" title="{{.LastMessage}}">{{.GetStateLabel}}</span>
+          </td>
+          <td style="padding: 0.9rem 1rem; text-align: right; position: relative;" x-data="{ open: false }" @click.outside="open = false">
+            <button type="button"
+                    @click="open = !open"
+                    title="Task Actions"
+                    style="background: transparent; border: none; color: #cbd5e1; cursor: pointer; padding: 0.25rem 0.4rem; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="2"></circle>
+                <circle cx="12" cy="12" r="2"></circle>
+                <circle cx="12" cy="19" r="2"></circle>
+              </svg>
+            </button>
+            <div x-show="open" x-cloak
+                 style="position: absolute; right: 1.25rem; top: 2.6rem; z-index: 60; min-width: 155px; background: #262626; border: 1px solid #3f3f46; border-radius: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.55); padding: 0.35rem 0; text-align: left;">
+              <button type="button"
+                      @click="open = false"
+                      hx-post="/ui/actions/zfs/snapshot-tasks/run"
+                      hx-vals='{"id": "{{.ID}}"}'
+                      hx-target="#snapshot-tasks-container"
+                      hx-swap="morph"
+                      style="display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.5rem 0.9rem; background: transparent; border: none; color: #e2e8f0; font-size: 0.83rem; cursor: pointer; text-align: left;"
+                      onmouseover="this.style.background='#334155'" onmouseout="this.style.background='transparent'">
+                <span>▶ Run Now</span>
+              </button>
+              <button type="button"
+                      @click="open = false; openEditSnapTask('{{.ID}}', '{{.Dataset}}', {{.Recursive}}, {{.LifetimeValue}}, '{{.LifetimeUnit}}', '{{.NamingSchema}}', '{{.Schedule}}', '{{.FrequencyText}}', {{.Enabled}})"
+                      style="display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.5rem 0.9rem; background: transparent; border: none; color: #e2e8f0; font-size: 0.83rem; cursor: pointer; text-align: left;"
+                      onmouseover="this.style.background='#334155'" onmouseout="this.style.background='transparent'">
+                <span>✎ Edit</span>
+              </button>
+              <div style="height: 1px; background: #3f3f46; margin: 0.25rem 0;"></div>
+              <button type="button"
+                      @click="open = false"
+                      hx-post="/ui/actions/zfs/snapshot-tasks/delete"
+                      hx-vals='{"id": "{{.ID}}"}'
+                      hx-confirm="Delete periodic snapshot task for '{{.Dataset}}'?"
+                      hx-target="#snapshot-tasks-container"
+                      hx-swap="morph"
+                      style="display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.5rem 0.9rem; background: transparent; border: none; color: #f87171; font-size: 0.83rem; cursor: pointer; text-align: left;"
+                      onmouseover="this.style.background='#450a0a'" onmouseout="this.style.background='transparent'">
+                <span>🗑 Delete</span>
+              </button>
+            </div>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="padding: 0.85rem 1.25rem; border-top: 1px solid #282828; display: flex; flex-wrap: wrap; gap: 0.65rem; background: #1e1e1e;">
+    <button type="button"
+            @click="$dispatch('show-toast', { message: 'VMware Snapshot Integration is optional: requires vCenter or Proxmox QEMU Guest Agent credentials to quiesce VM filesystems before ZFS snapshots.', type: 'info' })"
+            style="background: #383838; color: #f1f5f9; border: 1px solid #484848; padding: 0.45rem 0.9rem; font-size: 0.83rem; font-weight: 500; border-radius: 3px; cursor: pointer; transition: background 0.15s;"
+            onmouseover="this.style.background='#474747'"
+            onmouseout="this.style.background='#383838'">
+      VMware Snapshot Integration
+    </button>
+    <button type="button"
+            onclick="document.getElementById('snapshots-container')?.scrollIntoView({ behavior: 'smooth', block: 'start' })"
+            style="background: #383838; color: #f1f5f9; border: 1px solid #484848; padding: 0.45rem 0.9rem; font-size: 0.83rem; font-weight: 500; border-radius: 3px; cursor: pointer; transition: background 0.15s;"
+            onmouseover="this.style.background='#474747'"
+            onmouseout="this.style.background='#383838'">
+      Snapshots
+    </button>
+  </div>
+</div>
+{{end}}
+

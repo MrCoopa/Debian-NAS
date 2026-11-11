@@ -6,6 +6,7 @@
     </div>
     <form hx-post="/ui/actions/zfs/datasets/property" hx-target="#datasets-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openDatasetPropsModal = false">
       <input type="hidden" name="dataset" :value="datasetProps.name">
+      <input type="hidden" name="is_zvol" :value="datasetProps.isZvol ? 'true' : 'false'">
 
       <div class="form-row">
         <div class="form-group col-6">

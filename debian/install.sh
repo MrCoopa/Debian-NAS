@@ -66,19 +66,23 @@ if [ -f /etc/samba/smb.conf ]; then
   sed -i '/include = \/etc\/samba\/conf\.d\/\*\.conf/d' /etc/samba/smb.conf || true
   sed -i '/include = \/etc\/samba\/nas-shares\.conf/d' /etc/samba/smb.conf || true
 
-  # Direkt in die [global]-Sektion einfügen
+  # Direkt nach [global]-Startwerte setzen; include wird am Ende durch nasd sauber hinter [global] platziert
   if grep -q "\[global\]" /etc/samba/smb.conf; then
-    sed -i '/\[global\]/a \   include = /etc/samba/nas-shares.conf\n   map to guest = Bad User\n   usershare allow guests = yes\n   browseable = yes' /etc/samba/smb.conf || true
+    if ! grep -q "nas-shares.conf" /etc/samba/smb.conf; then
+      printf '\n# Dynamic Debian NAS shares include\ninclude = /etc/samba/nas-shares.conf\n' >> /etc/samba/smb.conf
+    fi
   else
     cat << 'EOF' > /etc/samba/smb.conf
 [global]
    workgroup = WORKGROUP
    server string = %h (Debian NAS)
    server role = standalone server
-   include = /etc/samba/nas-shares.conf
    map to guest = Bad User
    usershare allow guests = yes
    browseable = yes
+
+# Dynamic Debian NAS shares include
+include = /etc/samba/nas-shares.conf
 EOF
   fi
 fi

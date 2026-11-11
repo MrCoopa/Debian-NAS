@@ -19,16 +19,8 @@
       </div>
       <div class="form-group">
         <label>Disks to Add</label>
-        <div style="background: rgba(15,23,42,0.6); border: 1px solid var(--pf-border-color); border-radius: 4px; padding: 0.6rem; max-height: 140px; overflow-y: auto;">
-          {{range $d := .Disks}}
-            {{$inUse := or $d.ZfsPool $d.IsSystemDisk}}
-            <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.78rem; {{if $inUse}}opacity: 0.5; cursor: not-allowed;{{else}}cursor: pointer;{{end}}">
-              <input type="checkbox" name="disks" value="{{if $d.ByIDPath}}{{$d.ByIDPath}}{{else}}{{$d.Path}}{{end}}" {{if $inUse}}disabled{{end}}>
-              <strong class="font-mono text-blue">{{$d.Name}}</strong>
-              <span>{{$d.Model}}</span>
-              <span class="text-blue font-mono">({{formatBytes $d.SizeBytes}})</span>
-            </label>
-          {{end}}
+        <div id="add-vdev-disks-list" hx-get="/ui/partials/modals/pool_disks" hx-trigger="poolUpdate from:body, diskUpdate from:body, refreshPoolDisks from:body" hx-swap="innerHTML" style="background: rgba(15,23,42,0.6); border: 1px solid var(--pf-border-color); border-radius: 4px; padding: 0.6rem; max-height: 140px; overflow-y: auto;">
+          {{template "partials/pool_disks_checkboxes.html" .}}
         </div>
       </div>
       <div class="modal-actions">

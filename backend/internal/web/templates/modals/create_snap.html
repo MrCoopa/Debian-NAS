@@ -4,28 +4,27 @@
       <h3>Create Manual ZFS Snapshot</h3>
       <button type="button" class="modal-close" @click="openCreateSnapModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/zfs/snapshots" hx-target="#snapshots-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openCreateSnapModal = false">
+    <form hx-post="/ui/actions/zfs/snapshots" hx-target="#snapshots-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) { openCreateSnapModal = false; snapName = ''; }">
       <div class="form-group">
         <label>Target Dataset</label>
-        <template x-if="snapDataset">
-          <input type="text" name="dataset" :value="snapDataset" readonly class="font-mono" style="background: rgba(15,23,42,0.6);">
-        </template>
-        <template x-if="!snapDataset">
-          <select name="dataset" required>
-            {{range $p := .Pools}}
-              <option value="{{$p.Name}}">{{$p.Name}} (Root Pool)</option>
-            {{end}}
-            {{range $ds := .Datasets}}
-              <option value="{{$ds.Name}}">{{$ds.Name}}</option>
-            {{end}}
-          </select>
-        </template>
+        <input type="text" name="dataset" x-show="snapDataset" :value="snapDataset" :disabled="!snapDataset" readonly class="font-mono" style="background: rgba(15,23,42,0.6);">
+        <select name="dataset" x-show="!snapDataset" :disabled="!!snapDataset" required
+                hx-get="/ui/partials/modals/snap_datasets" hx-trigger="poolUpdate from:body, datasetUpdate from:body" hx-swap="innerHTML">
+          {{template "partials/snap_datasets_options.html" .}}
+        </select>
       </div>
 
       <div class="form-group">
         <label>Snapshot Name (Without @)</label>
-        <input type="text" name="snapshot_name" required placeholder="e.g. manual-backup, pre-upgrade" pattern="[a-zA-Z0-9_\-\.]+">
+        <input type="text" name="snapshot_name" x-model="snapName" required placeholder="e.g. manual-backup, pre-upgrade" pattern="[a-zA-Z0-9_.:-]+" autocomplete="off">
         <span class="text-dim" style="font-size: 0.72rem;">Saved as <code>&lt;dataset&gt;@&lt;snapshot_name&gt;</code>. Snapshots are immutable (read-only) and consume space only when data diverges.</span>
+      </div>
+
+      <div class="form-group">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.82rem;">
+          <input type="checkbox" name="recursive" value="true" x-model="snapRecursive">
+          <span><strong>Recursive Snapshot (-r)</strong> &ndash; Also snapshot all nested child datasets atomically</span>
+        </label>
       </div>
 
       <div class="modal-actions">

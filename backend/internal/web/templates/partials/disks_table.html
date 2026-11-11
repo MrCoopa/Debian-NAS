@@ -107,7 +107,9 @@
                 <div>
                   <div class="text-dim" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Last SMART Test:</div>
                   <div class="font-mono">
-                    <span class="badge-status {{if eq $d.SmartStatus "PASSED"}}green{{else if eq $d.SmartStatus "STANDBY"}}slate{{else}}red{{end}}">
+                    {{$smartUpper := ""}}
+                    {{if $d.SmartStatus}}{{$smartUpper = upper (printf "%v" $d.SmartStatus)}}{{end}}
+                    <span class="badge-status {{if contains $smartUpper "PASSED"}}green{{else if or (contains $smartUpper "STANDBY") (contains $smartUpper "TESTING")}}slate{{else if contains $smartUpper "WARNING"}}amber{{else}}red{{end}}">
                       {{if $d.SmartLastTest}}{{$d.SmartLastTest}}{{else}}{{$d.SmartStatus}}{{end}}
                     </span>
                   </div>

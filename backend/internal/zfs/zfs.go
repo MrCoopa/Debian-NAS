@@ -120,6 +120,7 @@ type Dataset struct {
 	Sync           string            `json:"sync"`
 	Snapshots      int               `json:"snapshots_count"`
 	Encryption     string            `json:"encryption"`
+	Origin         string            `json:"origin,omitempty"`
 	Properties     map[string]string `json:"properties,omitempty"`
 }
 
@@ -291,25 +292,37 @@ type ImportablePool struct {
 }
 
 type Manager struct {
-	mu           sync.RWMutex
-	mockMode     bool
-	mockPools    map[string]*Pool
-	mockDS       map[string]*Dataset
-	mockSnaps    []*Snapshot
-	mockExported map[string]*ImportablePool
+	mu                 sync.RWMutex
+	mockMode           bool
+	mockPools          map[string]*Pool
+	mockDS             map[string]*Dataset
+	mockSnaps          []*Snapshot
+	mockExported       map[string]*ImportablePool
+	mockExportedPools  map[string]*Pool
+	mockExportedDS     map[string][]*Dataset
+	snapTasks          map[string]*SnapshotTask
+	snapTaskConfigPath string
 }
 
 func NewManager(mockMode bool) *Manager {
 	m := &Manager{
-		mockMode:     mockMode || runtime.GOOS != "linux",
-		mockPools:    make(map[string]*Pool),
-		mockDS:       make(map[string]*Dataset),
-		mockExported: make(map[string]*ImportablePool),
+		mockMode:           mockMode || runtime.GOOS != "linux",
+		mockPools:          make(map[string]*Pool),
+		mockDS:             make(map[string]*Dataset),
+		mockExported:       make(map[string]*ImportablePool),
+		mockExportedPools:  make(map[string]*Pool),
+		mockExportedDS:     make(map[string][]*Dataset),
+		snapTasks:          make(map[string]*SnapshotTask),
+		snapTaskConfigPath: defaultSnapshotTasksPath,
 	}
 
 	if m.mockMode {
 		m.initMockZFS()
 	}
+	m.mu.Lock()
+	m.initSnapshotTasksLocked()
+	m.mu.Unlock()
+	go m.startSnapshotScheduler()
 	return m
 }
 
@@ -675,14 +688,22 @@ func (m *Manager) resolvePoolMember(pool, dev string) string {
 
 // GetDiskPoolMap returns maps of disk -> poolName and disk -> role for all active pools
 func (m *Manager) GetDiskPoolMap() (map[string]string, map[string]string) {
+	pools, err := m.ListPools()
+	if err != nil {
+		return make(map[string]string), make(map[string]string)
+	}
+	return BuildDiskPoolMap(pools)
+}
+
+// BuildDiskPoolMap builds disk -> poolName and disk -> role lookup maps from already-listed pools.
+func BuildDiskPoolMap(pools []*Pool) (map[string]string, map[string]string) {
 	poolMap := make(map[string]string)
 	roleMap := make(map[string]string)
 
-	pools, err := m.ListPools()
-	if err != nil {
-		return poolMap, roleMap
-	}
 	for _, p := range pools {
+		if p == nil {
+			continue
+		}
 		for _, v := range p.Vdevs {
 			if !v.IsDisk {
 				continue
@@ -1052,7 +1073,7 @@ func (m *Manager) ListDatasets() ([]*Dataset, error) {
 		dsType := "filesystem"
 		if len(f) >= 8 && f[7] != "0" && f[7] != "-" && f[7] != "none" {
 			if qBytes, err := strconv.ParseUint(strings.TrimSpace(f[7]), 10, 64); err == nil && qBytes > 0 {
-				quota = formatZfsBytes(qBytes)
+				quota = formatZfsQuota(qBytes)
 			} else {
 				quota = strings.TrimSpace(f[7])
 			}
@@ -1107,6 +1128,57 @@ func formatRecordSize(raw string) string {
 		return fmt.Sprintf("%dK", b/1024)
 	}
 	return raw
+}
+
+func formatZfsQuota(b uint64) string {
+	if b == 0 {
+		return "none"
+	}
+	const (
+		kib = 1024
+		mib = 1024 * kib
+		gib = 1024 * mib
+		tib = 1024 * gib
+	)
+	if b >= tib && b%tib == 0 {
+		return fmt.Sprintf("%dT", b/tib)
+	}
+	if b >= gib && b%gib == 0 {
+		return fmt.Sprintf("%dG", b/gib)
+	}
+	if b >= mib && b%mib == 0 {
+		return fmt.Sprintf("%dM", b/mib)
+	}
+	if b >= kib && b%kib == 0 {
+		return fmt.Sprintf("%dK", b/kib)
+	}
+	if b >= tib {
+		return fmt.Sprintf("%.2fT", float64(b)/float64(tib))
+	}
+	if b >= gib {
+		return fmt.Sprintf("%.2fG", float64(b)/float64(gib))
+	}
+	if b >= mib {
+		return fmt.Sprintf("%.2fM", float64(b)/float64(mib))
+	}
+	return fmt.Sprintf("%d", b)
+}
+
+func normalizeZfsSize(val string) string {
+	v := strings.TrimSpace(val)
+	lower := strings.ToLower(v)
+	if lower == "" || lower == "none" || lower == "0" {
+		return "none"
+	}
+	v = strings.ReplaceAll(v, " ", "")
+	upper := strings.ToUpper(v)
+	for _, suf := range []string{"IB", "B"} {
+		if strings.HasSuffix(upper, suf) && len(upper) > len(suf) {
+			v = v[:len(v)-len(suf)]
+			break
+		}
+	}
+	return v
 }
 
 func (m *Manager) getSnapshotCounts() map[string]int {
@@ -1206,6 +1278,9 @@ func (m *Manager) DestroyDataset(name string) error {
 	if err := validate.DatasetName(name); err != nil {
 		return fmt.Errorf("invalid dataset name: %w", err)
 	}
+	if !strings.Contains(name, "/") {
+		return fmt.Errorf("cannot destroy root pool dataset '%s' directly; destroy the storage pool instead", name)
+	}
 
 	if m.mockMode {
 		for k := range m.mockDS {
@@ -1253,7 +1328,7 @@ func (m *Manager) ListSnapshots() ([]*Snapshot, error) {
 		return nil, fmt.Errorf("zfs list snapshot: %w (%s)", err, outStr)
 	}
 
-	var list []*Snapshot
+	list := []*Snapshot{}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	for _, line := range lines {
 		f := strings.Fields(line)
@@ -1285,8 +1360,13 @@ func (m *Manager) ListSnapshots() ([]*Snapshot, error) {
 	return list, nil
 }
 
-// CreateSnapshot creates a manual snapshot
+// CreateSnapshot creates a manual snapshot on a single dataset or Zvol.
 func (m *Manager) CreateSnapshot(dataset, snapName string) error {
+	return m.CreateSnapshotRecursive(dataset, snapName, false)
+}
+
+// CreateSnapshotRecursive creates a manual snapshot, optionally recursively (-r) across all child datasets.
+func (m *Manager) CreateSnapshotRecursive(dataset, snapName string, recursive bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -1298,33 +1378,68 @@ func (m *Manager) CreateSnapshot(dataset, snapName string) error {
 
 	fullName := fmt.Sprintf("%s@%s", dataset, snapName)
 	if m.mockMode {
-		var referBytes uint64 = 1073741824
-		if ds, ok := m.mockDS[dataset]; ok {
-			if ds.UsedBytes > 0 {
+		targetDS, exists := m.mockDS[dataset]
+		if !exists {
+			return fmt.Errorf("dataset '%s' does not exist", dataset)
+		}
+		for _, s := range m.mockSnaps {
+			if s.Name == fullName {
+				return fmt.Errorf("snapshot '%s' already exists", fullName)
+			}
+		}
+
+		now := time.Now()
+		addMockSnap := func(dsName string, ds *Dataset) {
+			sFull := fmt.Sprintf("%s@%s", dsName, snapName)
+			for _, existing := range m.mockSnaps {
+				if existing.Name == sFull {
+					return
+				}
+			}
+			var referBytes uint64 = 1073741824
+			if ds != nil && ds.UsedBytes > 0 {
 				referBytes = ds.UsedBytes
 			}
-			ds.Snapshots++
+			if ds != nil {
+				ds.Snapshots++
+			}
+			m.mockSnaps = append(m.mockSnaps, &Snapshot{
+				Name:            sFull,
+				Dataset:         dsName,
+				Created:         now,
+				UsedBytes:       0,
+				UsedHuman:       "0 B",
+				ReferencedBytes: referBytes,
+				Referenced:      formatZfsBytes(referBytes),
+			})
 		}
-		m.mockSnaps = append(m.mockSnaps, &Snapshot{
-			Name:            fullName,
-			Dataset:         dataset,
-			Created:         time.Now(),
-			UsedBytes:       0,
-			UsedHuman:       "0 B",
-			ReferencedBytes: referBytes,
-			Referenced:      formatZfsBytes(referBytes),
-		})
+
+		addMockSnap(dataset, targetDS)
+		if recursive {
+			prefix := dataset + "/"
+			for dsName, ds := range m.mockDS {
+				if strings.HasPrefix(dsName, prefix) {
+					addMockSnap(dsName, ds)
+				}
+			}
+		}
 		return nil
 	}
 
-	out, err := runCommand(defaultZfsTimeout, "zfs", "snapshot", fullName)
+	args := []string{"snapshot"}
+	if recursive {
+		args = append(args, "-r")
+	}
+	args = append(args, fullName)
+
+	out, err := runCommand(defaultZfsTimeout, "zfs", args...)
 	if err != nil {
 		return fmt.Errorf("zfs snapshot failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
-// RollbackSnapshot rolls back a dataset to a snapshot
+// RollbackSnapshot rolls back a dataset to a snapshot (destroying newer snapshots with -r).
 func (m *Manager) RollbackSnapshot(snapshot string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1339,6 +1454,45 @@ func (m *Manager) RollbackSnapshot(snapshot string) error {
 	}
 
 	if m.mockMode {
+		targetIdx := -1
+		var targetSnap *Snapshot
+		for i, s := range m.mockSnaps {
+			if s.Name == snapshot {
+				targetIdx = i
+				targetSnap = s
+				break
+			}
+		}
+		if targetIdx == -1 || targetSnap == nil {
+			return fmt.Errorf("snapshot '%s' does not exist", snapshot)
+		}
+
+		// Collect newer snapshots of the same dataset to be destroyed (mirroring zfs rollback -r)
+		dsName := parts[0]
+		newerSnaps := make(map[string]bool)
+		for i, s := range m.mockSnaps {
+			if s.Dataset == dsName && (s.Created.After(targetSnap.Created) || (s.Created.Equal(targetSnap.Created) && i > targetIdx)) {
+				newerSnaps[s.Name] = true
+			}
+		}
+		// Prevent rollback if a newer snapshot has dependent clones
+		for _, ds := range m.mockDS {
+			if newerSnaps[ds.Origin] {
+				return fmt.Errorf("cannot rollback to '%s': newer snapshot '%s' has dependent clone '%s'", snapshot, ds.Origin, ds.Name)
+			}
+		}
+		if len(newerSnaps) > 0 {
+			var kept []*Snapshot
+			for _, s := range m.mockSnaps {
+				if !newerSnaps[s.Name] {
+					kept = append(kept, s)
+				}
+			}
+			m.mockSnaps = kept
+			if ds, ok := m.mockDS[dsName]; ok {
+				ds.Snapshots = max(0, ds.Snapshots-len(newerSnaps))
+			}
+		}
 		return nil
 	}
 
@@ -1364,14 +1518,24 @@ func (m *Manager) DestroySnapshot(snapshot string) error {
 	}
 
 	if m.mockMode {
+		for _, ds := range m.mockDS {
+			if ds.Origin == snapshot {
+				return fmt.Errorf("cannot destroy '%s': snapshot has dependent clone '%s'", snapshot, ds.Name)
+			}
+		}
+		found := false
 		for i, s := range m.mockSnaps {
 			if s.Name == snapshot {
 				m.mockSnaps = append(m.mockSnaps[:i], m.mockSnaps[i+1:]...)
 				if ds, ok := m.mockDS[parts[0]]; ok && ds.Snapshots > 0 {
 					ds.Snapshots--
 				}
+				found = true
 				break
 			}
+		}
+		if !found {
+			return fmt.Errorf("could not find any snapshots to destroy for '%s'", snapshot)
 		}
 		return nil
 	}
@@ -1391,6 +1555,9 @@ func (m *Manager) SetDatasetProperty(dataset, property, value string) error {
 	dataset = strings.TrimSpace(dataset)
 	property = strings.TrimSpace(strings.ToLower(property))
 	value = strings.TrimSpace(value)
+	if property == "quota" || property == "refquota" || property == "reservation" || property == "refreservation" {
+		value = normalizeZfsSize(value)
+	}
 	if err := validate.DatasetName(dataset); err != nil {
 		return fmt.Errorf("invalid dataset name: %w", err)
 	}
@@ -1631,6 +1798,7 @@ func (m *Manager) CreatePool(name, vdevType string, disks []string, ashift int, 
 
 	args := []string{
 		"create", "-f",
+		"-m", "/mnt/" + name,
 		"-o", fmt.Sprintf("ashift=%d", ashift),
 		"-O", "atime=off",
 		"-O", "compression=" + compression,
@@ -1707,6 +1875,15 @@ func (m *Manager) ExportPool(name string) error {
 				Action: "The pool was exported cleanly and can be imported directly.",
 				Config: fmt.Sprintf("%s %s (%s)", name, p.Health, p.Topology),
 			}
+			m.mockExportedPools[name] = p
+			var savedDS []*Dataset
+			for dsName, ds := range m.mockDS {
+				if dsName == name || strings.HasPrefix(dsName, name+"/") {
+					savedDS = append(savedDS, ds)
+					delete(m.mockDS, dsName)
+				}
+			}
+			m.mockExportedDS[name] = savedDS
 			delete(m.mockPools, name)
 		}
 		return nil
@@ -1813,6 +1990,34 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
 		}
 
 		delete(m.mockExported, foundKey)
+		if savedPool, ok := m.mockExportedPools[foundKey]; ok {
+			oldName := savedPool.Name
+			savedPool.Name = targetName
+			syncPoolFields(savedPool)
+			m.mockPools[targetName] = savedPool
+			delete(m.mockExportedPools, foundKey)
+
+			if savedDS, ok := m.mockExportedDS[foundKey]; ok && len(savedDS) > 0 {
+				for _, ds := range savedDS {
+					if ds.Name == oldName {
+						ds.Name = targetName
+					} else if strings.HasPrefix(ds.Name, oldName+"/") {
+						ds.Name = targetName + strings.TrimPrefix(ds.Name, oldName)
+					}
+					ds.Pool = targetName
+					if ds.Type != "volume" {
+						ds.Mountpoint = "/mnt/" + ds.Name
+					} else {
+						ds.Mountpoint = "/dev/zvol/" + ds.Name
+					}
+					syncDatasetFields(ds)
+					m.mockDS[ds.Name] = ds
+				}
+				delete(m.mockExportedDS, foundKey)
+				return nil
+			}
+		}
+
 		p := &Pool{
 			Name:          targetName,
 			Health:        HealthOnline,
@@ -2362,33 +2567,86 @@ func (m *Manager) CloneSnapshot(snapshot, targetDataset string) error {
 	if err := validate.DatasetName(targetDataset); err != nil {
 		return fmt.Errorf("invalid target dataset: %w", err)
 	}
+	if !strings.Contains(targetDataset, "/") {
+		return fmt.Errorf("target clone '%s' must include pool prefix (e.g. '%s/clone-name')", targetDataset, strings.Split(parts[0], "/")[0])
+	}
+	sourcePool := strings.Split(parts[0], "/")[0]
+	targetPool := strings.Split(targetDataset, "/")[0]
+	if sourcePool != targetPool {
+		return fmt.Errorf("cannot clone '%s' into a different pool '%s': target must be inside pool '%s'", snapshot, targetPool, sourcePool)
+	}
 
 	if m.mockMode {
-		poolName := strings.Split(targetDataset, "/")[0]
+		var srcSnap *Snapshot
+		for _, s := range m.mockSnaps {
+			if s.Name == snapshot {
+				srcSnap = s
+				break
+			}
+		}
+		if srcSnap == nil {
+			return fmt.Errorf("source snapshot '%s' does not exist", snapshot)
+		}
+		if _, exists := m.mockDS[targetDataset]; exists {
+			return fmt.Errorf("target dataset '%s' already exists", targetDataset)
+		}
+
+		dsType := "filesystem"
+		mountpoint := "/mnt/" + targetDataset
+		recordSize := "128K"
+		compression := "lz4"
+		if srcDS, ok := m.mockDS[parts[0]]; ok {
+			if srcDS.Type == "volume" {
+				dsType = "volume"
+				mountpoint = "/dev/zvol/" + targetDataset
+			}
+			if srcDS.RecordSize != "" {
+				recordSize = srcDS.RecordSize
+			}
+			if srcDS.Compression != "" {
+				compression = srcDS.Compression
+			}
+		}
+
 		var avail uint64 = 1546188226560
-		if p, ok := m.mockPools[poolName]; ok && p.FreeBytes > 0 {
+		if p, ok := m.mockPools[targetPool]; ok && p.FreeBytes > 0 {
 			avail = p.FreeBytes
 		}
 		ds := &Dataset{
 			Name:           targetDataset,
-			Pool:           poolName,
-			Type:           "filesystem",
-			Mountpoint:     "/mnt/" + targetDataset,
+			Pool:           targetPool,
+			Type:           dsType,
+			Mountpoint:     mountpoint,
+			Origin:         snapshot,
 			UsedBytes:      1048576,
 			UsedHuman:      "1.0 MiB",
 			AvailBytes:     avail,
 			AvailableBytes: avail,
 			AvailHuman:     formatZfsBytes(avail),
-			Compression:    "lz4",
+			Compression:    compression,
 			Atime:          "off",
-			RecordSize:     "128K",
+			RecordSize:     recordSize,
 		}
 		syncDatasetFields(ds)
 		m.mockDS[targetDataset] = ds
 		return nil
 	}
 
-	out, err := runCommand(defaultZfsTimeout, "zfs", "clone", "-o", "atime=off", snapshot, targetDataset)
+	// Only apply filesystem property 'atime=off' when cloning a filesystem (zvols do not support atime).
+	isFilesystem := true
+	if typeOut, typeErr := runCommandOutput(fastZfsTimeout, "zfs", "list", "-H", "-p", "-o", "type", parts[0]); typeErr == nil {
+		if strings.TrimSpace(string(typeOut)) == "volume" {
+			isFilesystem = false
+		}
+	}
+
+	args := []string{"clone"}
+	if isFilesystem {
+		args = append(args, "-o", "atime=off")
+	}
+	args = append(args, snapshot, targetDataset)
+
+	out, err := runCommand(defaultZfsTimeout, "zfs", args...)
 	if err != nil {
 		return fmt.Errorf("zfs clone failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}

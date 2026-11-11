@@ -15,28 +15,33 @@
           <option value="mirror">Mirror (2+ Disks - High IOPS &amp; Redundancy)</option>
           <option value="raidz1">RAID-Z1 (3+ Disks - 1 Parity Disk)</option>
           <option value="raidz2">RAID-Z2 (4+ Disks - 2 Parity Disks - Recommended)</option>
+          <option value="raidz3">RAID-Z3 (5+ Disks - 3 Parity Disks)</option>
           <option value="stripe">Single / Stripe (1+ Disks - No Redundancy)</option>
         </select>
       </div>
+      <div class="form-row">
+        <div class="form-group col-6">
+          <label>Sector Alignment (ashift)</label>
+          <select name="ashift">
+            <option value="12" selected>12 (4 KiB Sectors - Standard HDD/SSD)</option>
+            <option value="13">13 (8 KiB Sectors - Enterprise NVMe)</option>
+            <option value="9">9 (512B Legacy Sectors)</option>
+          </select>
+        </div>
+        <div class="form-group col-6">
+          <label>Default Compression</label>
+          <select name="compression">
+            <option value="lz4" selected>lz4 (Fast &amp; Recommended)</option>
+            <option value="zstd">zstd (High Ratio)</option>
+            <option value="gzip">gzip (Archival)</option>
+            <option value="off">off (Disabled)</option>
+          </select>
+        </div>
+      </div>
       <div class="form-group">
         <label>Member Drives (Physical Disks)</label>
-        <div style="background: rgba(15,23,42,0.6); border: 1px solid var(--pf-border-color); border-radius: 4px; padding: 0.6rem; max-height: 150px; overflow-y: auto;">
-          {{range $d := .Disks}}
-            {{$inUse := or $d.ZfsPool $d.IsSystemDisk}}
-            <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.78rem; {{if $inUse}}opacity: 0.5; cursor: not-allowed;{{else}}cursor: pointer;{{end}}">
-              <input type="checkbox" name="disks" value="{{if $d.ByIDPath}}{{$d.ByIDPath}}{{else}}{{$d.Path}}{{end}}" {{if $inUse}}disabled{{end}}>
-              <strong class="font-mono text-blue">{{$d.Name}}</strong>
-              <span>{{$d.Model}}</span>
-              <span class="text-blue font-mono">({{formatBytes $d.SizeBytes}})</span>
-              {{if $d.IsSystemDisk}}
-                <span class="badge-status amber" style="font-size: 0.65rem;">OS Boot Protected</span>
-              {{else if $d.ZfsPool}}
-                <span class="badge-status blue" style="font-size: 0.65rem;">Pool: {{$d.ZfsPool}}</span>
-              {{else}}
-                <span class="badge-status green" style="font-size: 0.65rem;">Available</span>
-              {{end}}
-            </label>
-          {{end}}
+        <div id="create-pool-disks-list" hx-get="/ui/partials/modals/pool_disks" hx-trigger="poolUpdate from:body, diskUpdate from:body, refreshPoolDisks from:body" hx-swap="innerHTML" style="background: rgba(15,23,42,0.6); border: 1px solid var(--pf-border-color); border-radius: 4px; padding: 0.6rem; max-height: 150px; overflow-y: auto;">
+          {{template "partials/pool_disks_checkboxes.html" .}}
         </div>
         <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
           The appliance automatically uses persistent /dev/disk/by-id/ paths for maximum reliability.

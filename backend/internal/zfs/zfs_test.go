@@ -230,14 +230,51 @@ func TestZfsManager_FullLifecycle(t *testing.T) {
 	if err := m.CreateSnapshot("DATA/vms", "snap1"); err != nil {
 		t.Fatalf("CreateSnapshot failed: %v", err)
 	}
+	if err := m.CreateSnapshot("DATA/vms", "snap1"); err == nil {
+		t.Errorf("expected duplicate snapshot creation to fail")
+	}
 	if err := m.CloneSnapshot("DATA/vms@snap1", "DATA/vms-clone"); err != nil {
 		t.Fatalf("CloneSnapshot failed: %v", err)
+	}
+	if err := m.CloneSnapshot("DATA/vms@snap1", "onlyname"); err == nil {
+		t.Errorf("expected clone without pool prefix to fail")
+	}
+	if err := m.CloneSnapshot("DATA/vms@snap1", "SSD-MIRROR/cross-pool"); err == nil {
+		t.Errorf("expected cross-pool clone to fail")
+	}
+	if err := m.DestroySnapshot("DATA/vms@snap1"); err == nil {
+		t.Errorf("expected destroying snapshot with dependent clone to fail")
+	}
+	// Zvol snapshot & clone preserves volume type
+	if err := m.CreateSnapshot("DATA/vm-100-disk", "zsnap1"); err != nil {
+		t.Fatalf("CreateSnapshot on zvol failed: %v", err)
+	}
+	if err := m.CloneSnapshot("DATA/vm-100-disk@zsnap1", "DATA/vm-100-clone"); err != nil {
+		t.Fatalf("CloneSnapshot on zvol failed: %v", err)
+	}
+	dsAfterClone, _ := m.ListDatasets()
+	for _, ds := range dsAfterClone {
+		if ds.Name == "DATA/vm-100-clone" && ds.Type != "volume" {
+			t.Errorf("expected zvol clone to keep Type='volume', got %q", ds.Type)
+		}
+	}
+	// Recursive snapshot & rollback removing newer snapshots
+	if err := m.CreateSnapshotRecursive("DATA/Fileshare", "rec1", true); err != nil {
+		t.Fatalf("CreateSnapshotRecursive failed: %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	if err := m.CreateSnapshot("DATA/Fileshare", "rec2"); err != nil {
+		t.Fatalf("CreateSnapshot rec2 failed: %v", err)
+	}
+	if err := m.RollbackSnapshot("DATA/Fileshare@rec1"); err != nil {
+		t.Fatalf("RollbackSnapshot failed: %v", err)
 	}
 	snaps, err := m.ListSnapshots()
 	if err != nil {
 		t.Fatalf("ListSnapshots failed: %v", err)
 	}
 	foundSnap := false
+	foundChildRec := false
 	for _, s := range snaps {
 		if s.Name == "DATA/vms@snap1" {
 			foundSnap = true
@@ -245,12 +282,21 @@ func TestZfsManager_FullLifecycle(t *testing.T) {
 				t.Errorf("expected non-zero ReferencedBytes on snapshot")
 			}
 		}
+		if s.Name == "DATA/Fileshare/Milena@rec1" {
+			foundChildRec = true
+		}
+		if s.Name == "DATA/Fileshare@rec2" {
+			t.Errorf("expected newer snapshot DATA/Fileshare@rec2 to be removed on rollback")
+		}
 	}
 	if !foundSnap {
 		t.Errorf("expected snapshot DATA/vms@snap1 in ListSnapshots")
 	}
+	if !foundChildRec {
+		t.Errorf("expected recursive child snapshot DATA/Fileshare/Milena@rec1")
+	}
 
-	// 6. Export and re-import pool
+	// 6. Export and re-import pool (verifying dataset preservation)
 	if err := m.ExportPool("MEDIA-12TB"); err != nil {
 		t.Fatalf("ExportPool failed: %v", err)
 	}
@@ -260,6 +306,29 @@ func TestZfsManager_FullLifecycle(t *testing.T) {
 	}
 	if err := m.ImportPool("MEDIA-12TB", "", false); err != nil {
 		t.Fatalf("ImportPool failed: %v", err)
+	}
+	dsAfterImport, _ := m.ListDatasets()
+	foundMediaData := false
+	for _, ds := range dsAfterImport {
+		if ds.Name == "MEDIA-12TB/data" {
+			foundMediaData = true
+		}
+	}
+	if !foundMediaData {
+		t.Errorf("expected child dataset MEDIA-12TB/data to be restored after ImportPool")
+	}
+
+	// 7. Prevent destroying root pool dataset directly via DestroyDataset
+	if err := m.DestroyDataset("DATA"); err == nil {
+		t.Errorf("expected DestroyDataset('DATA') on root pool to fail")
+	}
+
+	// 8. Quota normalization ("500 GiB" -> "500G", "0" -> "none")
+	if err := m.SetDatasetProperty("DATA/Backup", "quota", "500 GiB"); err != nil {
+		t.Fatalf("SetDatasetProperty quota '500 GiB' failed: %v", err)
+	}
+	if err := m.SetDatasetProperty("DATA/Backup", "quota", "0"); err != nil {
+		t.Fatalf("SetDatasetProperty quota '0' failed: %v", err)
 	}
 }
 

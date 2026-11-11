@@ -4,11 +4,12 @@
       <h3 x-text="diskAction.type === 'replace' ? ('Replace Disk ' + diskAction.targetDevice + ' in ' + diskAction.pool) : ('Attach Mirror Disk to ' + diskAction.targetDevice + ' in ' + diskAction.pool)"></h3>
       <button type="button" class="modal-close" @click="openDiskActionModal = false">&times;</button>
     </div>
-    <form :action="diskAction.type === 'replace' ? '/ui/actions/zfs/pools/disk/replace' : '/ui/actions/zfs/pools/disk/attach'"
-          :hx-post="diskAction.type === 'replace' ? '/ui/actions/zfs/pools/disk/replace' : '/ui/actions/zfs/pools/disk/attach'"
+    <form hx-post="/ui/actions/zfs/pools/disk/action"
           hx-target="#pools-container" hx-swap="morph"
           @htmx:after-request="if (event.detail.successful) openDiskActionModal = false">
+      <input type="hidden" name="action_type" :value="diskAction.type">
       <input type="hidden" name="pool" :value="diskAction.pool">
+      <input type="hidden" name="target_device" :value="diskAction.targetDevice">
       <input type="hidden" name="existing_device" :value="diskAction.targetDevice">
       <input type="hidden" name="old_device" :value="diskAction.targetDevice">
       

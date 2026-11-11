@@ -1,20 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Debian NAS - OpenMediaVault WebGUI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/tailwind.css">
   <script src="/static/htmx.min.js"></script>
   <script src="/static/idiomorph-ext.min.js"></script>
   <script defer src="/static/alpine.min.js"></script>
 </head>
-<body hx-ext="morph"
-      x-data="{
+
+<body hx-ext="morph" x-data="{
         currentTab: 'dashboard',
         openShareModal: false,
         isEditingShare: false,
@@ -26,6 +29,7 @@
         openDiskActionModal: false,
         diskAction: { type: 'replace', pool: '', targetDevice: '' },
         openCreateDatasetModal: false,
+        datasetParent: '',
         openCreateZvolModal: false,
         openPoolPropsModal: false,
         poolProps: { pool: '', autotrim: 'off', autoexpand: 'on' },
@@ -33,11 +37,63 @@
         datasetProps: { name: '', compression: 'lz4', recordsize: '128K', quota: 'none', atime: 'off', readonly: 'off', isZvol: false },
         openCreateSnapModal: false,
         snapDataset: '',
+        snapName: '',
+        snapRecursive: false,
         openCloneSnapModal: false,
         cloneSnapSource: '',
+        cloneSnapTarget: '',
         openDangerConfirmModal: false,
         dangerConfirm: { type: 'pool', targetName: '', inputName: '' },
         openImportModal: false,
+        openCloudSyncModal: false,
+        isEditingCloudSync: false,
+        openSnapTaskModal: false,
+        isEditingSnapTask: false,
+        snapTaskForm: { id: '', dataset: '', recursive: true, lifetime_value: 2, lifetime_unit: 'week(s)', naming_schema: 'auto-%Y-%m-%d_%H-%M', schedule: '0 0 * * *', frequency_text: '', enabled: true },
+        openCreateSnapTask() {
+          this.isEditingSnapTask = false;
+          const sel = document.getElementById('snap-task-dataset-select');
+          const firstDataset = sel && sel.options.length > 0 ? sel.options[0].value : '';
+          this.snapTaskForm = { id: '', dataset: firstDataset, recursive: true, lifetime_value: 2, lifetime_unit: 'week(s)', naming_schema: 'auto-%Y-%m-%d_%H-%M', schedule: '0 0 * * *', frequency_text: '', enabled: true };
+          this.openSnapTaskModal = true;
+        },
+        openEditSnapTask(id, dataset, recursive, lifetimeVal, lifetimeUnit, namingSchema, schedule, frequencyText, enabled) {
+          this.isEditingSnapTask = true;
+          this.snapTaskForm = {
+            id: id,
+            dataset: dataset || 'DATA',
+            recursive: Boolean(recursive),
+            lifetime_value: lifetimeVal || 2,
+            lifetime_unit: lifetimeUnit || 'week(s)',
+            naming_schema: namingSchema || 'auto-%Y-%m-%d_%H-%M',
+            schedule: schedule || '0 0 * * *',
+            frequency_text: frequencyText || '',
+            enabled: Boolean(enabled)
+          };
+          this.openSnapTaskModal = true;
+        },
+        cloudSyncForm: { id: '', name: '', description: '', source_path: '', remote_target: '', direction: 'PUSH', schedule: '0 2 00 * *', frequency_text: '', bandwidth_limit: '50M', enabled: true },
+        openCreateCloudSync() {
+          this.isEditingCloudSync = false;
+          this.cloudSyncForm = { id: '', name: '', description: '', source_path: '/mnt/DATA', remote_target: 'hetzner_storagebox:backup/DATA', direction: 'PUSH', schedule: '0 2 00 * *', frequency_text: '', bandwidth_limit: '50M', enabled: true };
+          this.openCloudSyncModal = true;
+        },
+        openEditCloudSync(id, name, desc, src, target, dir, sched, bw, enabled) {
+          this.isEditingCloudSync = true;
+          this.cloudSyncForm = {
+            id: id,
+            name: name,
+            description: desc || name,
+            source_path: src,
+            remote_target: target,
+            direction: dir || 'PUSH',
+            schedule: sched || '0 2 00 * *',
+            frequency_text: '',
+            bandwidth_limit: bw || '50M',
+            enabled: enabled
+          };
+          this.openCloudSyncModal = true;
+        },
         expandedDisks: {},
         toggleDisk(name) {
           this.expandedDisks[name] = !this.expandedDisks[name];
@@ -50,6 +106,10 @@
         openCreateShare(name, path, proto) {
           this.isEditingShare = false;
           this.shareForm = { name: name || '', origName: '', path: path || '', origPath: '', proto: proto || 'smb', access: 'restricted', allowed_clients: '*', users: [] };
+          this.$nextTick(() => {
+            const cbs = document.querySelectorAll('#share-modal-users input[name=valid_users]');
+            cbs.forEach(cb => { cb.checked = false; });
+          });
           this.$nextTick(() => {
             const cbs = document.querySelectorAll('#share-modal-users input[name=valid_users]');
             cbs.forEach(cb => { cb.checked = false; });
@@ -101,9 +161,14 @@
         openEditShare(name, path, readOnly, guestOk, usersStr) {
           this.openEditSmbShare(name, path, readOnly, guestOk, usersStr);
         },
+        openCreatePool() {
+          this.openCreatePoolModal = true;
+          if (window.htmx) htmx.trigger(document.body, 'refreshPoolDisks');
+        },
         openAddVdev(pool) {
           this.addVdevPool = pool;
           this.openAddVdevModal = true;
+          if (window.htmx) htmx.trigger(document.body, 'refreshPoolDisks');
         },
         openDiskAction(type, pool, targetDevice) {
           this.diskAction = { type: type, pool: pool, targetDevice: targetDevice };
@@ -125,12 +190,26 @@
           };
           this.openDatasetPropsModal = true;
         },
-        openCreateSnapModal(dataset) {
+        openCreateDataset(parent) {
+          this.datasetParent = parent || '';
+          this.openCreateDatasetModal = true;
+        },
+        openCreateSnap(dataset) {
           this.snapDataset = dataset || '';
+          this.snapName = '';
+          this.snapRecursive = false;
           this.openCreateSnapModal = true;
         },
-        openCloneSnapModal(snapshot) {
-          this.cloneSnapSource = snapshot;
+        openCloneSnap(snapshot) {
+          this.cloneSnapSource = snapshot || '';
+          const ds = (snapshot || '').split('@')[0] || '';
+          if (ds.includes('/')) {
+            this.cloneSnapTarget = ds + '-clone';
+          } else if (ds) {
+            this.cloneSnapTarget = ds + '/' + ds + '-clone';
+          } else {
+            this.cloneSnapTarget = '';
+          }
           this.openCloneSnapModal = true;
         },
         openDangerConfirm(type, name) {
@@ -148,8 +227,7 @@
             this.toasts = this.toasts.filter(t => t.id !== id);
           }, 4500);
         }
-      }"
-      @show-toast.window="showToast($event.detail.message, $event.detail.type)">
+      }" @show-toast.camel.window="showToast($event.detail.message, $event.detail.type)" @show-toast.window="showToast($event.detail.message, $event.detail.type)">
 
   <!-- Topbar Header (Split Brand & Blue Topbar) -->
   {{template "partials/topbar.html" .}}
@@ -159,9 +237,11 @@
     <aside class="omv-sidebar">
       <nav class="omv-nav-list">
         <!-- 1. Dashboard -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'dashboard' }" @click="currentTab = 'dashboard'">
+        <button class="omv-nav-item" :class="{ 'active': currentTab === 'dashboard' }"
+          @click="currentTab = 'dashboard'">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M4 4h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4zM4 10h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4zM4 16h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4z"/>
+            <path
+              d="M4 4h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4zM4 10h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4zM4 16h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4z" />
           </svg>
           <span class="omv-nav-title">Dashboard</span>
         </button>
@@ -169,7 +249,8 @@
         <!-- 2. Disks -->
         <button class="omv-nav-item" :class="{ 'active': currentTab === 'disks' }" @click="currentTab = 'disks'">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm0 2v4h12V4H6zm12 16V10H6v10h12zm-3-3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/>
+            <path
+              d="M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm0 2v4h12V4H6zm12 16V10H6v10h12zm-3-3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z" />
           </svg>
           <span class="omv-nav-title">Disks</span>
           <span class="omv-nav-chevron">&#10095;</span>
@@ -178,7 +259,7 @@
         <!-- 3. Storage -->
         <button class="omv-nav-item" :class="{ 'active': currentTab === 'pools' }" @click="currentTab = 'pools'">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M2 20h20v-4H2v4zm2-3h2v2H4v-2zM2 4v4h20V4H2zm4 3H4V5h2v2zm-4 7h20v-4H2v4zm2-3h2v2H4v-2z"/>
+            <path d="M2 20h20v-4H2v4zm2-3h2v2H4v-2zM2 4v4h20V4H2zm4 3H4V5h2v2zm-4 7h20v-4H2v4zm2-3h2v2H4v-2z" />
           </svg>
           <span class="omv-nav-title">Storage</span>
           <span class="omv-nav-chevron">&#10095;</span>
@@ -187,7 +268,7 @@
         <!-- 4. Dataset -->
         <button class="omv-nav-item" :class="{ 'active': currentTab === 'datasets' }" @click="currentTab = 'datasets'">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+            <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
           </svg>
           <span class="omv-nav-title">Dataset</span>
           <span class="omv-nav-chevron">&#10095;</span>
@@ -196,7 +277,8 @@
         <!-- 5. Shares -->
         <button class="omv-nav-item" :class="{ 'active': currentTab === 'shares' }" @click="currentTab = 'shares'">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-5 3c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2zm4 8h-8v-1c0-1.33 2.67-2 4-2s4 .67 4 2v1z"/>
+            <path
+              d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-5 3c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2zm4 8h-8v-1c0-1.33 2.67-2 4-2s4 .67 4 2v1z" />
           </svg>
           <span class="omv-nav-title">Shares</span>
           <span class="omv-nav-chevron">&#10095;</span>
@@ -205,16 +287,19 @@
         <!-- 6. User -->
         <button class="omv-nav-item" :class="{ 'active': currentTab === 'users' }" @click="currentTab = 'users'">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+            <path
+              d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
           </svg>
           <span class="omv-nav-title">User</span>
           <span class="omv-nav-chevron">&#10095;</span>
         </button>
 
         <!-- 7. Data Protection -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'protection' }" @click="currentTab = 'protection'">
+        <button class="omv-nav-item" :class="{ 'active': currentTab === 'protection' }"
+          @click="currentTab = 'protection'">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>
+            <path
+              d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" />
           </svg>
           <span class="omv-nav-title">Data Protection</span>
           <span class="omv-nav-chevron">&#10095;</span>
@@ -223,7 +308,8 @@
         <!-- 8. Services -->
         <button class="omv-nav-item" :class="{ 'active': currentTab === 'services' }" @click="currentTab = 'services'">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+            <path
+              d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
           </svg>
           <span class="omv-nav-title">Services</span>
           <span class="omv-nav-chevron">&#10095;</span>
@@ -232,7 +318,8 @@
         <!-- 9. System -->
         <button class="omv-nav-item" :class="{ 'active': currentTab === 'system' }" @click="currentTab = 'system'">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
+            <path
+              d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z" />
           </svg>
           <span class="omv-nav-title">System</span>
           <span class="omv-nav-chevron">&#10095;</span>
@@ -250,10 +337,13 @@
       <!-- OMV Breadcrumb Subbar -->
       <div class="omv-breadcrumb">
         <span class="omv-home-icon">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+          </svg>
         </span>
         <span class="omv-crumb-divider">|</span>
-        <span class="omv-crumb-title" x-text="currentTab === 'dashboard' ? 'Dashboard' : (currentTab === 'disks' ? 'Disks > Physical Disks & S.M.A.R.T.' : (currentTab === 'pools' ? 'Storage > ZFS Storage Pools' : (currentTab === 'datasets' ? 'Dataset > ZFS Datasets & Volumes' : (currentTab === 'shares' ? 'Shares > SMB & NFS Network Shares' : (currentTab === 'users' ? 'User > Storage Users' : (currentTab === 'protection' ? 'Data Protection > Snapshots & Scrub' : (currentTab === 'services' ? 'Services > Core System Services' : 'System > Host & Network')))))))">Dashboard</span>
+        <span class="omv-crumb-title"
+          x-text="currentTab === 'dashboard' ? 'Dashboard' : (currentTab === 'disks' ? 'Disks > Physical Disks & S.M.A.R.T.' : (currentTab === 'pools' ? 'Storage > ZFS Storage Pools' : (currentTab === 'datasets' ? 'Dataset > ZFS Datasets & Volumes' : (currentTab === 'shares' ? 'Shares > SMB & NFS Network Shares' : (currentTab === 'users' ? 'User > Storage Users' : (currentTab === 'protection' ? 'Data Protection > Snapshots & Scrub' : (currentTab === 'services' ? 'Services > Core System Services' : 'System > Host & Network')))))))">Dashboard</span>
       </div>
 
       <main class="omv-main-content">
@@ -281,7 +371,7 @@
             </div>
             <div class="page-actions" style="display: flex; gap: 0.5rem;">
               <button class="btn btn-secondary btn-sm" @click="openImportModal = true">Import Pool</button>
-              <button class="btn btn-primary btn-sm" @click="openCreatePoolModal = true">+ Create Pool</button>
+              <button class="btn btn-primary btn-sm" @click="openCreatePool()">+ Create Pool</button>
             </div>
           </div>
 
@@ -289,14 +379,16 @@
         </section>
 
         <!-- 4. DATASET (ZFS DATASETS & VOLUMES) -->
-        <section class="tab-pane" :class="{ 'active': currentTab === 'datasets' }" x-show="currentTab === 'datasets'" x-cloak>
+        <section class="tab-pane" :class="{ 'active': currentTab === 'datasets' }" x-show="currentTab === 'datasets'"
+          x-cloak>
           <div class="page-header" style="margin-bottom: 0.75rem;">
             <div class="page-title-group">
-              <h1 style="font-size: 1.6rem; font-weight: 700; color: #ffffff; margin: 0; letter-spacing: -0.5px;">Datasets</h1>
+              <h1 style="font-size: 1.6rem; font-weight: 700; color: #ffffff; margin: 0; letter-spacing: -0.5px;">
+                Datasets</h1>
             </div>
             <div class="page-actions" style="display: flex; gap: 0.5rem;">
               <button class="btn btn-secondary btn-sm" @click="openCreateZvolModal = true">+ Create Zvol</button>
-              <button class="btn btn-primary btn-sm" @click="openCreateDatasetModal = true">+ Create Dataset</button>
+              <button class="btn btn-primary btn-sm" @click="openCreateDataset('')">+ Create Dataset</button>
             </div>
           </div>
 
@@ -304,7 +396,8 @@
         </section>
 
         <!-- 5. SHARES (SMB & NFS) -->
-        <section class="tab-pane" :class="{ 'active': currentTab === 'shares' }" x-show="currentTab === 'shares'" x-cloak>
+        <section class="tab-pane" :class="{ 'active': currentTab === 'shares' }" x-show="currentTab === 'shares'"
+          x-cloak>
           <div class="page-header">
             <div class="page-title-group">
               <h1>Network File Shares (SMB &amp; NFS)</h1>
@@ -333,21 +426,27 @@
         </section>
 
         <!-- 7. DATA PROTECTION (SNAPSHOTS & SCRUB) -->
-        <section class="tab-pane" :class="{ 'active': currentTab === 'protection' }" x-show="currentTab === 'protection'" x-cloak>
+        <section class="tab-pane" :class="{ 'active': currentTab === 'protection' }"
+          x-show="currentTab === 'protection'" x-cloak>
           <div class="page-header">
             <div class="page-title-group">
               <h1>Data Protection (Snapshots &amp; Scrub)</h1>
             </div>
             <div class="page-actions">
-              <button class="btn btn-primary btn-sm" @click="openCreateSnapModal('')">+ Create Snapshot</button>
+              <button class="btn btn-primary btn-sm" @click="openCreateSnap('')">+ Create Snapshot</button>
             </div>
           </div>
 
           {{template "partials/snapshots_list.html" .}}
+
+          {{template "partials/snapshot_tasks.html" .}}
+
+          {{template "partials/cloudsync_tasks.html" .}}
         </section>
 
         <!-- 8. SERVICES (CORE DAEMONS) -->
-        <section class="tab-pane" :class="{ 'active': currentTab === 'services' }" x-show="currentTab === 'services'" x-cloak>
+        <section class="tab-pane" :class="{ 'active': currentTab === 'services' }" x-show="currentTab === 'services'"
+          x-cloak>
           <div class="page-header">
             <div class="page-title-group">
               <h1>System Services &amp; Daemons</h1>
@@ -424,7 +523,8 @@
         </section>
 
         <!-- 9. SYSTEM & NETWORK -->
-        <section class="tab-pane" :class="{ 'active': currentTab === 'system' }" x-show="currentTab === 'system'" x-cloak>
+        <section class="tab-pane" :class="{ 'active': currentTab === 'system' }" x-show="currentTab === 'system'"
+          x-cloak>
           <div class="page-header">
             <div class="page-title-group">
               <h1>System Information &amp; Network</h1>
@@ -437,15 +537,44 @@
             </div>
             <table class="pf-table">
               <tbody>
-                <tr><td style="width: 200px; font-weight: 600;">Hostname</td><td class="font-mono text-blue">{{.System.Hostname}}</td></tr>
-                <tr><td style="font-weight: 600;">Operating System</td><td>{{.System.OS}}</td></tr>
-                <tr><td style="font-weight: 600;">Kernel Version</td><td class="font-mono">{{.System.Kernel}}</td></tr>
-                <tr><td style="font-weight: 600;">CPU Architecture</td><td>{{.System.Arch}}</td></tr>
-                <tr><td style="font-weight: 600;">System Uptime</td><td class="font-mono">{{if .System.UptimeSec}}{{formatUptime .System.UptimeSec}}{{else}}{{.System.Uptime}}{{end}}</td></tr>
-                <tr><td style="font-weight: 600;">Storage Architecture</td><td class="font-mono text-blue">Native OpenZFS {{if .ZfsVersion}}{{.ZfsVersion}}{{else}}2.2.6{{end}} (Core Engine)</td></tr>
-                <tr><td style="font-weight: 600;">Runtime Service (systemd)</td><td><span class="badge-status green">nasd.service active (running)</span></td></tr>
-                <tr><td style="font-weight: 600;">Samba Daemon</td><td><span class="badge-status green">smbd.service active</span></td></tr>
-                <tr><td style="font-weight: 600;">NFS Server Daemon</td><td><span class="badge-status green">nfs-kernel-server active</span></td></tr>
+                <tr>
+                  <td style="width: 200px; font-weight: 600;">Hostname</td>
+                  <td class="font-mono text-blue">{{.System.Hostname}}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight: 600;">Operating System</td>
+                  <td>{{.System.OS}}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight: 600;">Kernel Version</td>
+                  <td class="font-mono">{{.System.Kernel}}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight: 600;">CPU Architecture</td>
+                  <td>{{.System.Arch}}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight: 600;">System Uptime</td>
+                  <td class="font-mono">{{if .System.UptimeSec}}{{formatUptime
+                    .System.UptimeSec}}{{else}}{{.System.Uptime}}{{end}}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight: 600;">Storage Architecture</td>
+                  <td class="font-mono text-blue">Native OpenZFS {{if .ZfsVersion}}{{.ZfsVersion}}{{else}}2.2.6{{end}}
+                    (Core Engine)</td>
+                </tr>
+                <tr>
+                  <td style="font-weight: 600;">Runtime Service (systemd)</td>
+                  <td><span class="badge-status green">nasd.service active (running)</span></td>
+                </tr>
+                <tr>
+                  <td style="font-weight: 600;">Samba Daemon</td>
+                  <td><span class="badge-status green">smbd.service active</span></td>
+                </tr>
+                <tr>
+                  <td style="font-weight: 600;">NFS Server Daemon</td>
+                  <td><span class="badge-status green">nfs-kernel-server active</span></td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -472,11 +601,14 @@
   {{template "modals/clone_snap.html" .}}
   {{template "modals/danger_confirm.html" .}}
   {{template "modals/import_pool.html" .}}
+  {{template "modals/create_cloudsync.html" .}}
+  {{template "modals/create_snapshot_task.html" .}}
 
   <!-- Alpine Toast Notification Container -->
   <div class="toast-container" x-cloak>
     <template x-for="t in toasts" :key="t.id">
-      <div class="toast" :class="t.type" style="display: flex; align-items: center; gap: 0.5rem; animation: fadeIn 0.2s ease;">
+      <div class="toast" :class="t.type"
+        style="display: flex; align-items: center; gap: 0.5rem; animation: fadeIn 0.2s ease;">
         <span x-show="t.type === 'success'" style="color: var(--omv-green);">✔</span>
         <span x-show="t.type === 'error'" style="color: var(--omv-red);">✖</span>
         <span x-show="t.type === 'info'" style="color: var(--omv-blue);">ℹ</span>
@@ -485,4 +617,5 @@
     </template>
   </div>
 </body>
+
 </html>

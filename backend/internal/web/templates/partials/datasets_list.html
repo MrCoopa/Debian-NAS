@@ -354,12 +354,17 @@
 
                   <!-- Quick Action Buttons on Hover -->
                   <div class="tn-row-actions">
+                    {{if eq $ds.Type "filesystem"}}
+                      <button class="btn btn-secondary btn-sm" @click.stop="openCreateDataset('{{$ds.Name}}')">+ Dataset</button>
+                    {{end}}
                     <button class="btn btn-secondary btn-sm" @click.stop="openDatasetProps('{{$ds.Name}}', '{{$ds.Compression}}', '{{$ds.RecordSize}}', '{{$ds.Quota}}', '{{$ds.Atime}}', '{{$ds.ReadOnly}}', '{{$ds.Type}}')">Properties</button>
-                    <button class="btn btn-secondary btn-sm" @click.stop="openCreateSnapModal('{{$ds.Name}}')">Snap</button>
+                    <button class="btn btn-secondary btn-sm" @click.stop="openCreateSnap('{{$ds.Name}}')">Snap</button>
                     {{if eq $ds.Type "filesystem"}}
                       <button class="btn btn-secondary btn-sm" @click.stop="openCreateShare('{{$ds.Name}}', '{{$ds.Mountpoint}}')">Share</button>
                     {{end}}
-                    <button class="btn btn-danger btn-sm" @click.stop="openDangerConfirm('dataset', '{{$ds.Name}}')">Destroy</button>
+                    {{if gt $depth 0}}
+                      <button class="btn btn-danger btn-sm" @click.stop="openDangerConfirm('dataset', '{{$ds.Name}}')">Destroy</button>
+                    {{end}}
                   </div>
                 </td>
               </tr>

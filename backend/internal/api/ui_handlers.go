@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"debian-nas/internal/cloudsync"
 	"debian-nas/internal/disks"
 	"debian-nas/internal/shares"
 	"debian-nas/internal/system"
@@ -16,6 +17,7 @@ import (
 
 // ViewData is passed to the root layout and all partials
 type ViewData struct {
+	CurrentUser   string
 	System        *system.SystemStatus
 	Disks         []*disks.DiskInfo
 	Pools         []*zfs.Pool
@@ -24,22 +26,47 @@ type ViewData struct {
 	NfsExports    []*shares.NfsExport
 	Users         []shares.StorageUser
 	Snapshots     []*zfs.Snapshot
+	SnapshotTasks []*zfs.SnapshotTask
+	CloudJobs     []*cloudsync.SyncJob
+	CloudRemotes  []cloudsync.Remote
 	ZfsVersion    string
 	TotalDisks    int
 	TotalRawBytes uint64
 	StandbyCount  int
 	SpinningCount int
+	ErrorMessage  string
 }
 
-func (s *Server) buildViewData() *ViewData {
+func (s *Server) buildViewData(req ...*http.Request) *ViewData {
+	currentUser := "root"
+	if len(req) > 0 && req[0] != nil {
+		if c, err := req[0].Cookie("nas_user"); err == nil && strings.TrimSpace(c.Value) != "" {
+			currentUser = strings.TrimSpace(c.Value)
+		}
+	}
+
 	status := s.sys.GetStatus()
-	allDisks, _ := s.disks.ListDisks()
-	pools, _ := s.zfs.ListPools()
+	var pools []*zfs.Pool
+	if s.zfs != nil {
+		var poolsErr error
+		pools, poolsErr = s.zfs.ListPools()
+		if poolsErr == nil && s.disks != nil {
+			_, _ = s.disks.ListDisks()
+			s.syncDiskPoolMembershipFromPools(pools)
+		}
+	}
+	var allDisks []*disks.DiskInfo
+	if s.disks != nil {
+		allDisks, _ = s.disks.ListDisks()
+	}
 	datasets, _ := s.zfs.ListDatasets()
 	snapshots, _ := s.zfs.ListSnapshots()
+	snapTasks := s.zfs.ListSnapshotTasks()
 	smbShares, _ := s.shares.ListSmb()
 	nfsExports, _ := s.shares.ListNfs()
 	users, _ := s.shares.ListUsers()
+	cloudJobs, _ := s.cloudsync.ListJobs()
+	cloudRemotes, _ := s.cloudsync.ListRemotes()
 
 	standbyCount := 0
 	spinningCount := 0
@@ -61,6 +88,7 @@ func (s *Server) buildViewData() *ViewData {
 	}
 
 	return &ViewData{
+		CurrentUser:   currentUser,
 		System:        status,
 		Disks:         allDisks,
 		Pools:         pools,
@@ -69,6 +97,9 @@ func (s *Server) buildViewData() *ViewData {
 		NfsExports:    nfsExports,
 		Users:         users,
 		Snapshots:     snapshots,
+		SnapshotTasks: snapTasks,
+		CloudJobs:     cloudJobs,
+		CloudRemotes:  cloudRemotes,
 		ZfsVersion:    zfsVer,
 		TotalDisks:    len(allDisks),
 		TotalRawBytes: totalRawBytes,
@@ -97,6 +128,81 @@ func (s *Server) setHXTrigger(w http.ResponseWriter, toastMsg, toastType string,
 // Page & Partial Handlers
 // ==============================================================================
 
+func (s *Server) handleUILogin(w http.ResponseWriter, r *http.Request) {
+	// If already authenticated and not switching user, redirect to /
+	if r.URL.Query().Get("switch") == "" {
+		if c, err := r.Cookie("nas_user"); err == nil && strings.TrimSpace(c.Value) != "" {
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+	}
+
+	data := s.buildViewData(r)
+	if r.URL.Query().Get("error") != "" {
+		data.ErrorMessage = "Invalid username or password. Please try again."
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	if err := s.web.Render(w, "login.html", data); err != nil {
+		log.Printf("[UI] Login render error: %v", err)
+		http.Error(w, "Login Render Error: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleUILoginSubmit(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	username := strings.ToLower(strings.TrimSpace(r.FormValue("username")))
+
+	if username == "" {
+		http.Redirect(w, r, "/login?error=invalid", http.StatusSeeOther)
+		return
+	}
+
+	// Verify user: check root/admin or any storage user in s.shares
+	allUsers, _ := s.shares.ListUsers()
+	validUser := false
+	if username == "root" || username == "admin" {
+		validUser = true
+	} else {
+		for _, u := range allUsers {
+			if strings.ToLower(u.Username) == username {
+				validUser = true
+				break
+			}
+		}
+	}
+
+	if !validUser {
+		http.Redirect(w, r, "/login?error=invalid", http.StatusSeeOther)
+		return
+	}
+
+	// Valid login! Set cookie for 30 days
+	http.SetCookie(w, &http.Cookie{
+		Name:     "nas_user",
+		Value:    username,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   86400 * 30, // 30 days
+	})
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleUILogout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "nas_user",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
 func (s *Server) handleUIRoot(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		// Serve static files or 404
@@ -108,9 +214,16 @@ func (s *Server) handleUIRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if authenticated
+	c, err := r.Cookie("nas_user")
+	if err != nil || strings.TrimSpace(c.Value) == "" {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	if err := s.web.Render(w, "layout.html", s.buildViewData()); err != nil {
+	if err := s.web.Render(w, "layout.html", s.buildViewData(r)); err != nil {
 		log.Printf("[UI] Template render error: %v", err)
 		http.Error(w, "UI Rendering Error: "+err.Error(), http.StatusInternalServerError)
 	}
@@ -118,12 +231,12 @@ func (s *Server) handleUIRoot(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUIPartialSystem(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/system_metrics.html", s.buildViewData())
+	_ = s.web.Render(w, "partials/system_metrics.html", s.buildViewData(r))
 }
 
 func (s *Server) handleUIPartialTop(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/topbar.html", s.buildViewData())
+	_ = s.web.Render(w, "partials/topbar.html", s.buildViewData(r))
 }
 
 func (s *Server) handleUIPartialPools(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +274,11 @@ func (s *Server) handleUIPartialNetwork(w http.ResponseWriter, r *http.Request) 
 	_ = s.web.Render(w, "partials/network_list.html", s.buildViewData())
 }
 
+func (s *Server) handleUIPartialCloudSync(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.web.Render(w, "partials/cloudsync_tasks.html", s.buildViewData())
+}
+
 func (s *Server) handleUIPartialCreateShareModal(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = s.web.Render(w, "modals/create_share.html", s.buildViewData())
@@ -169,6 +287,16 @@ func (s *Server) handleUIPartialCreateShareModal(w http.ResponseWriter, r *http.
 func (s *Server) handleUIPartialShareModalUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = s.web.Render(w, "partials/share_users_checkboxes.html", s.buildViewData())
+}
+
+func (s *Server) handleUIPartialModalSnapDatasets(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.web.Render(w, "partials/snap_datasets_options.html", s.buildViewData())
+}
+
+func (s *Server) handleUIPartialModalPoolDisks(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.web.Render(w, "partials/pool_disks_checkboxes.html", s.buildViewData(r))
 }
 
 // ==============================================================================
@@ -493,13 +621,22 @@ func (s *Server) handleUIActionSetPoolProperty(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	var propErr error
 	if autotrim != "" {
-		_ = s.zfs.SetPoolProperty(pool, "autotrim", autotrim)
+		if err := s.zfs.SetPoolProperty(pool, "autotrim", autotrim); err != nil {
+			propErr = err
+		}
 	}
 	if autoexpand != "" {
-		_ = s.zfs.SetPoolProperty(pool, "autoexpand", autoexpand)
+		if err := s.zfs.SetPoolProperty(pool, "autoexpand", autoexpand); err != nil && propErr == nil {
+			propErr = err
+		}
 	}
-	s.setHXTrigger(w, fmt.Sprintf("Properties updated for pool '%s'", pool), "success", "poolUpdate")
+	if propErr != nil {
+		s.setHXTrigger(w, "Error updating pool properties: "+propErr.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Properties updated for pool '%s'", pool), "success", "poolUpdate")
+	}
 	s.handleUIPartialPools(w, r)
 }
 
@@ -519,6 +656,12 @@ func (s *Server) handleUIActionDiskAction(w http.ResponseWriter, r *http.Request
 	targetDevice := strings.TrimSpace(r.FormValue("target_device"))
 	if targetDevice == "" {
 		targetDevice = strings.TrimSpace(r.FormValue("device"))
+	}
+	if targetDevice == "" {
+		targetDevice = strings.TrimSpace(r.FormValue("existing_device"))
+	}
+	if targetDevice == "" {
+		targetDevice = strings.TrimSpace(r.FormValue("old_device"))
 	}
 	newDevice := strings.TrimSpace(r.FormValue("new_device"))
 
@@ -584,6 +727,7 @@ func (s *Server) handleUIActionSetDatasetProperty(w http.ResponseWriter, r *http
 	quota := strings.TrimSpace(r.FormValue("quota"))
 	readonly := r.FormValue("readonly")
 	atime := r.FormValue("atime")
+	isZvol := r.FormValue("is_zvol") == "true"
 
 	if dataset == "" {
 		s.setHXTrigger(w, "Dataset name is required", "error")
@@ -591,23 +735,38 @@ func (s *Server) handleUIActionSetDatasetProperty(w http.ResponseWriter, r *http
 		return
 	}
 
+	var propErr error
 	if compression != "" {
-		_ = s.zfs.SetDatasetProperty(dataset, "compression", compression)
+		if err := s.zfs.SetDatasetProperty(dataset, "compression", compression); err != nil {
+			propErr = err
+		}
 	}
-	if recordsize != "" {
-		_ = s.zfs.SetDatasetProperty(dataset, "recordsize", recordsize)
+	if !isZvol && recordsize != "" {
+		if err := s.zfs.SetDatasetProperty(dataset, "recordsize", recordsize); err != nil && propErr == nil {
+			propErr = err
+		}
 	}
-	if quota != "" {
-		_ = s.zfs.SetDatasetProperty(dataset, "quota", quota)
+	if !isZvol && quota != "" {
+		if err := s.zfs.SetDatasetProperty(dataset, "quota", quota); err != nil && propErr == nil {
+			propErr = err
+		}
 	}
 	if readonly != "" {
-		_ = s.zfs.SetDatasetProperty(dataset, "readonly", readonly)
+		if err := s.zfs.SetDatasetProperty(dataset, "readonly", readonly); err != nil && propErr == nil {
+			propErr = err
+		}
 	}
-	if atime != "" {
-		_ = s.zfs.SetDatasetProperty(dataset, "atime", atime)
+	if !isZvol && atime != "" {
+		if err := s.zfs.SetDatasetProperty(dataset, "atime", atime); err != nil && propErr == nil {
+			propErr = err
+		}
 	}
 
-	s.setHXTrigger(w, fmt.Sprintf("Properties updated for '%s'", dataset), "success", "datasetUpdate")
+	if propErr != nil {
+		s.setHXTrigger(w, "Error updating properties: "+propErr.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Properties updated for '%s'", dataset), "success", "datasetUpdate")
+	}
 	s.handleUIPartialDatasets(w, r)
 }
 
@@ -647,6 +806,7 @@ func (s *Server) handleUIActionCreateSnapshot(w http.ResponseWriter, r *http.Req
 	_ = r.ParseForm()
 	dataset := strings.TrimSpace(r.FormValue("dataset"))
 	snapName := strings.TrimSpace(r.FormValue("snapshot_name"))
+	recursive := r.FormValue("recursive") == "true" || r.FormValue("recursive") == "on"
 
 	if dataset == "" || snapName == "" {
 		s.setHXTrigger(w, "Dataset and snapshot name are required", "error")
@@ -654,10 +814,14 @@ func (s *Server) handleUIActionCreateSnapshot(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if err := s.zfs.CreateSnapshot(dataset, snapName); err != nil {
+	if err := s.zfs.CreateSnapshotRecursive(dataset, snapName, recursive); err != nil {
 		s.setHXTrigger(w, "Error creating snapshot: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Snapshot '%s@%s' created", dataset, snapName), "success", "snapshotUpdate", "datasetUpdate")
+		msg := fmt.Sprintf("Snapshot '%s@%s' created", dataset, snapName)
+		if recursive {
+			msg = fmt.Sprintf("Recursive snapshot '%s@%s' created", dataset, snapName)
+		}
+		s.setHXTrigger(w, msg, "success", "snapshotUpdate", "datasetUpdate")
 	}
 	s.handleUIPartialSnapshots(w, r)
 }
@@ -732,11 +896,17 @@ func (s *Server) handleUIActionDangerDestroy(w http.ResponseWriter, r *http.Requ
 
 	if targetType == "pool" {
 		if deleteShares {
-			// Clean up any SMB shares starting with /mnt/<name> or named <name>
 			if smbList, err := s.shares.ListSmb(); err == nil {
 				for _, smb := range smbList {
-					if smb.Name == name || strings.HasPrefix(smb.Path, "/mnt/"+name) || strings.HasPrefix(smb.Path, "/"+name) {
+					if smb.Name == name || smb.Path == "/mnt/"+name || strings.HasPrefix(smb.Path, "/mnt/"+name+"/") || smb.Path == "/"+name || strings.HasPrefix(smb.Path, "/"+name+"/") {
 						_ = s.shares.DeleteSmb(smb.Name)
+					}
+				}
+			}
+			if nfsList, err := s.shares.ListNfs(); err == nil {
+				for _, nfs := range nfsList {
+					if nfs.Path == "/mnt/"+name || strings.HasPrefix(nfs.Path, "/mnt/"+name+"/") || nfs.Path == "/"+name || strings.HasPrefix(nfs.Path, "/"+name+"/") {
+						_ = s.shares.DeleteNfs(nfs.Path)
 					}
 				}
 			}
@@ -744,15 +914,22 @@ func (s *Server) handleUIActionDangerDestroy(w http.ResponseWriter, r *http.Requ
 		if err := s.zfs.DestroyPool(name); err != nil {
 			s.setHXTrigger(w, "Error destroying pool: "+err.Error(), "error")
 		} else {
-			s.setHXTrigger(w, fmt.Sprintf("ZFS pool '%s' permanently destroyed", name), "success", "poolUpdate", "datasetUpdate", "shareUpdate", "diskUpdate")
+			s.setHXTrigger(w, fmt.Sprintf("ZFS pool '%s' permanently destroyed", name), "success", "poolUpdate", "datasetUpdate", "snapshotUpdate", "shareUpdate", "diskUpdate")
 		}
 	} else {
 		// Dataset destruction
 		if deleteShares {
 			if smbList, err := s.shares.ListSmb(); err == nil {
 				for _, smb := range smbList {
-					if strings.HasSuffix(smb.Path, name) || smb.Name == name {
+					if smb.Name == name || smb.Path == "/mnt/"+name || strings.HasPrefix(smb.Path, "/mnt/"+name+"/") || smb.Path == "/"+name || strings.HasPrefix(smb.Path, "/"+name+"/") {
 						_ = s.shares.DeleteSmb(smb.Name)
+					}
+				}
+			}
+			if nfsList, err := s.shares.ListNfs(); err == nil {
+				for _, nfs := range nfsList {
+					if nfs.Path == "/mnt/"+name || strings.HasPrefix(nfs.Path, "/mnt/"+name+"/") || nfs.Path == "/"+name || strings.HasPrefix(nfs.Path, "/"+name+"/") {
+						_ = s.shares.DeleteNfs(nfs.Path)
 					}
 				}
 			}
@@ -760,7 +937,7 @@ func (s *Server) handleUIActionDangerDestroy(w http.ResponseWriter, r *http.Requ
 		if err := s.zfs.DestroyDataset(name); err != nil {
 			s.setHXTrigger(w, "Error destroying dataset: "+err.Error(), "error")
 		} else {
-			s.setHXTrigger(w, fmt.Sprintf("Dataset '%s' destroyed", name), "success", "datasetUpdate", "shareUpdate")
+			s.setHXTrigger(w, fmt.Sprintf("Dataset '%s' destroyed", name), "success", "datasetUpdate", "snapshotUpdate", "shareUpdate")
 		}
 	}
 	s.handleUIPartialPools(w, r)
@@ -878,10 +1055,198 @@ func (s *Server) handleUIActionWipeDisk(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	s.syncDiskPoolMembership()
 	if err := s.disks.WipeDisk(path, "quick"); err != nil {
 		s.setHXTrigger(w, "Wipe error: "+err.Error(), "error")
 	} else {
 		s.setHXTrigger(w, fmt.Sprintf("Disk %s wiped and initialized successfully", path), "success", "diskUpdate")
 	}
 	s.handleUIPartialDisks(w, r)
+}
+
+// ---------------- Cloud Sync UI Actions ----------------
+
+func (s *Server) handleUIActionToggleCloudSync(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	id := strings.TrimSpace(r.FormValue("id"))
+	if id == "" {
+		id = strings.TrimSpace(r.URL.Query().Get("id"))
+	}
+	if id == "" {
+		s.setHXTrigger(w, "Task ID is required", "error")
+		s.handleUIPartialCloudSync(w, r)
+		return
+	}
+
+	if err := s.cloudsync.ToggleJob(id); err != nil {
+		s.setHXTrigger(w, "Error toggling task: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, "Cloud Sync task status toggled", "success", "cloudSyncUpdate")
+	}
+	s.handleUIPartialCloudSync(w, r)
+}
+
+func (s *Server) handleUIActionRunCloudSync(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	id := strings.TrimSpace(r.FormValue("id"))
+	if id == "" {
+		id = strings.TrimSpace(r.URL.Query().Get("id"))
+	}
+	if id == "" {
+		s.setHXTrigger(w, "Task ID is required", "error")
+		s.handleUIPartialCloudSync(w, r)
+		return
+	}
+
+	if err := s.cloudsync.TriggerJob(id); err != nil {
+		s.setHXTrigger(w, "Failed to start Cloud Sync: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, "Cloud Sync task started successfully", "success", "cloudSyncUpdate")
+	}
+	s.handleUIPartialCloudSync(w, r)
+}
+
+func (s *Server) handleUIActionDeleteCloudSync(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	id := strings.TrimSpace(r.FormValue("id"))
+	if id == "" {
+		id = strings.TrimSpace(r.URL.Query().Get("id"))
+	}
+	if id == "" {
+		s.setHXTrigger(w, "Task ID is required", "error")
+		s.handleUIPartialCloudSync(w, r)
+		return
+	}
+
+	if err := s.cloudsync.DeleteJob(id); err != nil {
+		s.setHXTrigger(w, "Failed to delete Cloud Sync task: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, "Cloud Sync task deleted", "info", "cloudSyncUpdate")
+	}
+	s.handleUIPartialCloudSync(w, r)
+}
+
+func (s *Server) handleUIActionSaveCloudSync(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	id := strings.TrimSpace(r.FormValue("id"))
+	desc := strings.TrimSpace(r.FormValue("description"))
+	name := strings.TrimSpace(r.FormValue("name"))
+	if desc == "" && name != "" {
+		desc = name
+	}
+	if name == "" && desc != "" {
+		name = desc
+	}
+	if name == "" {
+		s.setHXTrigger(w, "Task description/name is required", "error")
+		s.handleUIPartialCloudSync(w, r)
+		return
+	}
+
+	sourcePath := strings.TrimSpace(r.FormValue("source_path"))
+	remoteTarget := strings.TrimSpace(r.FormValue("remote_target"))
+	direction := cloudsync.SyncDirection(strings.ToUpper(strings.TrimSpace(r.FormValue("direction"))))
+	if direction != cloudsync.DirectionPull {
+		direction = cloudsync.DirectionPush
+	}
+
+	schedule := strings.TrimSpace(r.FormValue("schedule"))
+	if schedule == "" {
+		schedule = "0 2 00 * *"
+	}
+	freqText := strings.TrimSpace(r.FormValue("frequency_text"))
+	bw := strings.TrimSpace(r.FormValue("bandwidth_limit"))
+	enabled := r.FormValue("enabled") == "true" || r.FormValue("enabled") == "on" || r.FormValue("enabled") == "1"
+
+	job := &cloudsync.SyncJob{
+		ID:             id,
+		Name:           name,
+		Description:    desc,
+		SourcePath:     sourcePath,
+		RemoteTarget:   remoteTarget,
+		Direction:      direction,
+		Schedule:       schedule,
+		FrequencyText:  freqText,
+		BandwidthLimit: bw,
+		Status:         cloudsync.StatusIdle,
+		Enabled:        enabled,
+	}
+
+	if err := s.cloudsync.SaveJob(job); err != nil {
+		s.setHXTrigger(w, "Failed to save Cloud Sync task: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Cloud Sync task '%s' saved", name), "success", "cloudSyncUpdate")
+	}
+	s.handleUIPartialCloudSync(w, r)
+}
+
+func (s *Server) handleUIPartialSnapshotTasks(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.web.Render(w, "partials/snapshot_tasks.html", s.buildViewData())
+}
+
+func (s *Server) handleUIActionSaveSnapshotTask(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	lifetimeVal, err := strconv.Atoi(strings.TrimSpace(r.FormValue("lifetime_value")))
+	if err != nil || lifetimeVal <= 0 {
+		lifetimeVal = 2
+	}
+	task := zfs.SnapshotTask{
+		ID:            strings.TrimSpace(r.FormValue("id")),
+		Dataset:       strings.TrimSpace(r.FormValue("dataset")),
+		Recursive:     r.FormValue("recursive") == "true" || r.FormValue("recursive") == "on",
+		LifetimeValue: lifetimeVal,
+		LifetimeUnit:  strings.TrimSpace(r.FormValue("lifetime_unit")),
+		NamingSchema:  strings.TrimSpace(r.FormValue("naming_schema")),
+		Schedule:      strings.TrimSpace(r.FormValue("schedule")),
+		FrequencyText: strings.TrimSpace(r.FormValue("frequency_text")),
+		Enabled:       r.FormValue("enabled") == "true" || r.FormValue("enabled") == "on",
+	}
+
+	saved, err := s.zfs.SaveSnapshotTask(task)
+	if err != nil {
+		s.setHXTrigger(w, "Failed to save Periodic Snapshot Task: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Periodic Snapshot Task for '%s' saved", saved.Dataset), "success", "snapshotTaskUpdate")
+	}
+	s.handleUIPartialSnapshotTasks(w, r)
+}
+
+func (s *Server) handleUIActionToggleSnapshotTask(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	id := strings.TrimSpace(r.FormValue("id"))
+	t, err := s.zfs.ToggleSnapshotTask(id, nil)
+	if err != nil {
+		s.setHXTrigger(w, "Failed to toggle snapshot task: "+err.Error(), "error")
+	} else {
+		state := "disabled"
+		if t.Enabled {
+			state = "enabled"
+		}
+		s.setHXTrigger(w, fmt.Sprintf("Snapshot task for '%s' %s", t.Dataset, state), "info", "snapshotTaskUpdate")
+	}
+	s.handleUIPartialSnapshotTasks(w, r)
+}
+
+func (s *Server) handleUIActionRunSnapshotTask(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	id := strings.TrimSpace(r.FormValue("id"))
+	t, snapName, err := s.zfs.RunSnapshotTask(id)
+	if err != nil {
+		s.setHXTrigger(w, "Snapshot task execution failed: "+err.Error(), "error", "snapshotTaskUpdate")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Snapshot '%s@%s' created", t.Dataset, snapName), "success", "snapshotTaskUpdate", "snapshotUpdate", "datasetUpdate")
+	}
+	s.handleUIPartialSnapshotTasks(w, r)
+}
+
+func (s *Server) handleUIActionDeleteSnapshotTask(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	id := strings.TrimSpace(r.FormValue("id"))
+	if err := s.zfs.DeleteSnapshotTask(id); err != nil {
+		s.setHXTrigger(w, "Failed to delete snapshot task: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, "Periodic Snapshot Task deleted", "success", "snapshotTaskUpdate")
+	}
+	s.handleUIPartialSnapshotTasks(w, r)
 }

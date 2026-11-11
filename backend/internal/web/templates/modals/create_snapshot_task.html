@@ -1,0 +1,95 @@
+<div class="modal-backdrop" x-show="openSnapTaskModal" x-cloak>
+  <div class="modal-box" style="max-width: 580px;" @click.outside="openSnapTaskModal = false">
+    <div class="modal-header">
+      <h3 x-text="isEditingSnapTask ? 'Edit Periodic Snapshot Task' : 'Add Periodic Snapshot Task'">Add Periodic Snapshot Task</h3>
+      <button type="button" class="modal-close" @click="openSnapTaskModal = false">&times;</button>
+    </div>
+
+    <form hx-post="/ui/actions/zfs/snapshot-tasks/save"
+          hx-target="#snapshot-tasks-container"
+          hx-swap="morph"
+          @htmx:after-request="if (event.detail.successful) { openSnapTaskModal = false; }">
+      <input type="hidden" name="id" :value="snapTaskForm.id">
+
+      <div class="form-group">
+        <label>Pool / Dataset</label>
+        <select id="snap-task-dataset-select"
+                name="dataset"
+                x-model="snapTaskForm.dataset"
+                required
+                hx-get="/ui/partials/modals/snap_datasets"
+                hx-trigger="poolUpdate from:body, datasetUpdate from:body"
+                hx-swap="innerHTML">
+          {{template "partials/snap_datasets_options.html" .}}
+        </select>
+        <span class="text-dim" style="font-size: 0.72rem;">Target ZFS pool, filesystem dataset, or Zvol for scheduled snapshots.</span>
+      </div>
+
+      <div class="form-group">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.84rem;">
+          <input type="checkbox" name="recursive" value="true" x-model="snapTaskForm.recursive">
+          <span><strong>Recursive (-r)</strong> &ndash; Include all child datasets atomically</span>
+        </label>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="form-group">
+          <label>Snapshot Lifetime (Keep for)</label>
+          <input type="number" name="lifetime_value" x-model="snapTaskForm.lifetime_value" min="1" max="999" required>
+        </div>
+        <div class="form-group">
+          <label>Unit</label>
+          <select name="lifetime_unit" x-model="snapTaskForm.lifetime_unit">
+            <option value="hour(s)">hour(s)</option>
+            <option value="day(s)">day(s)</option>
+            <option value="week(s)">week(s)</option>
+            <option value="month(s)">month(s)</option>
+            <option value="year(s)">year(s)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Naming Schema</label>
+        <input type="text" name="naming_schema" x-model="snapTaskForm.naming_schema" required class="font-mono" placeholder="auto-%Y-%m-%d_%H-%M" autocomplete="off">
+        <span class="text-dim" style="font-size: 0.72rem;">Supports strftime placeholders: <code>%Y</code>, <code>%m</code>, <code>%d</code>, <code>%H</code>, <code>%M</code>, <code>%S</code>.</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="form-group">
+          <label>Schedule Preset</label>
+          <select @change="if($event.target.value) snapTaskForm.schedule = $event.target.value" :value="snapTaskForm.schedule">
+            <option value="0 0 * * *">Daily (00:00)</option>
+            <option value="0 * * * *">Hourly (:00)</option>
+            <option value="*/30 * * * *">Every 30 Minutes</option>
+            <option value="*/15 * * * *">Every 15 Minutes</option>
+            <option value="0 0 * * 0">Weekly (Sunday 00:00)</option>
+            <option value="0 0 1 * *">Monthly (1st 00:00)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Cron Schedule (min hr dom mon dow)</label>
+          <input type="text" name="schedule" x-model="snapTaskForm.schedule" required class="font-mono" placeholder="0 0 * * *" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Frequency Label Override (Optional)</label>
+        <input type="text" name="frequency_text" x-model="snapTaskForm.frequency_text" placeholder="Auto-generated from cron schedule (e.g. At 00:00 (12:00 AM), every day,...)">
+      </div>
+
+      <div class="form-group">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.84rem;">
+          <input type="checkbox" name="enabled" value="true" x-model="snapTaskForm.enabled">
+          <span><strong>Enabled</strong> &ndash; Run automatically on schedule</span>
+        </label>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" @click="openSnapTaskModal = false">Cancel</button>
+        <button type="submit" class="btn btn-primary" x-text="isEditingSnapTask ? 'Save Changes' : 'Save'">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+

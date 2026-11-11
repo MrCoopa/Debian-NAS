@@ -131,3 +131,31 @@ func TestNfsOptions(t *testing.T) {
 	}
 }
 
+func TestDevicePath(t *testing.T) {
+	valid := []string{
+		"/dev/sda",
+		"/dev/nvme0n1",
+		"/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1",
+		"/dev/disk/by-id/usb-SanDisk_Cruzer_012345-0:0",
+		"/dev/disk/by-id/scsi-SATA_WDC_WD80EFBX+REV1",
+	}
+	for _, p := range valid {
+		if err := DevicePath(p); err != nil {
+			t.Errorf("expected valid device path %q, got: %v", p, err)
+		}
+	}
+
+	invalid := []string{
+		"",
+		"/etc/passwd",
+		"/dev/sda;rm -rf /",
+		"/dev/disk/by-id/../../etc/shadow",
+		"/dev/sda\n/dev/sdb",
+	}
+	for _, p := range invalid {
+		if err := DevicePath(p); err == nil {
+			t.Errorf("expected error for invalid device path %q, got nil", p)
+		}
+	}
+}
+

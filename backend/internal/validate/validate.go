@@ -14,7 +14,7 @@ var (
 	snapNameRegex    = regexp.MustCompile(`^[a-zA-Z0-9_.:-]+$`)
 	usernameRegex    = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 	shareNameRegex   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 _.-]{0,79}$`)
-	devicePathRegex  = regexp.MustCompile(`^/dev/([a-zA-Z0-9._/-]+)$`)
+	devicePathRegex  = regexp.MustCompile(`^/dev/([a-zA-Z0-9._:+/-]+)$`)
 	nfsClientRegex   = regexp.MustCompile(`^[A-Za-z0-9.*:/@_-]+$`)
 
 	reservedPoolNames = map[string]bool{
@@ -331,6 +331,17 @@ func DatasetProperty(prop, value string) error {
 		if valLower != "noacl" && valLower != "posix" && valLower != "posixacl" && valLower != "nfsv4" {
 			return fmt.Errorf("invalid acltype '%s'", value)
 		}
+	case "readonly":
+		if valLower != "on" && valLower != "off" {
+			return fmt.Errorf("invalid readonly setting '%s': must be 'on' or 'off'", value)
+		}
+	case "quota", "refquota", "reservation", "refreservation":
+		if valLower != "none" && valLower != "0" {
+			matched, _ := regexp.MatchString(`^[0-9]+(\.[0-9]+)?\s*([kmgtpe](ib|b)?)?$`, valLower)
+			if !matched {
+				return fmt.Errorf("invalid %s value '%s': use e.g. '500G', '2T', or 'none'", prop, value)
+			}
+		}
 	}
 	return nil
 }
@@ -342,6 +353,12 @@ func PoolProperty(prop, value string) error {
 	}
 	if strings.ContainsAny(value, "\n\r\x00") {
 		return errors.New("property value cannot contain newline, carriage return, or null bytes")
+	}
+	valLower := strings.TrimSpace(strings.ToLower(value))
+	if prop == "autotrim" || prop == "autoexpand" {
+		if valLower != "on" && valLower != "off" {
+			return fmt.Errorf("invalid %s value '%s': must be 'on' or 'off'", prop, value)
+		}
 	}
 	return nil
 }

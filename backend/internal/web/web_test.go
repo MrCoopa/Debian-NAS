@@ -162,6 +162,29 @@ func TestEngine_RenderAll(t *testing.T) {
 				"MTU":         1500,
 			},
 		},
+		"CloudJobs": []map[string]interface{}{
+			{
+				"ID":             "job-1",
+				"Name":           "DATA Hetzner Upload",
+				"Description":    "DATA Hetzner Upload",
+				"FrequencyText":  "At 03:45 (03:45 AM), only on Tuesday,...",
+				"NextRunText":    "in about 13 hours",
+				"LastRunText":    "1 day ago",
+				"Enabled":        true,
+				"GetDescription": "DATA Hetzner Upload",
+				"GetFrequency":   "At 03:45 (03:45 AM), only on Tuesday,...",
+				"GetNextRun":     "in about 13 hours",
+				"GetLastRun":     "1 day ago",
+				"GetStateClass":  "completed",
+				"GetStateLabel":  "Completed",
+			},
+		},
+		"CloudRemotes": []map[string]interface{}{
+			{
+				"Name": "hetzner_storagebox",
+				"Type": "webdav",
+			},
+		},
 		"TotalDisks":    1,
 		"TotalRawBytes": uint64(4000787030016),
 		"StandbyCount":  1,
@@ -176,6 +199,15 @@ func TestEngine_RenderAll(t *testing.T) {
 		t.Fatalf("layout.html rendered empty")
 	}
 
+	// Render login.html
+	var loginBuf bytes.Buffer
+	if err := engine.Render(&loginBuf, "login.html", testData); err != nil {
+		t.Fatalf("Failed to render login.html: %v", err)
+	}
+	if loginBuf.Len() == 0 {
+		t.Fatalf("login.html rendered empty")
+	}
+
 	// Render all partials directly
 	partials := []string{
 		"partials/topbar.html",
@@ -188,6 +220,7 @@ func TestEngine_RenderAll(t *testing.T) {
 		"partials/users_list.html",
 		"partials/snapshots_list.html",
 		"partials/network_list.html",
+		"partials/cloudsync_tasks.html",
 	}
 
 	for _, p := range partials {

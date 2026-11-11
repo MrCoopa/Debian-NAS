@@ -45,19 +45,64 @@
           </svg>
         </button>
 
-        <!-- User Profile (root) -->
-        <button class="omv-icon-btn" title="Logged in as root" @click="currentTab = 'shares'">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-          </svg>
-        </button>
+        <!-- User Profile -->
+        <div style="position: relative;" x-data="{ userMenu: false }" @click.outside="userMenu = false">
+          <button class="omv-icon-btn" :class="{ 'active': userMenu }" title="Logged in as {{if .CurrentUser}}{{.CurrentUser}}{{else}}root{{end}}" @click="userMenu = !userMenu" style="position: relative;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            </svg>
+          </button>
+          <div x-show="userMenu" x-cloak style="position: absolute; right: 0; top: 100%; margin-top: 6px; background: #222224; border: 1px solid #3c3c40; border-radius: 6px; min-width: 200px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); z-index: 120; padding: 6px 0;">
+            <div style="padding: 0.6rem 1rem; border-bottom: 1px solid #333336;">
+              <div style="font-size: 0.72rem; color: #9ca3af; text-transform: uppercase;">Logged in as</div>
+              <div style="font-size: 0.95rem; font-weight: 700; color: #ffffff; margin-top: 2px;">{{if .CurrentUser}}{{.CurrentUser}}{{else}}root{{end}}</div>
+              <div style="margin-top: 4px;">
+                <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 3px; background: rgba(0, 139, 229, 0.2); color: #40c4ff; border: 1px solid rgba(0, 139, 229, 0.4);">
+                  {{if or (eq .CurrentUser "root") (eq .CurrentUser "admin")}}Administrator{{else}}Storage User{{end}}
+                </span>
+              </div>
+            </div>
+            <a href="/login" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 1rem; color: #d1d5db; text-decoration: none; font-size: 0.8rem;" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="8.5" cy="7" r="4"></circle>
+                <line x1="20" y1="8" x2="20" y2="14"></line>
+                <line x1="23" y1="11" x2="17" y2="11"></line>
+              </svg>
+              Switch User
+            </a>
+            <div style="height: 1px; background: #333336; margin: 4px 0;"></div>
+            <a href="/logout" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 1rem; color: #fca5a5; text-decoration: none; font-size: 0.8rem;" class="dropdown-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                <polyline points="16 17 21 12 16 7"></polyline>
+                <line x1="21" y1="12" x2="9" y2="12"></line>
+              </svg>
+              Log Out
+            </a>
+          </div>
+        </div>
 
         <!-- Power / Reboot -->
-        <button class="omv-icon-btn" title="Power / Reboot">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/>
-          </svg>
-        </button>
+        <div style="position: relative;" x-data="{ powerMenu: false }" @click.outside="powerMenu = false">
+          <button class="omv-icon-btn" :class="{ 'active': powerMenu }" title="Power / Reboot" @click="powerMenu = !powerMenu">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/>
+            </svg>
+          </button>
+          <div x-show="powerMenu" x-cloak style="position: absolute; right: 0; top: 100%; margin-top: 6px; background: #222224; border: 1px solid #3c3c40; border-radius: 6px; min-width: 170px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); z-index: 120; padding: 6px 0;">
+            <a href="/logout" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 1rem; color: #ffffff; text-decoration: none; font-size: 0.8rem;" class="dropdown-item">
+              <span style="color: #40c4ff;">&#10148;</span> Log Out
+            </a>
+            <div style="height: 1px; background: #333336; margin: 4px 0;"></div>
+            <button type="button" @click="powerMenu = false; toasts.push({id: Date.now(), message: 'Reboot initiated (Mock)', type: 'info'})" style="width: 100%; display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 1rem; color: #ffa726; background: none; border: none; font-size: 0.8rem; cursor: pointer;" class="dropdown-item">
+              <span>↻</span> Reboot System
+            </button>
+            <button type="button" @click="powerMenu = false; toasts.push({id: Date.now(), message: 'Shutdown initiated (Mock)', type: 'error'})" style="width: 100%; display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 1rem; color: #ef5350; background: none; border: none; font-size: 0.8rem; cursor: pointer;" class="dropdown-item">
+              <span>⏻</span> Shut Down
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

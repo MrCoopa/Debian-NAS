@@ -12,8 +12,8 @@
 
       <div class="form-group">
         <label>New Dataset / Clone Path</label>
-        <input type="text" name="target_dataset" required placeholder="e.g. pool1/my-clone" pattern="[a-zA-Z0-9_\-\./]+">
-        <span class="text-dim" style="font-size: 0.72rem;">Creates a fully writable ZFS filesystem based on the snapshot.</span>
+        <input type="text" name="target_dataset" x-model="cloneSnapTarget" required placeholder="e.g. DATA/my-clone" pattern="[a-zA-Z0-9_.:/-]+" autocomplete="off">
+        <span class="text-dim" style="font-size: 0.72rem;">Creates a writable ZFS dataset in the <strong>same pool</strong>, accessible under the Dataset tab.</span>
       </div>
 
       <div class="modal-actions">

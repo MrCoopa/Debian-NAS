@@ -107,6 +107,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/zfs/snapshots/rollback", s.handleRollbackSnapshot)
 	mux.HandleFunc("POST /api/v1/zfs/snapshots/clone", s.handleCloneSnapshot)
 	mux.HandleFunc("DELETE /api/v1/zfs/snapshots", s.handleDestroySnapshot)
+	mux.HandleFunc("GET /api/v1/zfs/snapshot-tasks", s.handleListSnapshotTasks)
+	mux.HandleFunc("POST /api/v1/zfs/snapshot-tasks", s.handleSaveSnapshotTask)
+	mux.HandleFunc("POST /api/v1/zfs/snapshot-tasks/toggle", s.handleToggleSnapshotTask)
+	mux.HandleFunc("POST /api/v1/zfs/snapshot-tasks/run", s.handleRunSnapshotTask)
+	mux.HandleFunc("DELETE /api/v1/zfs/snapshot-tasks", s.handleDeleteSnapshotTask)
 
 	// Storage Benchmark Engine (FIO Storage Testing)
 	mux.HandleFunc("POST /api/v1/storage/benchmark", s.handleStorageBenchmark)
@@ -139,9 +144,23 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("GET /ui/partials/shares", s.handleUIPartialShares)
 		mux.HandleFunc("GET /ui/partials/users", s.handleUIPartialUsers)
 		mux.HandleFunc("GET /ui/partials/snapshots", s.handleUIPartialSnapshots)
+		mux.HandleFunc("GET /ui/partials/snapshot-tasks", s.handleUIPartialSnapshotTasks)
 		mux.HandleFunc("GET /ui/partials/network", s.handleUIPartialNetwork)
+		mux.HandleFunc("GET /ui/partials/cloudsync", s.handleUIPartialCloudSync)
 		mux.HandleFunc("GET /ui/partials/modals/create_share", s.handleUIPartialCreateShareModal)
 		mux.HandleFunc("GET /ui/partials/modals/share_users", s.handleUIPartialShareModalUsers)
+		mux.HandleFunc("GET /ui/partials/modals/snap_datasets", s.handleUIPartialModalSnapDatasets)
+		mux.HandleFunc("GET /ui/partials/modals/pool_disks", s.handleUIPartialModalPoolDisks)
+
+		mux.HandleFunc("POST /ui/actions/zfs/snapshot-tasks/save", s.handleUIActionSaveSnapshotTask)
+		mux.HandleFunc("POST /ui/actions/zfs/snapshot-tasks/toggle", s.handleUIActionToggleSnapshotTask)
+		mux.HandleFunc("POST /ui/actions/zfs/snapshot-tasks/run", s.handleUIActionRunSnapshotTask)
+		mux.HandleFunc("POST /ui/actions/zfs/snapshot-tasks/delete", s.handleUIActionDeleteSnapshotTask)
+
+		mux.HandleFunc("POST /ui/actions/cloudsync/save", s.handleUIActionSaveCloudSync)
+		mux.HandleFunc("DELETE /ui/actions/cloudsync/delete", s.handleUIActionDeleteCloudSync)
+		mux.HandleFunc("POST /ui/actions/cloudsync/toggle", s.handleUIActionToggleCloudSync)
+		mux.HandleFunc("POST /ui/actions/cloudsync/run", s.handleUIActionRunCloudSync)
 
 		mux.HandleFunc("POST /ui/actions/shares/save", s.handleUIActionSaveSmb)
 		mux.HandleFunc("POST /ui/actions/shares/smb", s.handleUIActionSaveSmb)
@@ -192,6 +211,10 @@ func (s *Server) Routes() http.Handler {
 	}
 
 	if s.web != nil {
+		mux.HandleFunc("GET /login", s.handleUILogin)
+		mux.HandleFunc("POST /login", s.handleUILoginSubmit)
+		mux.HandleFunc("GET /logout", s.handleUILogout)
+		mux.HandleFunc("POST /logout", s.handleUILogout)
 		mux.HandleFunc("GET /{$}", s.handleUIRoot)
 	} else if s.staticFS != nil {
 		fileServer := http.FileServer(http.FS(s.staticFS))
@@ -376,6 +399,25 @@ func (s *Server) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 
 // ---------------- 2. Disks & Standby Handlers ----------------
 
+func (s *Server) syncDiskPoolMembershipFromPools(pools []*zfs.Pool) {
+	if s.disks == nil {
+		return
+	}
+	poolMap, roleMap := zfs.BuildDiskPoolMap(pools)
+	s.disks.SyncPoolMembership(poolMap, roleMap)
+}
+
+func (s *Server) syncDiskPoolMembership() {
+	if s.disks == nil || s.zfs == nil {
+		return
+	}
+	pools, err := s.zfs.ListPools()
+	if err != nil {
+		return
+	}
+	s.syncDiskPoolMembershipFromPools(pools)
+}
+
 func (s *Server) handleListDisks(w http.ResponseWriter, r *http.Request) {
 	var list []*disks.DiskInfo
 	var err error
@@ -389,10 +431,9 @@ func (s *Server) handleListDisks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.zfs != nil {
-		poolMap, roleMap := s.zfs.GetDiskPoolMap()
-		s.disks.SyncPoolMembership(poolMap, roleMap)
-		list, _ = s.disks.ListDisks()
+	s.syncDiskPoolMembership()
+	if synced, syncErr := s.disks.ListDisks(); syncErr == nil {
+		list = synced
 	}
 	s.jsonResponse(w, http.StatusOK, list)
 }
@@ -547,10 +588,7 @@ func (s *Server) handleWipeDisk(w http.ResponseWriter, r *http.Request) {
 		s.errorResponse(w, http.StatusBadRequest, "Disk device or path required")
 		return
 	}
-	if s.zfs != nil {
-		poolMap, roleMap := s.zfs.GetDiskPoolMap()
-		s.disks.SyncPoolMembership(poolMap, roleMap)
-	}
+	s.syncDiskPoolMembership()
 	if err := s.disks.WipeDisk(target, req.Mode); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -600,6 +638,7 @@ func (s *Server) handleCreatePool(w http.ResponseWriter, r *http.Request) {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.syncDiskPoolMembership()
 	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "pool created", "name": req.Name})
 }
 
@@ -629,6 +668,7 @@ func (s *Server) handleDestroyPool(w http.ResponseWriter, r *http.Request) {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.syncDiskPoolMembership()
 	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "pool destroyed", "name": name})
 }
 
@@ -658,6 +698,7 @@ func (s *Server) handleExportPool(w http.ResponseWriter, r *http.Request) {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.syncDiskPoolMembership()
 	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "pool exported", "name": name})
 }
 
@@ -689,6 +730,7 @@ func (s *Server) handleImportPool(w http.ResponseWriter, r *http.Request) {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.syncDiskPoolMembership()
 	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "pool imported", "pool": req.NameOrID})
 }
 
@@ -1011,6 +1053,7 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		Dataset      string `json:"dataset"`
 		Name         string `json:"name"`
 		SnapshotName string `json:"snapshot_name"`
+		Recursive    bool   `json:"recursive"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload: "+err.Error())
@@ -1025,7 +1068,7 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		s.errorResponse(w, http.StatusBadRequest, "Dataset and snapshot name required")
 		return
 	}
-	if err := s.zfs.CreateSnapshot(dataset, name); err != nil {
+	if err := s.zfs.CreateSnapshotRecursive(dataset, name, req.Recursive); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -1136,6 +1179,7 @@ func (s *Server) handleAddVdev(w http.ResponseWriter, r *http.Request) {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.syncDiskPoolMembership()
 	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "vdev added", "pool": req.Pool})
 }
 
@@ -1153,6 +1197,7 @@ func (s *Server) handleReplaceDisk(w http.ResponseWriter, r *http.Request) {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.syncDiskPoolMembership()
 	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "disk replacement initiated", "pool": req.Pool})
 }
 
@@ -1170,6 +1215,7 @@ func (s *Server) handleAttachDisk(w http.ResponseWriter, r *http.Request) {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.syncDiskPoolMembership()
 	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "disk attached to vdev", "pool": req.Pool})
 }
 
@@ -1186,6 +1232,7 @@ func (s *Server) handleDetachDisk(w http.ResponseWriter, r *http.Request) {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.syncDiskPoolMembership()
 	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "disk detached", "pool": req.Pool})
 }
 
@@ -1519,4 +1566,80 @@ func (s *Server) handleTriggerCloudJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "started"})
+}
+
+func (s *Server) handleListSnapshotTasks(w http.ResponseWriter, r *http.Request) {
+	s.jsonResponse(w, http.StatusOK, s.zfs.ListSnapshotTasks())
+}
+
+func (s *Server) handleSaveSnapshotTask(w http.ResponseWriter, r *http.Request) {
+	var task zfs.SnapshotTask
+	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+	saved, err := s.zfs.SaveSnapshotTask(task)
+	if err != nil {
+		s.errorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, saved)
+}
+
+func (s *Server) handleToggleSnapshotTask(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID      string `json:"id"`
+		Enabled *bool  `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+	t, err := s.zfs.ToggleSnapshotTask(req.ID, req.Enabled)
+	if err != nil {
+		s.errorResponse(w, http.StatusNotFound, err.Error())
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, t)
+}
+
+func (s *Server) handleRunSnapshotTask(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+	t, snapName, err := s.zfs.RunSnapshotTask(req.ID)
+	if err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, map[string]interface{}{
+		"status":   "completed",
+		"snapshot": t.Dataset + "@" + snapName,
+		"task":     t,
+	})
+}
+
+func (s *Server) handleDeleteSnapshotTask(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	if id == "" && r.Body != nil {
+		var req struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			id = strings.TrimSpace(req.ID)
+		}
+	}
+	if id == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Task ID required")
+		return
+	}
+	if err := s.zfs.DeleteSnapshotTask(id); err != nil {
+		s.errorResponse(w, http.StatusNotFound, err.Error())
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "deleted", "id": id})
 }

@@ -117,7 +117,7 @@ http://<ip-deines-nas>:8080
 Wenn du Änderungen aus dem Git-Repository übernehmen möchtest, reicht ein Einzeiler auf dem NAS:
 
 ```bash
-cd /opt/debian-nas && git pull && cd backend && go build -ldflags="-s -w" -o /usr/local/bin/nasd cmd/nasd/main.go && systemctl restart nasd.service
+cd /opt/debian-nas && git pull && cd backend && CGO_ENABLED=0 go build -ldflags="-s -w" -o /opt/debian-nas/bin/nasd ./cmd/nasd && sudo systemctl restart nasd.service
 ```
 
 ---

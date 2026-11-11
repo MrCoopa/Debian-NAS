@@ -378,13 +378,45 @@ func (m *Manager) SyncPoolMembership(poolMap map[string]string, roleMap map[stri
 	}
 }
 
+func isManagedBlockDevice(name string) bool {
+	return strings.HasPrefix(name, "sd") ||
+		strings.HasPrefix(name, "nvme") ||
+		strings.HasPrefix(name, "vd") ||
+		strings.HasPrefix(name, "xvd")
+}
+
+// linuxBlockDeviceSetChangedLocked reports whether /sys/block managed devices differ from cachedDisks.
+// Caller must hold m.mu.RLock or m.mu.Lock.
+func (m *Manager) linuxBlockDeviceSetChangedLocked() bool {
+	entries, err := os.ReadDir("/sys/block")
+	if err != nil {
+		return false
+	}
+	count := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if !isManagedBlockDevice(name) {
+			continue
+		}
+		if _, ok := m.cachedDisks[name]; !ok {
+			return true
+		}
+		count++
+	}
+	for name := range m.cachedDisks {
+		if isManagedBlockDevice(name) {
+			count--
+		}
+	}
+	return count != 0
+}
+
 // ListDisks enumerates all block devices without waking up sleeping HDDs.
 func (m *Manager) ListDisks() ([]*DiskInfo, error) {
 	m.mu.RLock()
-	if len(m.cachedDisks) > 0 {
+	if len(m.cachedDisks) > 0 && (m.mockMode || !m.linuxBlockDeviceSetChangedLocked()) {
 		var list []*DiskInfo
 		for _, d := range m.cachedDisks {
-			syncDiskFields(d)
 			list = append(list, d)
 		}
 		m.mu.RUnlock()
@@ -398,7 +430,7 @@ func (m *Manager) ListDisks() ([]*DiskInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if len(m.cachedDisks) > 0 {
+	if len(m.cachedDisks) > 0 && (m.mockMode || !m.linuxBlockDeviceSetChangedLocked()) {
 		var list []*DiskInfo
 		for _, d := range m.cachedDisks {
 			syncDiskFields(d)
@@ -467,14 +499,16 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 	byIDMap := m.buildByIDMap()
 	poolMap := m.buildDiskPoolMap()
 	sysMap := m.buildSystemDiskMap()
+	seen := make(map[string]bool)
 	var disks []*DiskInfo
 
 	for _, entry := range entries {
 		name := entry.Name()
 		// Only consider sdX, nvmeXnY, vdX, xvdX
-		if !strings.HasPrefix(name, "sd") && !strings.HasPrefix(name, "nvme") && !strings.HasPrefix(name, "vd") && !strings.HasPrefix(name, "xvd") {
+		if !isManagedBlockDevice(name) {
 			continue
 		}
+		seen[name] = true
 
 		sysPath := filepath.Join(blockDir, name)
 
@@ -593,6 +627,12 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 
 		disks = append(disks, disk)
 		m.cachedDisks[name] = disk
+	}
+
+	for name := range m.cachedDisks {
+		if !seen[name] {
+			delete(m.cachedDisks, name)
+		}
 	}
 
 	return disks, nil

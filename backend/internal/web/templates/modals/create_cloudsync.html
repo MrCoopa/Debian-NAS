@@ -1,0 +1,82 @@
+<div class="modal-backdrop" x-show="openCloudSyncModal" x-cloak>
+  <div class="modal-box" @click.outside="openCloudSyncModal = false" style="max-width: 580px;">
+    <div class="modal-header">
+      <h3 x-text="isEditingCloudSync ? 'Edit Cloud Sync Task' : 'Add Cloud Sync Task'">Add Cloud Sync Task</h3>
+      <button type="button" class="modal-close" @click="openCloudSyncModal = false">&times;</button>
+    </div>
+    <form hx-post="/ui/actions/cloudsync/save" hx-target="#cloudsync-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openCloudSyncModal = false">
+      <input type="hidden" name="id" :value="cloudSyncForm.id">
+
+      <div class="form-group">
+        <label>Description / Task Name</label>
+        <input type="text" name="description" x-model="cloudSyncForm.description" required placeholder="e.g. DATA Hetzner Upload">
+      </div>
+
+      <div class="grid-2col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+        <div class="form-group">
+          <label>Direction</label>
+          <select name="direction" x-model="cloudSyncForm.direction">
+            <option value="PUSH">PUSH (Local &rarr; Cloud)</option>
+            <option value="PULL">PULL (Cloud &rarr; Local)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Bandwidth Limit</label>
+          <input type="text" name="bandwidth_limit" x-model="cloudSyncForm.bandwidth_limit" placeholder="e.g. 50M, 100M or 0">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Local Source Dataset / Path</label>
+        <select name="source_path" x-model="cloudSyncForm.source_path" required>
+          {{range $p := .Pools}}
+            <option value="/mnt/{{$p.Name}}">/mnt/{{$p.Name}} (Pool Root)</option>
+          {{end}}
+          {{range $ds := .Datasets}}
+            <option value="/mnt/{{$ds.Name}}">/mnt/{{$ds.Name}}</option>
+          {{end}}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Remote Destination / Target</label>
+        <input type="text" name="remote_target" x-model="cloudSyncForm.remote_target" required placeholder="e.g. hetzner_storagebox:backup/DATA">
+        <span class="text-dim" style="font-size: 0.72rem;">Format: <code>&lt;remote&gt;:&lt;path&gt;</code>. Available remotes:
+          {{if not .CloudRemotes}}
+            <span class="text-dim">hetzner_storagebox (webdav), b2_backup (b2)</span>
+          {{else}}
+            {{range $idx, $r := .CloudRemotes}}{{if $idx}}, {{end}}<code>{{$r.Name}}</code> ({{$r.Type}}){{end}}
+          {{end}}
+        </span>
+      </div>
+
+      <div class="form-group">
+        <label>Frequency / Schedule</label>
+        <select name="schedule" x-model="cloudSyncForm.schedule">
+          <option value="0 3 45 * * 2">Weekly on Tuesday at 03:45 (03:45 AM)</option>
+          <option value="0 2 00 * *">Daily at 02:00 (02:00 AM)</option>
+          <option value="0 0 00 * *">Daily at Midnight (00:00)</option>
+          <option value="0 * * * *">Hourly</option>
+          <option value="*/15 * * * *">Every 15 Minutes</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Frequency Display Label (Optional)</label>
+        <input type="text" name="frequency_text" x-model="cloudSyncForm.frequency_text" placeholder="e.g. At 03:45 (03:45 AM), only on Tuesday,...">
+      </div>
+
+      <div class="form-group" style="margin-top: 0.5rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" name="enabled" x-model="cloudSyncForm.enabled" value="true" class="disk-checkbox">
+          <span style="font-size: 0.82rem; color: #ffffff;">Enable task schedule automatically</span>
+        </label>
+      </div>
+
+      <div class="modal-actions" style="margin-top: 1.25rem;">
+        <button type="button" class="btn btn-secondary" @click="openCloudSyncModal = false">Cancel</button>
+        <button type="submit" class="btn btn-primary" x-text="isEditingCloudSync ? 'Save Task' : 'Create Task'">Create Task</button>
+      </div>
+    </form>
+  </div>
+</div>

@@ -81,6 +81,7 @@ func NewManager(mockMode bool, sambaConfDir, nfsConfFile string) *Manager {
 	} else {
 		m.loadLinuxShares()
 		m.loadLinuxUsers()
+		m.ensureLinuxUserGroups()
 		_ = m.syncSambaMasterConfig()
 	}
 	return m
@@ -132,9 +133,10 @@ func (m *Manager) initMockShares() {
 	}
 
 	m.users = map[string]StorageUser{
-		"milena": {Username: "milena", Role: "user"},
-		"niklas": {Username: "niklas", Role: "user"},
+		"root":   {Username: "root", Role: "admin"},
 		"admin":  {Username: "admin", Role: "admin"},
+		"niklas": {Username: "niklas", Role: "user"},
+		"milena": {Username: "milena", Role: "user"},
 	}
 }
 
@@ -255,10 +257,81 @@ func (m *Manager) ListNfs() ([]*NfsExport, error) {
 	return list, nil
 }
 
+// normalizeMainSmbConf keeps all [global] settings inside [global] and places the
+// nas-shares.conf include immediately after the [global] section (before any
+// subsequent [homes]/[printers] sections) so [global] parameters never bleed into shares.
+func normalizeMainSmbConf(content string) string {
+	rawLines := strings.Split(content, "\n")
+	var cleanLines []string
+	inGlobal := false
+	for _, line := range rawLines {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			inGlobal = strings.EqualFold(trimmed, "[global]")
+		}
+		if strings.HasPrefix(lower, "include = /etc/samba/nas-shares.conf") ||
+			strings.HasPrefix(lower, "include = /etc/samba/conf.d/") ||
+			strings.Contains(trimmed, "Auto-include Debian NAS shares") ||
+			strings.Contains(trimmed, "Dynamic Debian NAS shares") {
+			continue
+		}
+		if inGlobal && (lower == "map to guest = bad user" ||
+			lower == "usershare allow guests = yes" ||
+			lower == "browseable = yes") {
+			continue
+		}
+		cleanLines = append(cleanLines, line)
+	}
+
+	globalIdx := -1
+	for i, line := range cleanLines {
+		if strings.EqualFold(strings.TrimSpace(line), "[global]") {
+			globalIdx = i
+			break
+		}
+	}
+	if globalIdx == -1 {
+		cleanLines = append([]string{
+			"[global]",
+			"   workgroup = WORKGROUP",
+			"   server role = standalone server",
+		}, cleanLines...)
+		globalIdx = 0
+	}
+
+	globalOpts := []string{
+		"   map to guest = Bad User",
+		"   usershare allow guests = yes",
+	}
+
+	nextSectionIdx := len(cleanLines)
+	for i := globalIdx + 1; i < len(cleanLines); i++ {
+		trimmed := strings.TrimSpace(cleanLines[i])
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			nextSectionIdx = i
+			break
+		}
+	}
+
+	var out []string
+	out = append(out, cleanLines[:globalIdx+1]...)
+	out = append(out, globalOpts...)
+	globalBody := cleanLines[globalIdx+1 : nextSectionIdx]
+	for len(globalBody) > 0 && strings.TrimSpace(globalBody[len(globalBody)-1]) == "" {
+		globalBody = globalBody[:len(globalBody)-1]
+	}
+	out = append(out, globalBody...)
+	out = append(out, "")
+	out = append(out, "# Dynamic Debian NAS shares include")
+	out = append(out, "include = /etc/samba/nas-shares.conf")
+	out = append(out, cleanLines[nextSectionIdx:]...)
+
+	return strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n"
+}
+
 // syncSambaMasterConfig writes all active SMB shares into /etc/samba/nas-shares.conf
-// and ensures /etc/samba/smb.conf includes /etc/samba/nas-shares.conf cleanly inside [global].
-// Note: Samba's "include =" directive does NOT expand "*" wildcards (like conf.d/*.conf),
-// and placing "include =" at the end of smb.conf causes it to be trapped inside [printers]/[print$].
+// and ensures /etc/samba/smb.conf cleanly includes it after [global].
 func (m *Manager) syncSambaMasterConfig() error {
 	if m.mockMode {
 		return nil
@@ -291,41 +364,9 @@ func (m *Manager) syncSambaMasterConfig() error {
 
 	smbConfPath := "/etc/samba/smb.conf"
 	if data, err := os.ReadFile(smbConfPath); err == nil {
-		content := string(data)
-		modified := false
-
-		// Strip any existing include lines for nas-shares.conf or conf.d/*.conf
-		lines := strings.Split(content, "\n")
-		var cleanLines []string
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "include = /etc/samba/nas-shares.conf") ||
-				strings.HasPrefix(trimmed, "include = /etc/samba/conf.d/") ||
-				strings.Contains(trimmed, "Auto-include Debian NAS shares") ||
-				strings.Contains(trimmed, "Dynamic Debian NAS shares") {
-				modified = true
-				continue
-			}
-			cleanLines = append(cleanLines, line)
-		}
-		content = strings.Join(cleanLines, "\n")
-
-		// Insert include into [global] so shares are globally recognized and not trapped in printer sections
-		if strings.Contains(content, "[global]") {
-			globalInjection := "[global]\n   # Dynamic Debian NAS shares include\n   include = /etc/samba/nas-shares.conf\n   map to guest = Bad User\n   usershare allow guests = yes\n   browseable = yes"
-			if !strings.Contains(content, "map to guest = Bad User") {
-				content = strings.Replace(content, "[global]", globalInjection, 1)
-			} else {
-				content = strings.Replace(content, "[global]", "[global]\n   # Dynamic Debian NAS shares include\n   include = /etc/samba/nas-shares.conf\n   browseable = yes", 1)
-			}
-			modified = true
-		} else {
-			content = "[global]\n   include = /etc/samba/nas-shares.conf\n   map to guest = Bad User\n   usershare allow guests = yes\n   browseable = yes\n\n" + content
-			modified = true
-		}
-
-		if modified {
-			_ = os.WriteFile(smbConfPath, []byte(content), 0644)
+		updated := normalizeMainSmbConf(string(data))
+		if updated != string(data) {
+			_ = os.WriteFile(smbConfPath, []byte(updated), 0644)
 		}
 	}
 
@@ -336,7 +377,9 @@ func (m *Manager) syncSambaMasterConfig() error {
 
 	// Reload smbd and nmbd so Windows clients see changes immediately
 	_, _ = runCmdWithTimeout(5*time.Second, "smbcontrol", "all", "reload-config")
-	_, _ = runCmdWithTimeout(10*time.Second, "systemctl", "reload-or-restart", "smbd")
+	if out, err := runCmdWithTimeout(10*time.Second, "systemctl", "reload-or-restart", "smbd"); err != nil {
+		return fmt.Errorf("failed to reload Samba (smbd): %v (%s)", err, strings.TrimSpace(string(out)))
+	}
 	_, _ = runCmdWithTimeout(5*time.Second, "systemctl", "reload-or-restart", "nmbd")
 	return nil
 }
@@ -372,13 +415,45 @@ func (m *Manager) SaveSmb(s *SmbShare) error {
 		return fmt.Errorf("failed to create samba conf.d dir: %w", err)
 	}
 
-	// Ensure nasusers group exists and share folder has proper permissions
+	// Ensure nasusers group exists and all assigned users belong to nasusers
 	_, _ = runCmdWithTimeout(5*time.Second, "groupadd", "-f", "nasusers")
+	for _, u := range s.ValidUsers {
+		_, _ = runCmdWithTimeout(5*time.Second, "usermod", "-aG", "nasusers", u)
+	}
+
 	if err := os.MkdirAll(s.Path, 0775); err != nil {
 		return fmt.Errorf("failed to create share directory %s: %w", s.Path, err)
 	}
-	_ = os.Chmod(s.Path, 0775)
+
+	// Ensure parent mount dirs under /mnt/ have traverse (+x) permission so Samba users can enter the share
+	for p := filepath.Dir(s.Path); strings.HasPrefix(filepath.ToSlash(p), "/mnt/"); p = filepath.Dir(p) {
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			if info.Mode().Perm()&0001 == 0 {
+				_, _ = runCmdWithTimeout(5*time.Second, "chmod", "a+x", p)
+			}
+		}
+	}
+
+	// Set group ownership and SetGID permissions on share directory
 	_, _ = runCmdWithTimeout(5*time.Second, "chgrp", "nasusers", s.Path)
+	if s.ReadOnly {
+		_, _ = runCmdWithTimeout(5*time.Second, "chmod", "0755", s.Path)
+	} else {
+		_, _ = runCmdWithTimeout(5*time.Second, "chmod", "2775", s.Path)
+		// Repair existing subfolders/files so imported pools or root-created subdirs become writable for @nasusers
+		done := make(chan struct{})
+		go func(targetPath string) {
+			defer close(done)
+			_, _ = runCmdWithTimeout(60*time.Second, "chgrp", "-R", "nasusers", targetPath)
+			_, _ = runCmdWithTimeout(60*time.Second, "chmod", "-R", "g+rwX", targetPath)
+			_, _ = runCmdWithTimeout(60*time.Second, "find", targetPath, "-type", "d", "-exec", "chmod", "g+s", "{}", "+")
+		}(s.Path)
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			// Large directory tree continues applying permissions in background without blocking HTTP UI
+		}
+	}
 
 	confPath := filepath.Join(m.sambaConfDir, fmt.Sprintf("%s.conf", s.Name))
 	if filepath.Dir(filepath.Clean(confPath)) != filepath.Clean(m.sambaConfDir) {
@@ -445,18 +520,26 @@ func (m *Manager) generateSmbConfig(s *SmbShare) string {
 	sb.WriteString(fmt.Sprintf("   public = %s\n", guestOk))
 	sb.WriteString("   browseable = yes\n")
 	sb.WriteString("   create mask = 0664\n")
-	sb.WriteString("   directory mask = 0775\n")
+	sb.WriteString("   directory mask = 2775\n")
 	sb.WriteString("   force create mode = 0664\n")
 	sb.WriteString("   force directory mode = 0775\n")
+	sb.WriteString("   inherit permissions = yes\n")
 	if s.GuestOk {
 		sb.WriteString("   force user = root\n")
 		sb.WriteString("   force group = nasusers\n")
 	} else {
 		sb.WriteString("   force group = nasusers\n")
 		if len(s.ValidUsers) > 0 {
-			sb.WriteString(fmt.Sprintf("   valid users = %s\n", strings.Join(s.ValidUsers, " ")))
+			usersStr := strings.Join(s.ValidUsers, " ")
+			sb.WriteString(fmt.Sprintf("   valid users = %s\n", usersStr))
+			if !s.ReadOnly {
+				sb.WriteString(fmt.Sprintf("   write list = %s\n", usersStr))
+			}
 		} else {
 			sb.WriteString("   valid users = @nasusers\n")
+			if !s.ReadOnly {
+				sb.WriteString("   write list = @nasusers\n")
+			}
 		}
 	}
 
@@ -609,6 +692,29 @@ func (m *Manager) loadLinuxUsers() {
 	}
 }
 
+func (m *Manager) ensureLinuxUserGroups() {
+	if m.mockMode {
+		return
+	}
+	_, _ = runCmdWithTimeout(5*time.Second, "groupadd", "-f", "nasusers")
+	for username := range m.users {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		err := exec.CommandContext(ctx, "id", username).Run()
+		cancel()
+		if err == nil {
+			_, _ = runCmdWithTimeout(5*time.Second, "usermod", "-aG", "nasusers", username)
+		}
+	}
+	for _, s := range m.smbShares {
+		if s != nil && s.Path != "" && !s.ReadOnly {
+			if info, err := os.Stat(s.Path); err == nil && info.IsDir() {
+				_, _ = runCmdWithTimeout(5*time.Second, "chgrp", "nasusers", s.Path)
+				_, _ = runCmdWithTimeout(5*time.Second, "chmod", "2775", s.Path)
+			}
+		}
+	}
+}
+
 func (m *Manager) ListUsers() ([]StorageUser, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -667,6 +773,8 @@ func (m *Manager) CreateUser(username, password, role string) error {
 			}
 		}
 	}
+	// Always ensure even pre-existing Linux accounts belong to nasusers
+	_, _ = runCmdWithTimeout(5*time.Second, "usermod", "-aG", "nasusers", username)
 
 	// 3. Set Samba password via smbpasswd (no shadow / chpasswd needed for nologin storage users)
 	if _, err := exec.LookPath("smbpasswd"); err != nil {

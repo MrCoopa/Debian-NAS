@@ -5,7 +5,7 @@
       <p class="text-dim" style="margin-bottom: 1.5rem;">Create a new redundant storage pool (Mirror, RAID-Z) or import an existing pool.</p>
       <div style="display: flex; gap: 0.75rem; justify-content: center;">
         <button class="btn btn-secondary" @click="openImportModal = true">Import Pool</button>
-        <button class="btn btn-primary" @click="openCreatePoolModal = true">+ Create Pool</button>
+        <button class="btn btn-primary" @click="openCreatePool()">+ Create Pool</button>
       </div>
     </div>
   {{else}}

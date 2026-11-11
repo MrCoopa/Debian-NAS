@@ -7,16 +7,21 @@
     <form hx-post="/ui/actions/zfs/datasets" hx-target="#datasets-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openCreateDatasetModal = false">
       <div class="form-group">
         <label>Parent Pool / Dataset</label>
-        <select name="parent" required>
-          {{range $p := .Pools}}
-            <option value="{{$p.Name}}">{{$p.Name}} (Root Pool)</option>
-          {{end}}
-          {{range $ds := .Datasets}}
-            {{if eq $ds.Type "filesystem"}}
-              <option value="{{$ds.Name}}">{{$ds.Name}}</option>
+        <template x-if="datasetParent">
+          <input type="text" name="parent" :value="datasetParent" readonly class="font-mono" style="background: rgba(15,23,42,0.6);">
+        </template>
+        <template x-if="!datasetParent">
+          <select name="parent" required>
+            {{range $p := .Pools}}
+              <option value="{{$p.Name}}">{{$p.Name}} (Root Pool)</option>
             {{end}}
-          {{end}}
-        </select>
+            {{range $ds := .Datasets}}
+              {{if and (eq $ds.Type "filesystem") (contains $ds.Name "/")}}
+                <option value="{{$ds.Name}}">{{$ds.Name}}</option>
+              {{end}}
+            {{end}}
+          </select>
+        </template>
       </div>
 
       <div class="form-group">

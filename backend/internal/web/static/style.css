@@ -837,6 +837,100 @@ body {
 .text-muted { color: var(--omv-text-muted); }
 .text-white { color: #ffffff; }
 
+/* TrueNAS-style Switch Toggle */
+.truenas-switch {
+  position: relative;
+  display: inline-block;
+  width: 38px;
+  height: 20px;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.truenas-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.truenas-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #3e3e3e;
+  transition: all 0.2s ease;
+  border-radius: 20px;
+}
+
+.truenas-slider:before {
+  position: absolute;
+  content: "";
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background-color: #ffffff;
+  transition: all 0.2s ease;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
+.truenas-switch input:checked + .truenas-slider {
+  background-color: #008be5;
+}
+
+.truenas-switch input:checked + .truenas-slider:before {
+  transform: translateX(18px);
+}
+
+/* TrueNAS-style State Pill */
+.truenas-state-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 12px;
+  border-radius: 14px;
+  font-size: 0.74rem;
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+}
+
+.truenas-state-pill.completed {
+  border: 1px solid #4caf50;
+  color: #00e676;
+  background: rgba(0, 230, 118, 0.08);
+}
+
+.truenas-state-pill.running {
+  border: 1px solid #008be5;
+  color: #40c4ff;
+  background: rgba(0, 139, 229, 0.12);
+}
+
+.truenas-state-pill.failed {
+  border: 1px solid #ef5350;
+  color: #ff8a80;
+  background: rgba(239, 83, 80, 0.1);
+}
+
+.truenas-state-pill.idle {
+  border: 1px solid #555555;
+  color: #a0a0a0;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.dropdown-item {
+  transition: background 0.15s ease;
+}
+
+.dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
 /* Modals & Dialogs */
 .modal-backdrop {
   position: fixed;
@@ -860,6 +954,7 @@ body {
   display: flex;
   flex-direction: column;
   max-height: 90vh;
+  overflow-y: auto;
 }
 
 .modal-header {

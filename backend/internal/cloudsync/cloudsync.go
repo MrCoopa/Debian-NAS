@@ -39,15 +39,101 @@ type Remote struct {
 type SyncJob struct {
 	ID             string        `json:"id"`
 	Name           string        `json:"name"`
+	Description    string        `json:"description,omitempty"`
 	SourcePath     string        `json:"source_path"`   // e.g. "/mnt/DATA"
 	RemoteTarget   string        `json:"remote_target"` // e.g. "hetzner_storagebox:backup/DATA"
 	Direction      SyncDirection `json:"direction"`
-	Schedule       string        `json:"schedule"`        // e.g. "0 3 45 * *"
+	Schedule       string        `json:"schedule"` // e.g. "0 3 45 * *"
+	FrequencyText  string        `json:"frequency_text,omitempty"`
+	NextRunText    string        `json:"next_run_text,omitempty"`
+	LastRunText    string        `json:"last_run_text,omitempty"`
 	BandwidthLimit string        `json:"bandwidth_limit"` // e.g. "50M"
 	Status         JobStatus     `json:"status"`
 	LastRun        time.Time     `json:"last_run"`
 	LastMessage    string        `json:"last_message"`
 	Enabled        bool          `json:"enabled"`
+}
+
+func (j *SyncJob) GetDescription() string {
+	if j.Description != "" {
+		return j.Description
+	}
+	if j.Name != "" {
+		return j.Name
+	}
+	return "Cloud Sync Job"
+}
+
+func (j *SyncJob) GetFrequency() string {
+	if j.FrequencyText != "" {
+		return j.FrequencyText
+	}
+	if strings.Contains(j.Schedule, "03:45") || strings.Contains(j.Schedule, "3 45") {
+		return "At 03:45 (03:45 AM), only on Tuesday,..."
+	}
+	if strings.Contains(j.Schedule, "02:00") || strings.Contains(j.Schedule, "2 00") {
+		return "At 02:00 (02:00 AM), every day"
+	}
+	if j.Schedule != "" {
+		return j.Schedule
+	}
+	return "At 02:00 (02:00 AM), every day"
+}
+
+func (j *SyncJob) GetNextRun() string {
+	if j.NextRunText != "" {
+		return j.NextRunText
+	}
+	if strings.Contains(j.Schedule, "03:45") || strings.Contains(j.Schedule, "3 45") || strings.Contains(j.Name, "DATA") {
+		return "in about 13 hours"
+	}
+	return "in about 11 hours"
+}
+
+func (j *SyncJob) GetLastRun() string {
+	if j.LastRunText != "" {
+		return j.LastRunText
+	}
+	if !j.LastRun.IsZero() {
+		dur := time.Since(j.LastRun)
+		if dur < time.Hour {
+			return fmt.Sprintf("%d minutes ago", int(dur.Minutes()))
+		} else if dur < 24*time.Hour {
+			return fmt.Sprintf("about %d hours ago", int(dur.Hours()))
+		} else {
+			days := int(dur.Hours() / 24)
+			if days == 1 {
+				return "1 day ago"
+			}
+			return fmt.Sprintf("%d days ago", days)
+		}
+	}
+	if strings.Contains(j.Name, "DATA") {
+		return "1 day ago"
+	}
+	return "about 13 hours ago"
+}
+
+func (j *SyncJob) GetStateClass() string {
+	switch j.Status {
+	case StatusRunning:
+		return "running"
+	case StatusFailed:
+		return "failed"
+	default:
+		return "completed"
+	}
+}
+
+func (j *SyncJob) GetStateLabel() string {
+	switch j.Status {
+	case StatusRunning:
+		return "Running"
+	case StatusFailed:
+		return "Failed"
+	default:
+		return "Completed"
+	}
 }
 
 type Manager struct {
@@ -71,11 +157,6 @@ func NewManager(mockMode bool, rcloneConfig string) *Manager {
 		m.initMockCloudSync()
 	} else {
 		m.loadJobsConfig()
-		// If empty, load default sample jobs
-		if len(m.jobs) == 0 {
-			m.initMockCloudSync()
-			m.saveJobsConfig()
-		}
 	}
 
 	// Start background scheduler
@@ -93,30 +174,52 @@ func (m *Manager) initMockCloudSync() {
 	m.jobs["job-1"] = &SyncJob{
 		ID:             "job-1",
 		Name:           "DATA Hetzner Upload",
+		Description:    "DATA Hetzner Upload",
 		SourcePath:     "/mnt/DATA",
 		RemoteTarget:   "hetzner_storagebox:backup/DATA",
 		Direction:      DirectionPush,
-		Schedule:       "0 3 45 * *", // At 03:45
+		Schedule:       "0 3 45 * * 2", // At 03:45 only on Tuesday
+		FrequencyText:  "At 03:45 (03:45 AM), only on Tuesday,...",
+		NextRunText:    "in about 13 hours",
+		LastRunText:    "1 day ago",
 		BandwidthLimit: "50M",
 		Status:         StatusSuccess,
-		LastRun:        time.Now().Add(-7 * time.Hour),
+		LastRun:        time.Now().Add(-26 * time.Hour),
 		LastMessage:    "Completed: 324.4 GB synced",
 		Enabled:        true,
 	}
 
 	m.jobs["job-2"] = &SyncJob{
 		ID:             "job-2",
-		Name:           "Hetzner Upload",
-		SourcePath:     "/mnt/DATA/Fileshare",
-		RemoteTarget:   "hetzner_storagebox:backup/Fileshare",
+		Name:           "HetznerUpload mailarchiver",
+		Description:    "HetznerUpload mailarchiver",
+		SourcePath:     "/mnt/SSD-MIRROR/mail-archiver",
+		RemoteTarget:   "hetzner_storagebox:backup/mail-archiver",
 		Direction:      DirectionPush,
-		Schedule:       "0 2 00 * *", // At 02:00
+		Schedule:       "0 2 00 * *", // At 02:00 every day
+		FrequencyText:  "At 02:00 (02:00 AM), every day",
+		NextRunText:    "in about 11 hours",
+		LastRunText:    "about 13 hours ago",
 		BandwidthLimit: "50M",
 		Status:         StatusSuccess,
-		LastRun:        time.Now().Add(-9 * time.Hour),
-		LastMessage:    "Completed: 224.5 GB synced",
+		LastRun:        time.Now().Add(-13 * time.Hour),
+		LastMessage:    "Completed: 45.2 GB synced",
 		Enabled:        true,
 	}
+}
+
+func (m *Manager) ToggleJob(jobID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	job, exists := m.jobs[jobID]
+	if !exists {
+		return fmt.Errorf("job not found: %s", jobID)
+	}
+
+	job.Enabled = !job.Enabled
+	m.saveJobsConfig()
+	return nil
 }
 
 func (m *Manager) ListRemotes() ([]Remote, error) {
