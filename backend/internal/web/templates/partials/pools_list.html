@@ -37,15 +37,15 @@
 
         <!-- Scrub Active Banner -->
         {{if $p.Scrub.Active}}
-          <div style="background: rgba(0, 102, 204, 0.12); border-bottom: 1px solid rgba(0, 102, 204, 0.25); padding: 0.6rem 1.25rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem;">
+          <div style="background: rgba(0, 149, 213, 0.12); border-bottom: 1px solid rgba(0, 149, 213, 0.25); padding: 0.6rem 1.25rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem;">
             <div style="display: flex; align-items: center; gap: 0.6rem;">
               <span class="status-dot blue pulse"></span>
               <strong>ZFS Scrub in Progress:</strong>
               <span>{{formatPercent $p.Scrub.Percentage}}% abgeschlossen</span>
               <span class="text-dim">({{if eq $p.Scrub.Errors 0}}0 Fehler{{else}}<span class="text-red">{{$p.Scrub.Errors}} Fehler gefunden!</span>{{end}})</span>
             </div>
-            <div style="width: 140px; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
-              <div style="width: {{formatPercent $p.Scrub.Percentage}}%; height: 100%; background: #0066cc;"></div>
+            <div style="width: 140px; height: 6px; background: rgba(255,255,255,0.1); border-radius: 9999px; overflow: hidden;">
+              <div style="width: {{formatPercent $p.Scrub.Percentage}}%; height: 100%; background: var(--pf-blue);"></div>
             </div>
           </div>
         {{end}}

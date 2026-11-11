@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$Watch
 )
 
@@ -28,6 +28,6 @@ if ($Watch) {
     & $tailwindExe -i $inputCss -o $outputCss --minify
     Copy-Item $outputCss $staticTarget -Force
     Copy-Item $inputCss $inputTarget -Force
-    Write-Host "[✔] Tailwind CSS erfolgreich kompiliert und synchronisiert!"
+    Write-Host "[OK] Tailwind CSS erfolgreich kompiliert und synchronisiert!"
 }
 

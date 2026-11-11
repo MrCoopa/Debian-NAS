@@ -111,34 +111,36 @@
     <!-- Sidebar Navigation -->
     <aside class="app-sidebar">
       <nav class="sidebar-menu">
-        <div class="sidebar-category">Storage Administration</div>
+        <div class="sidebar-category">DASHBOARD</div>
 
         <button class="nav-item" :class="{ 'active': currentTab === 'dashboard' }" @click="currentTab = 'dashboard'">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
-          <span>Dashboard &amp; Health</span>
+          <span>Dashboard</span>
         </button>
+
+        <div class="sidebar-category">STORAGE</div>
 
         <button class="nav-item" :class="{ 'active': currentTab === 'pools' }" @click="currentTab = 'pools'">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-          <span>Storage Pools (ZFS)</span>
+          <span>Storage Pools</span>
           <span class="nav-badge">{{len .Pools}}</span>
         </button>
 
         <button class="nav-item" :class="{ 'active': currentTab === 'disks' }" @click="currentTab = 'disks'">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4 2h16c1.1 0 2 .9 2 2v16c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2zm0 4v3h16V6H4zm0 5v3h16v-3H4zm0 5v3h16v-3H4zM6 7h2v1H6V7zm0 5h2v1H6v-1zm0 5h2v1H6v-1z"/></svg>
-          <span>Physical Disks</span>
+          <span>Disks</span>
           <span class="nav-badge">{{len .Disks}}</span>
         </button>
 
-        <div class="sidebar-category">Sharing &amp; Access</div>
+        <div class="sidebar-category">SHARES</div>
 
         <button class="nav-item" :class="{ 'active': currentTab === 'shares' }" @click="currentTab = 'shares'">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-5 3c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2zm4 8h-8v-1c0-1.33 2.67-2 4-2s4 .67 4 2v1z"/></svg>
-          <span>Shares (SMB &amp; NFS)</span>
+          <span>Shares (SMB / NFS)</span>
           <span class="nav-badge">{{add (len .SmbShares) (len .NfsExports)}}</span>
         </button>
 
-        <div class="sidebar-category">Data Protection</div>
+        <div class="sidebar-category">DATA PROTECTION</div>
 
         <button class="nav-item" :class="{ 'active': currentTab === 'protection' }" @click="currentTab = 'protection'">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
@@ -146,19 +148,19 @@
           <span class="nav-badge">{{len .Snapshots}}</span>
         </button>
 
-        <div class="sidebar-category">Infrastructure &amp; Network</div>
+        <div class="sidebar-category">NETWORK</div>
 
         <button class="nav-item" :class="{ 'active': currentTab === 'network' }" @click="currentTab = 'network'">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4.5 11h-2V9H1v6h1.5v-2h2v2H6V9H4.5v2zm15 0h-2V9H16v6h1.5v-2h2v2H21V9h-1.5v2zm-6-7h-3c-1.1 0-2 .9-2 2v2h7V6c0-1.1-.9-2-2-2zm-6 9v2c0 1.1.9 2 2 2h3v3h1.5v-3h3c1.1 0 2-.9 2-2v-2h-11.5z"/></svg>
-          <span>Networking</span>
+          <span>Network</span>
           <span class="nav-badge">{{len .System.Network}}</span>
         </button>
 
-        <div class="sidebar-category">Appliance &amp; Logs</div>
+        <div class="sidebar-category">SYSTEM</div>
 
         <button class="nav-item" :class="{ 'active': currentTab === 'system' }" @click="currentTab = 'system'">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
-          <span>System &amp; Services</span>
+          <span>System Settings</span>
         </button>
       </nav>
 

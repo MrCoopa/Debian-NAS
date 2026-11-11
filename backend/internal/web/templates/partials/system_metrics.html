@@ -32,12 +32,12 @@
       <span>{{formatBytes .System.Memory.UsedBytes}}</span><span class="stat-card-unit">/ {{formatBytes .System.Memory.TotalBytes}}</span>
     </div>
     <div class="meter-track" style="height: 7px;">
-      <div class="meter-bar" style="width: {{formatPercent .System.Memory.ZfsArcPercent}}%; background: #0066cc;" title="ZFS ARC Cache"></div>
+      <div class="meter-bar" style="width: {{formatPercent .System.Memory.ZfsArcPercent}}%; background: var(--pf-purple);" title="ZFS ARC Cache"></div>
       <div class="meter-bar slate" style="width: {{formatPercent (sub .System.Memory.UsedPercent .System.Memory.ZfsArcPercent)}}%;" title="OS &amp; Services"></div>
     </div>
     <div class="stat-card-foot" style="flex-direction: column; gap: 0.2rem; margin-top: 0.4rem;">
       <div style="display: flex; justify-content: space-between;">
-        <span>ZFS ARC: <strong class="text-blue">{{formatBytes .System.Memory.ZfsArcBytes}} ({{formatPercent .System.Memory.ZfsArcPercent}}%)</strong></span>
+        <span>ZFS ARC: <strong style="color: var(--pf-purple);">{{formatBytes .System.Memory.ZfsArcBytes}} ({{formatPercent .System.Memory.ZfsArcPercent}}%)</strong></span>
         <span>Free: <strong>{{formatBytes .System.Memory.FreeBytes}}</strong></span>
       </div>
     </div>
