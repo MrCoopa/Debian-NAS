@@ -38,13 +38,12 @@
         openDangerConfirmModal: false,
         dangerConfirm: { type: 'pool', targetName: '', inputName: '' },
         openImportModal: false,
-        drawerOpen: false,
-        activeDisk: {},
+        expandedDisk: null,
         toasts: [],
 
         openCreateShare(name, path) {
           this.isEditingShare = false;
-          this.shareForm = { name: name || '', path: path || (name ? '/mnt/' + name : '/mnt/'), proto: 'smb', access: 'restricted', allowed_clients: '*', users: [] };
+          this.shareForm = { name: name || '', path: path || '', proto: 'smb', access: 'restricted', allowed_clients: '*', users: [] };
           this.openShareModal = true;
         },
         openEditShare(name, path, proto, access, allowedClients, usersJson) {
@@ -243,9 +242,9 @@
 
         <!-- 4. DATASET (ZFS DATASETS & VOLUMES) -->
         <section class="tab-pane" :class="{ 'active': currentTab === 'datasets' }" x-show="currentTab === 'datasets'" x-cloak>
-          <div class="page-header">
+          <div class="page-header" style="margin-bottom: 0.75rem;">
             <div class="page-title-group">
-              <h1>ZFS Datasets &amp; Block Volumes (Zvols)</h1>
+              <h1 style="font-size: 1.6rem; font-weight: 700; color: #ffffff; margin: 0; letter-spacing: -0.5px;">Datasets</h1>
             </div>
             <div class="page-actions" style="display: flex; gap: 0.5rem;">
               <button class="btn btn-secondary btn-sm" @click="openCreateZvolModal = true">+ Create Zvol</button>
@@ -409,9 +408,6 @@
       </main>
     </div>
   </div>
-
-  <!-- Hardware Disk Drawer -->
-  {{template "partials/disk_drawer.html" .}}
 
   <!-- All Modals -->
   {{template "modals/create_share.html" .}}

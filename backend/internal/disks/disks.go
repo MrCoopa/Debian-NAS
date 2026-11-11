@@ -55,6 +55,7 @@ type DiskInfo struct {
 	PendingSectors         int       `json:"pending_sectors"`          // 0
 	LocateLed              bool      `json:"locate_led"`               // LED blinking
 	VdevType               string    `json:"vdev_type"`                // mirror-0, raidz1, single, unassigned
+	AdvPowerManagement     string    `json:"adv_power_management"`     // "Disabled", "128", etc.
 	IsSystemDisk           bool      `json:"is_system_disk"`           // true = contains OS mount (/ or /boot)
 	LastStateCheck         time.Time `json:"last_state_check"`
 }
@@ -84,6 +85,16 @@ func syncDiskFields(d *DiskInfo) {
 		d.Pool = d.ZfsPool
 	} else if d.Pool != "" && d.ZfsPool == "" {
 		d.ZfsPool = d.Pool
+	}
+	if d.AdvPowerManagement == "" {
+		if d.IsRotational {
+			d.AdvPowerManagement = "128"
+		} else {
+			d.AdvPowerManagement = "Disabled"
+		}
+	}
+	if d.IsSystemDisk && d.ZfsPool == "" {
+		d.ZfsPool = "boot-pool"
 	}
 	if d.Vendor == "" && d.Model != "" {
 		parts := strings.Fields(d.Model)
@@ -128,25 +139,28 @@ func (m *Manager) initMockDisks() {
 		"sda": {
 			Name:               "sda",
 			Path:               "/dev/sda",
-			ByIDPath:           "/dev/disk/by-id/ata-WDC_WD20EFAX-68B29N0_WD-WCC4M123",
-			Model:              "WDC WD20EFAX-68B29N0 (Red Plus)",
-			Serial:             "WD-WCC4M123",
-			SizeBytes:          2000398934016,
-			SizeHuman:          "1.82 TiB",
-			IsRotational:       true,
-			State:              StateStandby,
-			TemperatureC:       -1, // asleep
-			SpindownSeconds:    900,
-			ZfsPool:            "DATA",
+			ByIDPath:           "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi0",
+			Model:              "QEMU HARDDISK (drive-scsi0)",
+			Serial:             "drive-scsi0",
+			SizeBytes:          17179869184, // 16 GiB
+			SizeHuman:          "16 GiB",
+			IsRotational:       false,
+			IsSystemDisk:       true,
+			AdvPowerManagement: "Disabled",
+			State:              StateActive,
+			TemperatureC:       30,
+			SpindownSeconds:    0,
+			ZfsPool:            "boot-pool",
+			Pool:               "boot-pool",
 			Slot:               1,
-			Enclosure:          "Bay 01 (Front Hot-Swap)",
-			BusType:            "SATA 6.0 Gb/s (Port 0)",
-			SmartStatus:        "PASSED (Standby Safe)",
-			PowerOnHours:       11240,
+			Enclosure:          "Slot 01 (Boot)",
+			BusType:            "SCSI / QEMU",
+			SmartStatus:        "PASSED",
+			PowerOnHours:       1200,
 			ReallocatedSectors: 0,
 			PendingSectors:     0,
 			LocateLed:          false,
-			VdevType:           "mirror-0",
+			VdevType:           "stripe",
 			LastStateCheck:     time.Now(),
 		},
 		"sdb": {
@@ -224,49 +238,53 @@ func (m *Manager) initMockDisks() {
 		"sde": {
 			Name:               "sde",
 			Path:               "/dev/sde",
-			ByIDPath:           "/dev/disk/by-id/ata-Seagate_Exos_X18_16TB_ZR510ABC",
-			Model:              "Seagate Exos X18 16TB Enterprise",
-			Serial:             "ZR510ABC8841",
-			SizeBytes:          16000900661248,
-			SizeHuman:          "14.55 TiB",
+			ByIDPath:           "/dev/disk/by-id/ata-WDC_WD20EFAX-68B29N0_Y3J2S4HF5BWJ",
+			Model:              "WDC WD20EFAX-68B29N0 (Red Plus)",
+			Serial:             "Y3J2S4HF5BWJ",
+			SizeBytes:          2000398934016, // 1.82 TiB
+			SizeHuman:          "1.82 TiB",
 			IsRotational:       true,
+			AdvPowerManagement: "128",
 			State:              StateActive,
 			TemperatureC:       32,
-			SpindownSeconds:    1200,
-			ZfsPool:            "",
+			SpindownSeconds:    0,
+			ZfsPool:            "DATA",
+			Pool:               "DATA",
 			Slot:               5,
 			Enclosure:          "Bay 05 (Front Hot-Swap)",
-			BusType:            "SAS 12.0 Gb/s (LSI HBA)",
+			BusType:            "SATA 6.0 Gb/s",
 			SmartStatus:        "PASSED",
 			PowerOnHours:       3100,
 			ReallocatedSectors: 0,
 			PendingSectors:     0,
 			LocateLed:          false,
-			VdevType:           "unassigned (Ready for Pool)",
+			VdevType:           "mirror-0",
 			LastStateCheck:     time.Now(),
 		},
 		"sdf": {
 			Name:               "sdf",
 			Path:               "/dev/sdf",
-			ByIDPath:           "/dev/disk/by-id/ata-Seagate_Exos_X18_16TB_ZR510DEF",
-			Model:              "Seagate Exos X18 16TB Enterprise",
-			Serial:             "ZR510DEF7729",
-			SizeBytes:          16000900661248,
-			SizeHuman:          "14.55 TiB",
+			ByIDPath:           "/dev/disk/by-id/ata-WDC_WD20EFAX-68B29N0_Y3J2S4HHSBWJ",
+			Model:              "WDC WD20EFAX-68B29N0 (Red Plus)",
+			Serial:             "Y3J2S4HHSBWJ",
+			SizeBytes:          2000398934016, // 1.82 TiB
+			SizeHuman:          "1.82 TiB",
 			IsRotational:       true,
+			AdvPowerManagement: "128",
 			State:              StateActive,
 			TemperatureC:       30,
-			SpindownSeconds:    1200,
-			ZfsPool:            "",
+			SpindownSeconds:    0,
+			ZfsPool:            "DATA",
+			Pool:               "DATA",
 			Slot:               6,
 			Enclosure:          "Bay 06 (Front Hot-Swap)",
-			BusType:            "SAS 12.0 Gb/s (LSI HBA)",
+			BusType:            "SATA 6.0 Gb/s",
 			SmartStatus:        "PASSED",
 			PowerOnHours:       3100,
 			ReallocatedSectors: 0,
 			PendingSectors:     0,
 			LocateLed:          false,
-			VdevType:           "unassigned (Ready for Pool)",
+			VdevType:           "mirror-0",
 			LastStateCheck:     time.Now(),
 		},
 		"nvme0n1": {

@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -90,6 +91,57 @@ func toInt64(v interface{}) int64 {
 	}
 }
 
+func getMapOrField(item interface{}, key string) string {
+	if item == nil {
+		return ""
+	}
+	v := reflect.ValueOf(item)
+	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return ""
+		}
+		v = v.Elem()
+	}
+	if v.Kind() == reflect.Map {
+		for _, k := range v.MapKeys() {
+			if strings.EqualFold(fmt.Sprint(k.Interface()), key) {
+				val := v.MapIndex(k)
+				if val.IsValid() {
+					return fmt.Sprint(val.Interface())
+				}
+			}
+		}
+	} else if v.Kind() == reflect.Struct {
+		f := v.FieldByNameFunc(func(n string) bool {
+			return strings.EqualFold(n, key)
+		})
+		if f.IsValid() {
+			return fmt.Sprint(f.Interface())
+		}
+	}
+	return ""
+}
+
+func iterateSlice(slice interface{}, fn func(item interface{}) bool) {
+	if slice == nil {
+		return
+	}
+	v := reflect.ValueOf(slice)
+	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return
+		}
+		v = v.Elem()
+	}
+	if v.Kind() == reflect.Slice || v.Kind() == reflect.Array {
+		for i := 0; i < v.Len(); i++ {
+			if !fn(v.Index(i).Interface()) {
+				break
+			}
+		}
+	}
+}
+
 func funcMap() template.FuncMap {
 	return template.FuncMap{
 		"formatBytes": func(v interface{}) string {
@@ -103,7 +155,99 @@ func funcMap() template.FuncMap {
 				div *= unit
 				exp++
 			}
-			return fmt.Sprintf("%.2f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+			val := float64(b) / float64(div)
+			formatted := fmt.Sprintf("%.2f", val)
+			formatted = strings.TrimRight(strings.TrimRight(formatted, "0"), ".")
+			return fmt.Sprintf("%s %ciB", formatted, "KMGTPE"[exp])
+		},
+		"baseName": func(s string) string {
+			parts := strings.Split(s, "/")
+			return parts[len(parts)-1]
+		},
+		"datasetDepth": func(s string) int {
+			return strings.Count(s, "/")
+		},
+		"hasChildDatasets": func(dsName string, all interface{}) bool {
+			prefix := dsName + "/"
+			found := false
+			iterateSlice(all, func(item interface{}) bool {
+				name := getMapOrField(item, "Name")
+				if strings.HasPrefix(name, prefix) {
+					found = true
+					return false
+				}
+				return true
+			})
+			return found
+		},
+		"datasetUsage": func(dsName string, mountpoint string, smbShares interface{}, nfsExports interface{}, allDatasets interface{}) string {
+			// Check direct SMB share
+			directSmb := false
+			iterateSlice(smbShares, func(item interface{}) bool {
+				path := getMapOrField(item, "Path")
+				name := getMapOrField(item, "Name")
+				if path == mountpoint || path == "/mnt/"+dsName || path == "/"+dsName || name == dsName || strings.HasSuffix(dsName, "/"+name) {
+					directSmb = true
+					return false
+				}
+				return true
+			})
+			if directSmb {
+				return "SMB"
+			}
+
+			// Check direct NFS export
+			directNfs := false
+			iterateSlice(nfsExports, func(item interface{}) bool {
+				path := getMapOrField(item, "Path")
+				if path == mountpoint || path == "/mnt/"+dsName || path == "/"+dsName {
+					directNfs = true
+					return false
+				}
+				return true
+			})
+			if directNfs {
+				return "NFS"
+			}
+
+			// Check if any descendant is shared
+			prefix := dsName + "/"
+			hasChildShare := false
+			iterateSlice(allDatasets, func(dItem interface{}) bool {
+				dName := getMapOrField(dItem, "Name")
+				dMount := getMapOrField(dItem, "Mountpoint")
+				if strings.HasPrefix(dName, prefix) {
+					iterateSlice(smbShares, func(sItem interface{}) bool {
+						sPath := getMapOrField(sItem, "Path")
+						sName := getMapOrField(sItem, "Name")
+						if sPath == dMount || sPath == "/mnt/"+dName || sPath == "/"+dName || sName == dName || strings.HasSuffix(dName, "/"+sName) {
+							hasChildShare = true
+							return false
+						}
+						return true
+					})
+					if hasChildShare {
+						return false
+					}
+					iterateSlice(nfsExports, func(nItem interface{}) bool {
+						nPath := getMapOrField(nItem, "Path")
+						if nPath == dMount || nPath == "/mnt/"+dName || nPath == "/"+dName {
+							hasChildShare = true
+							return false
+						}
+						return true
+					})
+					if hasChildShare {
+						return false
+					}
+				}
+				return true
+			})
+
+			if hasChildShare {
+				return "TREE"
+			}
+			return ""
 		},
 		"formatRate": func(v interface{}) string {
 			bps := toFloat64(v)

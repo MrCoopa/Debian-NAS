@@ -1,5 +1,5 @@
 <div class="modal-backdrop" x-show="openShareModal" x-cloak>
-  <div class="modal-box" @click.outside="openShareModal = false">
+  <div class="modal-box" @click.outside="openShareModal = false" x-data="{ customPathMode: false }">
     <div class="modal-header">
       <h3 x-text="isEditingShare ? ('Edit SMB Share: ' + shareForm.name) : 'Create Network File Share'"></h3>
       <button type="button" class="modal-close" @click="openShareModal = false">&times;</button>
@@ -9,20 +9,71 @@
         <label>Share Name</label>
         <input type="text" name="name" x-model="shareForm.name" :readonly="isEditingShare" placeholder="e.g. Media, Backups" required>
       </div>
+
       <div class="form-group">
-        <label>Target Filesystem Path</label>
-        <input type="text" name="path" x-model="shareForm.path" placeholder="e.g. /pool1/media or /mnt/data" list="share-path-suggestions" required>
-        <datalist id="share-path-suggestions">
-          {{range $p := .Pools}}
-            <option value="/{{$p.Name}}">
-          {{end}}
-          {{range $ds := .Datasets}}
-            <option value="{{$ds.Mountpoint}}">
-          {{end}}
-        </datalist>
-        <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
-          Select a ZFS dataset / pool mountpoint or specify an absolute path.
-        </small>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+          <label style="margin: 0;">Target ZFS Dataset / Filesystem Path</label>
+          <button type="button" @click="customPathMode = !customPathMode" style="background: none; border: none; color: #008be5; font-size: 0.72rem; cursor: pointer; text-decoration: underline;">
+            <span x-text="customPathMode ? '📁 Pick from available Datasets' : '✏️ Enter Custom Path'"></span>
+          </button>
+        </div>
+
+        <!-- Available ZFS Datasets & Pools Dropdown -->
+        <div x-show="!customPathMode">
+          <select style="width: 100%;" x-model="shareForm.path"
+                  @change="if (!shareForm.name && $event.target.value) {
+                             const p = $event.target.value.split('/');
+                             shareForm.name = p[p.length - 1];
+                           }">
+            <option value="" disabled>-- Select an available ZFS Dataset / Filesystem --</option>
+            {{range $p := .Pools}}
+              <optgroup label="ZFS Pool: {{$p.Name}} (Available: {{formatBytes $p.FreeBytes}})">
+                <option value="/mnt/{{$p.Name}}">🗄️ Pool Root: /mnt/{{$p.Name}}</option>
+                {{range $ds := $.Datasets}}
+                  {{if and (eq $ds.Pool $p.Name) (eq $ds.Type "filesystem")}}
+                    <option value="{{if $ds.Mountpoint}}{{$ds.Mountpoint}}{{else}}/mnt/{{$ds.Name}}{{end}}">
+                      📁 {{$ds.Name}} [{{if $ds.Mountpoint}}{{$ds.Mountpoint}}{{else}}/mnt/{{$ds.Name}}{{end}}] (Free: {{formatBytes $ds.AvailBytes}})
+                    </option>
+                  {{end}}
+                {{end}}
+              </optgroup>
+            {{end}}
+          </select>
+        </div>
+
+        <!-- Custom Manual Path Input -->
+        <div x-show="customPathMode">
+          <input type="text" x-model="shareForm.path" placeholder="e.g. /mnt/DATA/CustomFolder" style="width: 100%;">
+          <small class="text-dim" style="font-size: 0.7rem; display: block; margin-top: 0.25rem;">
+            Specify an absolute mountpoint or custom directory path.
+          </small>
+        </div>
+
+        <!-- Always bind the actual path value to name="path" for form submission -->
+        <input type="hidden" name="path" :value="shareForm.path">
+
+        <!-- Available Datasets Quick Selector Chips -->
+        <div style="margin-top: 0.5rem; background: rgba(0,0,0,0.25); border: 1px solid #282828; border-radius: 4px; padding: 0.5rem;">
+          <div style="font-size: 0.7rem; color: #888888; margin-bottom: 0.35rem; display: flex; justify-content: space-between;">
+            <span>Available ZFS Datasets:</span>
+            <span class="font-mono text-blue" x-text="shareForm.path ? ('Selected: ' + shareForm.path) : 'None selected'"></span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 0.3rem; max-height: 90px; overflow-y: auto;">
+            {{range $ds := .Datasets}}
+              {{if eq $ds.Type "filesystem"}}
+                <button type="button"
+                        class="btn btn-secondary btn-sm"
+                        style="padding: 2px 7px; font-size: 0.7rem; display: inline-flex; align-items: center; gap: 4px;"
+                        :style="shareForm.path === '{{if $ds.Mountpoint}}{{$ds.Mountpoint}}{{else}}/mnt/{{$ds.Name}}{{end}}' ? 'background: rgba(0,139,229,0.3); border-color: #008be5; color: #ffffff;' : ''"
+                        @click="shareForm.path = '{{if $ds.Mountpoint}}{{$ds.Mountpoint}}{{else}}/mnt/{{$ds.Name}}{{end}}'; if (!shareForm.name) { shareForm.name = '{{baseName $ds.Name}}'; }">
+                  <span>📁</span>
+                  <span>{{$ds.Name}}</span>
+                  <span style="color: #888; font-size: 0.65rem;">({{formatBytes $ds.AvailBytes}})</span>
+                </button>
+              {{end}}
+            {{end}}
+          </div>
+        </div>
       </div>
       <div class="form-group">
         <label>Protocol</label>

@@ -119,6 +119,7 @@ type Dataset struct {
 	RecordSize     string            `json:"recordsize"`
 	Sync           string            `json:"sync"`
 	Snapshots      int               `json:"snapshots_count"`
+	Encryption     string            `json:"encryption"`
 	Properties     map[string]string `json:"properties,omitempty"`
 }
 
@@ -276,6 +277,9 @@ func syncDatasetFields(ds *Dataset) {
 	if ds.Sync == "" {
 		ds.Sync = "standard"
 	}
+	if ds.Encryption == "" {
+		ds.Encryption = "Unencrypted"
+	}
 }
 
 type ImportablePool struct {
@@ -324,12 +328,12 @@ func (m *Manager) initMockZFS() {
 			Name:          "DATA",
 			Health:        HealthOnline,
 			Topology:      "MIRROR (2 Disks)",
-			SizeBytes:     2000398934016,
-			SizeHuman:     "1.82 TiB",
-			Allocated:     348356784128,
-			AllocHuman:    "324.43 GiB",
-			FreeBytes:     1627255140352,
-			FreeHuman:     "1.48 TiB",
+			SizeBytes:     1936505501450,
+			SizeHuman:     "1.76 TiB",
+			Allocated:     353208757453,
+			AllocHuman:    "328.95 GiB",
+			FreeBytes:     1583296743997,
+			FreeHuman:     "1.44 TiB",
 			Fragmentation: 1,
 			CapPercent:    18,
 			AtimeDefault:  "off",
@@ -352,14 +356,14 @@ func (m *Manager) initMockZFS() {
 			Name:          "MEDIA-12TB",
 			Health:        HealthOnline,
 			Topology:      "SINGLE DISK",
-			SizeBytes:     11852504285184,
+			SizeBytes:     11852611517808,
 			SizeHuman:     "10.78 TiB",
-			Allocated:     3507421839360,
-			AllocHuman:    "3.19 TiB",
-			FreeBytes:     8345082445824,
-			FreeHuman:     "7.59 TiB",
+			Allocated:     4024227712860,
+			AllocHuman:    "3.66 TiB",
+			FreeBytes:     7828383804948,
+			FreeHuman:     "7.12 TiB",
 			Fragmentation: 3,
-			CapPercent:    30,
+			CapPercent:    34,
 			AtimeDefault:  "off",
 			Autotrim:      "off",
 			Autoexpand:    "on",
@@ -378,12 +382,12 @@ func (m *Manager) initMockZFS() {
 			Name:          "SSD-MIRROR",
 			Health:        HealthOnline,
 			Topology:      "MIRROR (2 Disks)",
-			SizeBytes:     245553198080,
-			SizeHuman:     "228.69 GiB",
-			Allocated:     1095216640,
-			AllocHuman:    "1.02 GiB",
-			FreeBytes:     244457981440,
-			FreeHuman:     "227.67 GiB",
+			SizeBytes:     245542460129,
+			SizeHuman:     "228.68 GiB",
+			Allocated:     1127428915,
+			AllocHuman:    "1.05 GiB",
+			FreeBytes:     244415031214,
+			FreeHuman:     "227.63 GiB",
 			Fragmentation: 0,
 			CapPercent:    1,
 			AtimeDefault:  "off",
@@ -412,118 +416,141 @@ func (m *Manager) initMockZFS() {
 			Name:        "DATA",
 			Pool:        "DATA",
 			Mountpoint:  "/mnt/DATA",
-			UsedBytes:   348356784128,
-			UsedHuman:   "324.43 GiB",
-			AvailBytes:  1546188226560,
+			UsedBytes:   353208757453,
+			UsedHuman:   "328.95 GiB",
+			AvailBytes:  1583296743997,
 			AvailHuman:  "1.44 TiB",
 			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "128K",
 			Snapshots:   14,
+			Encryption:  "Unencrypted",
 		},
 		"DATA/Backup": {
 			Name:        "DATA/Backup",
 			Pool:        "DATA",
 			Mountpoint:  "/mnt/DATA/Backup",
-			UsedBytes:   107277531545,
-			UsedHuman:   "99.91 GiB",
-			AvailBytes:  1546188226560,
+			UsedBytes:   112023594598,
+			UsedHuman:   "104.33 GiB",
+			AvailBytes:  1583296743997,
 			AvailHuman:  "1.44 TiB",
 			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "128K",
 			Snapshots:   14,
+			Encryption:  "Unencrypted",
 		},
 		"DATA/Fileshare": {
 			Name:        "DATA/Fileshare",
 			Pool:        "DATA",
 			Mountpoint:  "/mnt/DATA/Fileshare",
-			UsedBytes:   241065789030,
-			UsedHuman:   "224.51 GiB",
-			AvailBytes:  1546188226560,
+			UsedBytes:   241164999066,
+			UsedHuman:   "224.6 GiB",
+			AvailBytes:  1583296743997,
 			AvailHuman:  "1.44 TiB",
 			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "128K",
 			Snapshots:   14,
+			Encryption:  "Unencrypted",
 		},
 		"DATA/Fileshare/Milena": {
 			Name:        "DATA/Fileshare/Milena",
 			Pool:        "DATA",
 			Mountpoint:  "/mnt/DATA/Fileshare/Milena",
-			UsedBytes:   118326358016,
-			UsedHuman:   "110.20 GiB",
-			AvailBytes:  1546188226560,
+			UsedBytes:   179475477300,
+			UsedHuman:   "167.15 GiB",
+			AvailBytes:  1583296743997,
 			AvailHuman:  "1.44 TiB",
 			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "128K",
 			Snapshots:   14,
+			Encryption:  "Unencrypted",
 		},
 		"DATA/Fileshare/Niklas": {
 			Name:        "DATA/Fileshare/Niklas",
 			Pool:        "DATA",
 			Mountpoint:  "/mnt/DATA/Fileshare/Niklas",
-			UsedBytes:   122739431014,
-			UsedHuman:   "114.31 GiB",
-			AvailBytes:  1546188226560,
+			UsedBytes:   61697495859,
+			UsedHuman:   "57.46 GiB",
+			AvailBytes:  1583296743997,
 			AvailHuman:  "1.44 TiB",
 			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "128K",
 			Snapshots:   14,
+			Encryption:  "Unencrypted",
 		},
 		"MEDIA-12TB": {
 			Name:        "MEDIA-12TB",
 			Pool:        "MEDIA-12TB",
 			Mountpoint:  "/mnt/MEDIA-12TB",
-			UsedBytes:   3507421839360,
-			UsedHuman:   "3.19 TiB",
-			AvailBytes:  8345082445824,
-			AvailHuman:  "7.59 TiB",
+			UsedBytes:   4024227712860,
+			UsedHuman:   "3.66 TiB",
+			AvailBytes:  7828383804948,
+			AvailHuman:  "7.12 TiB",
 			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "1M",
 			Snapshots:   14,
+			Encryption:  "Unencrypted",
 		},
 		"MEDIA-12TB/data": {
 			Name:        "MEDIA-12TB/data",
 			Pool:        "MEDIA-12TB",
 			Mountpoint:  "/mnt/MEDIA-12TB/data",
-			UsedBytes:   3507421839360,
-			UsedHuman:   "3.19 TiB",
-			AvailBytes:  8345082445824,
-			AvailHuman:  "7.59 TiB",
+			UsedBytes:   4024227712860,
+			UsedHuman:   "3.66 TiB",
+			AvailBytes:  7828383804948,
+			AvailHuman:  "7.12 TiB",
 			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "1M",
 			Snapshots:   14,
+			Encryption:  "Unencrypted",
+		},
+		"MEDIA-12TB/MEDIA-12TB": {
+			Name:        "MEDIA-12TB/MEDIA-12TB",
+			Pool:        "MEDIA-12TB",
+			Mountpoint:  "/mnt/MEDIA-12TB/MEDIA-12TB",
+			UsedBytes:   106496,
+			UsedHuman:   "104 KiB",
+			AvailBytes:  7828383804948,
+			AvailHuman:  "7.12 TiB",
+			Compression: "lz4",
+			Atime:       "off",
+			RecordSize:  "128K",
+			Snapshots:   0,
+			Encryption:  "Unencrypted",
 		},
 		"SSD-MIRROR": {
 			Name:        "SSD-MIRROR",
 			Pool:        "SSD-MIRROR",
 			Mountpoint:  "/mnt/SSD-MIRROR",
-			UsedBytes:   1095216640,
-			UsedHuman:   "1.02 GiB",
-			AvailBytes:  244457981440,
-			AvailHuman:  "227.67 GiB",
+			UsedBytes:   1127428915,
+			UsedHuman:   "1.05 GiB",
+			AvailBytes:  244415031214,
+			AvailHuman:  "227.63 GiB",
 			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "128K",
 			Snapshots:   14,
+			Encryption:  "Unencrypted",
 		},
 		"SSD-MIRROR/mail-archiver": {
 			Name:        "SSD-MIRROR/mail-archiver",
 			Pool:        "SSD-MIRROR",
 			Mountpoint:  "/mnt/SSD-MIRROR/mail-archiver",
-			UsedBytes:   1095216640,
-			UsedHuman:   "1.02 GiB",
-			AvailBytes:  244457981440,
-			AvailHuman:  "227.67 GiB",
+			UsedBytes:   1127428915,
+			UsedHuman:   "1.05 GiB",
+			AvailBytes:  244415031214,
+			AvailHuman:  "227.63 GiB",
 			Compression: "lz4",
 			Atime:       "off",
 			RecordSize:  "128K",
 			Snapshots:   14,
+			Encryption:  "Unencrypted",
 		},
 	}
 	for _, ds := range m.mockDS {
@@ -701,7 +728,7 @@ func (m *Manager) ListPools() ([]*Pool, error) {
 			list = append(list, p)
 		}
 		sort.Slice(list, func(i, j int) bool {
-			return list[i].Name < list[j].Name
+			return strings.ToLower(list[i].Name) < strings.ToLower(list[j].Name)
 		})
 		return list, nil
 	}
@@ -980,7 +1007,7 @@ func (m *Manager) ListDatasets() ([]*Dataset, error) {
 			list = append(list, d)
 		}
 		sort.Slice(list, func(i, j int) bool {
-			return list[i].Name < list[j].Name
+			return strings.ToLower(list[i].Name) < strings.ToLower(list[j].Name)
 		})
 		return list, nil
 	}
@@ -1212,7 +1239,7 @@ func (m *Manager) ListSnapshots() ([]*Snapshot, error) {
 		list := make([]*Snapshot, len(m.mockSnaps))
 		copy(list, m.mockSnaps)
 		sort.Slice(list, func(i, j int) bool {
-			return list[i].Name < list[j].Name
+			return strings.ToLower(list[i].Name) < strings.ToLower(list[j].Name)
 		})
 		return list, nil
 	}
@@ -1703,7 +1730,7 @@ func (m *Manager) FindImportablePools() ([]*ImportablePool, error) {
 			list = append(list, p)
 		}
 		sort.Slice(list, func(i, j int) bool {
-			return list[i].Name < list[j].Name
+			return strings.ToLower(list[i].Name) < strings.ToLower(list[j].Name)
 		})
 		return list, nil
 	}

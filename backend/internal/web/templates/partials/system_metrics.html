@@ -317,8 +317,8 @@
       <div class="omv-card-title">S.M.A.R.T.</div>
       <div class="omv-smart-disks-grid">
         {{range $d := .Disks}}
-          <button type="button" class="omv-smart-btn" @click="openDiskDrawer('{{$d.Device}}')">
-            {{$d.Device}}
+          <button type="button" class="omv-smart-btn" @click="currentTab = 'disks'; expandedDisk = '{{$d.Name}}'">
+            {{$d.Path}}
           </button>
         {{else}}
           <button type="button" class="omv-smart-btn">/dev/sda</button>

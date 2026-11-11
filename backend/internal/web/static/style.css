@@ -692,6 +692,42 @@ body {
   white-space: nowrap;
 }
 
+.disk-checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  border: 1.5px solid #008be5;
+  background: transparent;
+  cursor: pointer;
+  accent-color: #008be5;
+  vertical-align: middle;
+}
+
+.btn-chevron {
+  background: transparent;
+  border: none;
+  color: #888888;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-chevron:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.btn-chevron.open {
+  background: rgba(255, 255, 255, 0.15);
+  color: #008be5;
+  transform: rotate(180deg);
+}
+
 /* Buttons */
 .btn {
   padding: 0.35rem 0.75rem;

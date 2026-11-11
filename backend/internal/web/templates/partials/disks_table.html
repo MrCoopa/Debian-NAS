@@ -1,66 +1,160 @@
-<div id="disks-container" hx-get="/ui/partials/disks" hx-trigger="every 10s, diskUpdate from:body" hx-ext="morph" hx-swap="morph">
-  <!-- Disks Table View -->
-  <div class="table-card">
-    <table class="pf-table">
+<div id="disks-container" hx-get="/ui/partials/disks" hx-trigger="every 10s, diskUpdate from:body" hx-ext="morph" hx-swap="morph"
+     x-data="{
+       selectedDisks: [],
+       expandedDisk: null,
+       toggleAll(e) {
+         if (e.target.checked) {
+           this.selectedDisks = [{{range $i, $d := .Disks}}{{if $i}},{{end}}'{{$d.Name}}'{{end}}];
+         } else {
+           this.selectedDisks = [];
+         }
+       }
+     }">
+  <!-- Disks Table View (TrueNAS Schema) -->
+  <div class="table-card" style="background: #141414; border: 1px solid #262626; border-radius: 4px; overflow: hidden;">
+    <table class="pf-table truenas-disk-table" style="width: 100%; border-collapse: collapse;">
       <thead>
-        <tr>
-          <th>Device</th>
-          <th>Model &amp; Vendor</th>
-          <th>Serial Number</th>
-          <th>Capacity</th>
-          <th>Type</th>
-          <th>ZFS Pool</th>
-          <th>Temp</th>
-          <th>Power State</th>
-          <th>SMART Health</th>
-          <th class="col-actions">Actions</th>
+        <tr style="border-bottom: 1px solid #262626; font-size: 0.78rem; color: #a0a0a0; text-align: left;">
+          <th style="width: 44px; padding: 0.75rem 1rem;">
+            <input type="checkbox" class="disk-checkbox" @change="toggleAll($event)">
+          </th>
+          <th style="padding: 0.75rem 1rem; font-weight: 600;">Name</th>
+          <th style="padding: 0.75rem 1rem; font-weight: 600;">Serial</th>
+          <th style="padding: 0.75rem 1rem; font-weight: 600;">Disk Size</th>
+          <th style="padding: 0.75rem 1rem; font-weight: 600;">Pool</th>
+          <th style="padding: 0.75rem 1rem; font-weight: 600;">HDD Standby</th>
+          <th style="padding: 0.75rem 1rem; font-weight: 600;">Adv. Power Management</th>
+          <th style="width: 48px; padding: 0.75rem 1rem;"></th>
         </tr>
       </thead>
       <tbody>
         {{range $d := .Disks}}
-          <tr>
-            <td>
-              <strong class="font-mono text-blue" style="cursor: pointer;" @click="openDiskDrawer('{{$d.Name}}')">{{$d.Name}}</strong>
-              {{if $d.IsSystemDisk}}<span class="badge-status amber" style="font-size: 0.65rem; margin-left: 0.35rem;">OS</span>{{end}}
+          <tr style="border-bottom: 1px solid #1f1f1f; transition: background 0.15s ease;"
+              :style="expandedDisk === '{{$d.Name}}' ? 'background: #1c1c1c;' : ''">
+            <td style="padding: 0.75rem 1rem;">
+              <input type="checkbox" class="disk-checkbox" value="{{$d.Name}}" x-model="selectedDisks">
             </td>
-            <td>
-              <div style="max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{$d.Model}}">
-                {{if $d.Model}}{{$d.Model}}{{else}}Unknown Disk{{end}}
+            <td style="padding: 0.75rem 1rem;">
+              <span class="font-mono text-white" style="cursor: pointer; font-weight: 600;" @click="expandedDisk = (expandedDisk === '{{$d.Name}}' ? null : '{{$d.Name}}')">{{$d.Name}}</span>
+            </td>
+            <td style="padding: 0.75rem 1rem;">
+              <span class="font-mono text-dim" style="font-size: 0.78rem;">{{if $d.Serial}}{{$d.Serial}}{{else}}--{{end}}</span>
+            </td>
+            <td style="padding: 0.75rem 1rem;">
+              <span class="font-mono text-white">{{formatBytes $d.SizeBytes}}</span>
+            </td>
+            <td style="padding: 0.75rem 1rem;">
+              <span class="font-mono text-dim">{{if $d.ZfsPool}}{{$d.ZfsPool}}{{else if $d.IsSystemDisk}}boot-pool{{else}}--{{end}}</span>
+            </td>
+            <td style="padding: 0.75rem 1rem;">
+              <span class="text-dim" style="font-style: italic;">
+                {{if or (eq $d.SpindownSeconds 0) (not $d.IsRotational)}}
+                  Always On
+                {{else}}
+                  {{div $d.SpindownSeconds 60}} min
+                {{end}}
+              </span>
+            </td>
+            <td style="padding: 0.75rem 1rem;">
+              <span class="font-mono text-dim">
+                {{if $d.AdvPowerManagement}}{{$d.AdvPowerManagement}}{{else if $d.IsRotational}}128{{else}}Disabled{{end}}
+              </span>
+            </td>
+            <td style="padding: 0.75rem 1rem; text-align: right;">
+              <button type="button" class="btn-chevron"
+                      :class="{ 'open': expandedDisk === '{{$d.Name}}' }"
+                      @click="expandedDisk = (expandedDisk === '{{$d.Name}}' ? null : '{{$d.Name}}')"
+                      title="Toggle Disk Details">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                </svg>
+              </button>
+            </td>
+          </tr>
+
+          <!-- Expandable Detail Row (All Hardware Inspection & Actions) -->
+          <tr x-show="expandedDisk === '{{$d.Name}}'" x-cloak style="background: #171717; border-bottom: 1px solid #262626;">
+            <td colspan="8" style="padding: 1.25rem 1.5rem;">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; font-size: 0.8rem;">
+                <div>
+                  <div class="text-dim" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Model &amp; Vendor</div>
+                  <div class="font-mono text-white">{{if $d.Model}}{{$d.Model}}{{else}}Unknown Disk{{end}}</div>
+                </div>
+                <div>
+                  <div class="text-dim" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Device Path:</div>
+                  <div class="font-mono text-dim" style="font-size: 0.75rem;">{{$d.Path}}</div>
+                </div>
+                <div>
+                  <div class="text-dim" style="font-size: 0.72rem; margin-bottom: 0.2rem;">By-ID Path:</div>
+                  <div class="font-mono text-dim" style="font-size: 0.72rem; word-break: break-all;">{{if $d.ByIDPath}}{{$d.ByIDPath}}{{else}}--{{end}}</div>
+                </div>
+                <div>
+                  <div class="text-dim" style="font-size: 0.72rem; margin-bottom: 0.2rem;">ZFS Pool / Role:</div>
+                  <div class="font-mono" style="color: #64b5f6;">{{if $d.ZfsPool}}{{$d.ZfsPool}} ({{if $d.VdevType}}{{$d.VdevType}}{{else}}member{{end}}){{else if $d.IsSystemDisk}}boot-pool (OS){{else}}Unassigned{{end}}</div>
+                </div>
+                <div>
+                  <div class="text-dim" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Temperature:</div>
+                  <div class="{{if lt $d.TemperatureC 0}}text-dim{{else if gt $d.TemperatureC 45}}text-red{{else}}text-green{{end}} font-mono">
+                    {{if lt $d.TemperatureC 0}}-- &deg;C (Standby/Sleep){{else}}{{$d.TemperatureC}} &deg;C{{end}}
+                  </div>
+                </div>
+                <div>
+                  <div class="text-dim" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Power-On Hours:</div>
+                  <div class="font-mono">{{if gt $d.PowerOnHours 0}}{{$d.PowerOnHours}} h{{else}}--{{end}}</div>
+                </div>
+                <div>
+                  <div class="text-dim" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Last SMART Test:</div>
+                  <div class="font-mono">
+                    <span class="badge-status {{if eq $d.SmartStatus "PASSED"}}green{{else if eq $d.SmartStatus "STANDBY"}}slate{{else}}red{{end}}">
+                      {{if $d.SmartLastTest}}{{$d.SmartLastTest}}{{else}}{{$d.SmartStatus}}{{end}}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <div class="text-dim" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Spindown Timeout:</div>
+                  <form hx-post="/ui/actions/disks/spindown" hx-target="#disks-container" hx-swap="morph" style="margin: 0;">
+                    <input type="hidden" name="path" value="{{$d.Path}}">
+                    <select name="timeout_minutes" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #1a1a1a; border: 1px solid #333; color: #fff; border-radius: 4px;"
+                            onchange="this.form.requestSubmit()">
+                      <option value="0" {{if eq $d.SpindownSeconds 0}}selected{{end}}>Disabled (Always On)</option>
+                      <option value="5" {{if eq $d.SpindownSeconds 300}}selected{{end}}>5 Minutes</option>
+                      <option value="15" {{if eq $d.SpindownSeconds 900}}selected{{end}}>15 Minutes</option>
+                      <option value="30" {{if eq $d.SpindownSeconds 1800}}selected{{end}}>30 Minutes</option>
+                      <option value="60" {{if eq $d.SpindownSeconds 3600}}selected{{end}}>1 Hour</option>
+                      <option value="120" {{if eq $d.SpindownSeconds 7200}}selected{{end}}>2 Hours</option>
+                    </select>
+                  </form>
+                </div>
               </div>
-            </td>
-            <td><span class="font-mono text-dim" style="font-size: 0.75rem;">{{$d.Serial}}</span></td>
-            <td><strong>{{formatBytes $d.SizeBytes}}</strong></td>
-            <td><span class="badge-status slate" style="font-size: 0.7rem;">{{if $d.IsRotational}}HDD (SATA){{else}}SSD/NVMe{{end}}</span></td>
-            <td>
-              {{if $d.ZfsPool}}
-                <span class="badge font-mono" style="background: rgba(0, 102, 204, 0.15); color: #70b8ff; border: 1px solid rgba(0, 102, 204, 0.3); padding: 2px 6px; border-radius: 4px; font-size: 0.72rem;">
-                  {{$d.ZfsPool}}
-                </span>
-              {{else if $d.IsSystemDisk}}
-                <span class="badge-status amber" style="font-size: 0.7rem;">System Disk</span>
-              {{else}}
-                <span class="text-dim" style="font-size: 0.75rem;">Free / Unassigned</span>
-              {{end}}
-            </td>
-            <td>
-              <span class="{{if lt $d.TemperatureC 0}}text-dim{{else if gt $d.TemperatureC 45}}text-red{{else}}text-green{{end}}">
-                {{if lt $d.TemperatureC 0}}-- &deg;C{{else}}{{$d.TemperatureC}} &deg;C{{end}}
-              </span>
-            </td>
-            <td>
-              {{if eq $d.State "STANDBY"}}
-                <span class="badge-status amber">STANDBY (0W)</span>
-              {{else}}
-                <span class="badge-status green">ACTIVE</span>
-              {{end}}
-            </td>
-            <td>
-              <span class="badge-status {{if eq $d.SmartStatus "PASSED"}}green{{else if eq $d.SmartStatus "STANDBY"}}slate{{else}}red{{end}}">
-                {{$d.SmartStatus}}
-              </span>
-            </td>
-            <td class="col-actions">
-              <button class="btn btn-secondary btn-sm" @click="openDiskDrawer('{{$d.Name}}')">Inspect</button>
+
+              <!-- Quick Action Toolbar inside expanded row -->
+              <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.25rem; padding-top: 0.75rem; border-top: 1px solid rgba(255, 255, 255, 0.08); align-items: center; justify-content: flex-end;">
+                <button class="btn btn-secondary btn-sm"
+                        {{if eq $d.State "STANDBY"}}disabled title="Disk is sleeping"{{end}}
+                        hx-post="/ui/actions/disks/smart-test" hx-vals='{"path": "{{$d.Path}}", "type": "short"}' hx-target="#disks-container" hx-swap="morph">
+                  SMART Short Test
+                </button>
+                <button class="btn btn-secondary btn-sm"
+                        {{if eq $d.State "STANDBY"}}disabled title="Disk is sleeping"{{end}}
+                        hx-post="/ui/actions/disks/smart-test" hx-vals='{"path": "{{$d.Path}}", "type": "long"}' hx-target="#disks-container" hx-swap="morph">
+                  SMART Long Test
+                </button>
+                <button class="btn btn-secondary btn-sm"
+                        hx-post="/ui/actions/disks/standby" hx-vals='{"path": "{{$d.Path}}"}' hx-target="#disks-container" hx-swap="morph">
+                  Force Standby (0W)
+                </button>
+                <button class="btn btn-secondary btn-sm"
+                        hx-post="/ui/actions/disks/locate" hx-vals='{"path": "{{$d.Path}}"}' hx-target="#disks-container" hx-swap="morph">
+                  Toggle Locate LED
+                </button>
+                <button class="btn btn-danger btn-sm"
+                        {{if or $d.IsSystemDisk $d.ZfsPool}}disabled title="Cannot wipe system or active pool disk"{{end}}
+                        hx-post="/ui/actions/disks/wipe" hx-vals='{"path": "{{$d.Path}}", "confirm_wipe": "true"}'
+                        hx-confirm="WARNING: Completely wipe disk {{$d.Name}} (Wipe ZFS labels &amp; GPT partition table)?"
+                        hx-target="#disks-container" hx-swap="morph">
+                  Wipe Disk
+                </button>
+              </div>
             </td>
           </tr>
         {{end}}
@@ -68,4 +162,3 @@
     </table>
   </div>
 </div>
-

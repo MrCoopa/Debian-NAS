@@ -1,105 +1,372 @@
-<div id="datasets-container" hx-get="/ui/partials/datasets" hx-trigger="datasetUpdate from:body" hx-ext="morph" hx-swap="morph">
-  <div class="table-card">
-    <div class="table-toolbar">
-      <span class="toolbar-title">ZFS Filesystems &amp; Block Volumes (Zvols)</span>
-      <div class="toolbar-actions">
-        <button class="btn btn-secondary btn-sm" @click="openCreateZvolModal = true">+ New Zvol</button>
-        <button class="btn btn-primary btn-sm" @click="openCreateDatasetModal = true">+ New Dataset</button>
-      </div>
+<div id="datasets-container" hx-get="/ui/partials/datasets" hx-trigger="datasetUpdate from:body" hx-ext="morph" hx-swap="morph"
+     x-data="{
+       search: '',
+       collapsed: {},
+       selected: 'DATA',
+       toggle(name) {
+         this.collapsed[name] = !this.collapsed[name];
+       },
+       isCollapsed(name) {
+         return !!this.collapsed[name];
+       },
+       isVisible(name) {
+         if (this.search && this.search.trim().length > 0) {
+           return name.toLowerCase().includes(this.search.toLowerCase());
+         }
+         for (const key in this.collapsed) {
+           if (this.collapsed[key] && name.startsWith(key + '/')) {
+             return false;
+           }
+         }
+         return true;
+       }
+     }">
+
+  <style>
+    .tn-datasets-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      width: 100%;
+    }
+    .tn-search-wrap {
+      display: flex;
+      align-items: center;
+      background: #181818;
+      border: 1px solid #2b2b2b;
+      border-radius: 4px;
+      padding: 0.5rem 0.85rem;
+      gap: 0.65rem;
+      width: 100%;
+      box-sizing: border-box;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .tn-search-wrap:focus-within {
+      border-color: #008be5;
+      box-shadow: 0 0 0 1px #008be5;
+    }
+    .tn-search-icon {
+      color: #707070;
+      flex-shrink: 0;
+    }
+    .tn-search-input {
+      background: transparent;
+      border: none;
+      color: #f0f0f0;
+      font-size: 0.88rem;
+      width: 100%;
+      outline: none;
+    }
+    .tn-search-input::placeholder {
+      color: #707070;
+    }
+    .tn-search-clear {
+      background: transparent;
+      border: none;
+      color: #888;
+      font-size: 1.1rem;
+      cursor: pointer;
+      padding: 0 0.25rem;
+      line-height: 1;
+    }
+    .tn-tree-card {
+      background: #181818;
+      border: 1px solid #262626;
+      border-radius: 4px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+    .tn-tree-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.875rem;
+      table-layout: fixed;
+    }
+    .tn-tree-table th {
+      background: #151515;
+      color: #8e8e8e;
+      font-weight: 500;
+      font-size: 0.8rem;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid #262626;
+      letter-spacing: 0.2px;
+      user-select: none;
+    }
+    .tn-tree-row {
+      border-bottom: 1px solid #222222;
+      border-left: 3px solid transparent;
+      background: #181818;
+      transition: background-color 0.15s ease, border-left-color 0.15s ease;
+      position: relative;
+      cursor: pointer;
+    }
+    .tn-tree-row:hover {
+      background: #202020;
+    }
+    .tn-tree-row.is-selected {
+      border-left-color: #008be5 !important;
+      background: #1a222d;
+    }
+    .tn-tree-row td {
+      padding: 0.65rem 1rem;
+      vertical-align: middle;
+      color: #cccccc;
+    }
+    .tn-tree-toggle {
+      background: none;
+      border: none;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      color: #8e8e8e;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+    }
+    .tn-tree-toggle:hover {
+      color: #ffffff;
+    }
+    .tn-chevron {
+      transition: transform 0.2s ease;
+    }
+    .tn-chevron.collapsed {
+      transform: rotate(-90deg);
+    }
+    .tn-chevron-spacer {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+    }
+    .tn-node-icon {
+      flex-shrink: 0;
+      margin-right: 0.5rem;
+    }
+    .tn-node-icon.pool-icon {
+      color: #64b5f6;
+    }
+    .tn-node-icon.ds-icon {
+      color: #b0bec5;
+    }
+    .tn-node-name {
+      font-weight: 500;
+      color: #e0e0e0;
+      font-size: 0.88rem;
+    }
+    .tn-node-name.root-name {
+      font-weight: 600;
+      color: #ffffff;
+    }
+    .tn-col-used, .tn-col-avail {
+      color: #cccccc;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+    .tn-col-encrypt {
+      color: #8e8e8e;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+    .tn-usage-cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 28px;
+    }
+    .tn-share-tree-icon {
+      color: #9e9e9e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .tn-badge-protocol {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #d1d5db;
+      font-size: 0.62rem;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: 0.5px;
+    }
+    .tn-badge-protocol svg {
+      margin-bottom: 2px;
+    }
+    .tn-row-actions {
+      position: absolute;
+      right: 0.75rem;
+      top: 50%;
+      transform: translateY(-50%);
+      display: none;
+      gap: 0.35rem;
+      background: rgba(24, 24, 24, 0.95);
+      border: 1px solid #333333;
+      padding: 3px 6px;
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+      z-index: 5;
+    }
+    .tn-tree-row:hover .tn-row-actions {
+      display: flex;
+    }
+  </style>
+
+  <div class="tn-datasets-wrapper">
+    <!-- TrueNAS SCALE Search Bar -->
+    <div class="tn-search-wrap">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tn-search-icon">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input type="text" x-model="search" placeholder="Search" class="tn-search-input" />
+      <button type="button" x-show="search.length > 0" @click="search = ''" class="tn-search-clear" style="display: none;" :style="search.length > 0 ? 'display: block;' : 'display: none;'">&times;</button>
     </div>
-    <table class="pf-table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Used</th>
-          <th>Available</th>
-          <th>Compression</th>
-          <th>Recordsize</th>
-          <th>Quota</th>
-          <th>Shares</th>
-          <th>Read-Only</th>
-          <th>Snapshots</th>
-          <th class="col-actions">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {{if eq (len .Datasets) 0}}
-          <tr><td colspan="11" class="text-dim" style="text-align: center; padding: 1.5rem;">No datasets found. Create a storage pool first.</td></tr>
-        {{else}}
-          {{$smbShares := .SmbShares}}
-          {{$nfsExports := .NfsExports}}
-          {{range $ds := .Datasets}}
+
+    <!-- Datasets Tree Table -->
+    <div class="tn-tree-card">
+      <table class="tn-tree-table">
+        <thead>
+          <tr>
+            <th style="width: 44%;">Dataset</th>
+            <th style="width: 14%;">Used</th>
+            <th style="width: 14%;">Available</th>
+            <th style="width: 14%;">Encryption</th>
+            <th style="width: 14%; text-align: center;">Usage</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{if eq (len .Datasets) 0}}
             <tr>
-              <td>
-                <strong class="font-mono text-blue">{{$ds.Name}}</strong>
-                <div class="text-dim font-mono" style="font-size: 0.7rem;">{{$ds.Mountpoint}}</div>
-              </td>
-              <td>
-                <span class="badge-status {{if eq $ds.Type "volume"}}amber{{else}}blue{{end}}" style="font-size: 0.7rem;">
-                  {{if eq $ds.Type "volume"}}Zvol{{else}}Filesystem{{end}}
-                </span>
-              </td>
-              <td class="font-mono"><strong>{{formatBytes $ds.UsedBytes}}</strong></td>
-              <td class="font-mono text-dim">{{formatBytes $ds.AvailBytes}}</td>
-              <td><span class="badge-status slate font-mono" style="font-size: 0.7rem;">{{$ds.Compression}}</span></td>
-              <td class="font-mono text-dim">{{if $ds.RecordSize}}{{$ds.RecordSize}}{{else}}--{{end}}</td>
-              <td>
-                {{if and $ds.Quota (ne $ds.Quota "none")}}
-                  <span class="badge font-mono" style="background: rgba(240,171,0,0.15); color: #f0ab00; border: 1px solid rgba(240,171,0,0.3); padding: 2px 5px; border-radius: 3px; font-size: 0.72rem;">{{$ds.Quota}}</span>
-                {{else}}
-                  <span class="text-dim">none</span>
-                {{end}}
-              </td>
-              <td>
-                {{$dsName := $ds.Name}}
-                {{$dsMount := $ds.Mountpoint}}
-                {{$hasShare := false}}
-                {{range $s := $smbShares}}
-                  {{if or (eq $s.Path $dsMount) (eq $s.Path (print "/" $dsName)) (eq $s.Name $dsName)}}
-                    <span class="badge font-mono" style="background: rgba(0, 139, 229, 0.2); color: #64b5f6; border: 1px solid rgba(0, 139, 229, 0.35); padding: 1px 6px; border-radius: 2px; font-size: 0.7rem; display: inline-block; margin: 1px;">
-                      📁 SMB: {{$s.Name}}
-                    </span>
-                    {{$hasShare = true}}
-                  {{end}}
-                {{end}}
-                {{range $n := $nfsExports}}
-                  {{if or (eq $n.Path $dsMount) (eq $n.Path (print "/" $dsName))}}
-                    <span class="badge font-mono" style="background: rgba(240, 171, 0, 0.15); color: #f0ab00; border: 1px solid rgba(240, 171, 0, 0.3); padding: 1px 6px; border-radius: 2px; font-size: 0.7rem; display: inline-block; margin: 1px;">
-                      🖥️ NFS
-                    </span>
-                    {{$hasShare = true}}
-                  {{end}}
-                {{end}}
-                {{if not $hasShare}}
-                  <span class="text-dim" style="font-size: 0.72rem;">--</span>
-                {{end}}
-              </td>
-              <td>
-                {{if eq $ds.ReadOnly "on"}}
-                  <span class="badge-status slate" style="font-size: 0.7rem;">Locked</span>
-                {{else}}
-                  <span class="badge-status green" style="font-size: 0.7rem;">RW</span>
-                {{end}}
-              </td>
-              <td>
-                <span class="badge-status slate font-mono" style="font-size: 0.7rem;">{{$ds.Snapshots}}</span>
-              </td>
-              <td class="col-actions">
-                <div style="display: flex; gap: 0.3rem; justify-content: flex-end;">
-                  <button class="btn btn-secondary btn-sm" @click="openDatasetProps('{{$ds.Name}}', '{{$ds.Compression}}', '{{$ds.RecordSize}}', '{{$ds.Quota}}', '{{$ds.Atime}}', '{{$ds.ReadOnly}}', '{{$ds.Type}}')">Properties</button>
-                  <button class="btn btn-secondary btn-sm" @click="openCreateSnapModal('{{$ds.Name}}')">Snap</button>
-                  {{if eq $ds.Type "filesystem"}}
-                    <button class="btn btn-secondary btn-sm" @click="openCreateShare('{{$ds.Name}}', '{{$ds.Mountpoint}}')">Share</button>
-                  {{end}}
-                  <button class="btn btn-danger btn-sm" @click="openDangerConfirm('dataset', '{{$ds.Name}}')">Destroy</button>
-                </div>
+              <td colspan="5" class="text-dim" style="text-align: center; padding: 2rem;">
+                No ZFS datasets found. Create a storage pool first.
               </td>
             </tr>
+          {{else}}
+            {{$smbShares := .SmbShares}}
+            {{$nfsExports := .NfsExports}}
+            {{$allDatasets := .Datasets}}
+
+            {{range $ds := .Datasets}}
+              {{$depth := datasetDepth $ds.Name}}
+              {{$hasChildren := hasChildDatasets $ds.Name $allDatasets}}
+              {{$usage := datasetUsage $ds.Name $ds.Mountpoint $smbShares $nfsExports $allDatasets}}
+
+              <tr class="tn-tree-row"
+                  x-show="isVisible('{{$ds.Name}}')"
+                  @click="selected = '{{$ds.Name}}'"
+                  :class="{ 'selected': selected === '{{$ds.Name}}' }"
+                  :style="selected === '{{$ds.Name}}' ? 'border-left: 3px solid #008be5;' : 'border-left: 3px solid transparent;'">
+                
+                <!-- Dataset Column with Hierarchical Indentation, Expand/Collapse & Icons -->
+                <td style="padding-left: calc(0.75rem + {{mul $depth 28}}px);">
+                  <div style="display: flex; align-items: center;">
+                    {{if $hasChildren}}
+                      <button type="button" @click.stop="toggle('{{$ds.Name}}')" class="tn-tree-toggle" title="Toggle expand/collapse">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" class="tn-chevron" :class="{ 'collapsed': isCollapsed('{{$ds.Name}}') }">
+                          <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                        </svg>
+                      </button>
+                    {{else}}
+                      <span class="tn-chevron-spacer"></span>
+                    {{end}}
+
+                    <!-- Icon -->
+                    {{if eq $depth 0}}
+                      <!-- Root Pool Chassis/Server Icon -->
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="tn-node-icon pool-icon" title="ZFS Storage Pool">
+                        <rect x="2" y="4" width="20" height="7" rx="1.5"></rect>
+                        <rect x="2" y="13" width="20" height="7" rx="1.5"></rect>
+                        <circle cx="6" cy="7.5" r="1" fill="currentColor"></circle>
+                        <circle cx="6" cy="16.5" r="1" fill="currentColor"></circle>
+                        <line x1="10" y1="7.5" x2="18" y2="7.5"></line>
+                        <line x1="10" y1="16.5" x2="18" y2="16.5"></line>
+                      </svg>
+                    {{else}}
+                      <!-- Dataset Canister/Cylinder Icon -->
+                      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="tn-node-icon ds-icon" title="ZFS Dataset">
+                        <path d="M4 6c0-1.66 3.58-3 8-3s8 1.34 8 3v12c0 1.66-3.58 3-8 3s-8-1.34-8-3V6z"></path>
+                        <ellipse cx="12" cy="6" rx="8" ry="3"></ellipse>
+                        <path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"></path>
+                      </svg>
+                    {{end}}
+
+                    <!-- Base Name -->
+                    <span class="tn-node-name {{if eq $depth 0}}root-name{{end}}">
+                      {{baseName $ds.Name}}
+                    </span>
+                  </div>
+                </td>
+
+                <!-- Used Column -->
+                <td class="tn-col-used">
+                  {{formatBytes $ds.UsedBytes}}
+                </td>
+
+                <!-- Available Column -->
+                <td class="tn-col-avail">
+                  {{formatBytes $ds.AvailBytes}}
+                </td>
+
+                <!-- Encryption Column -->
+                <td class="tn-col-encrypt">
+                  {{if $ds.Encryption}}{{$ds.Encryption}}{{else}}Unencrypted{{end}}
+                </td>
+
+                <!-- Usage Column (Share badges & Icons matching TrueNAS SCALE) -->
+                <td style="text-align: center;">
+                  <div class="tn-usage-cell">
+                    {{if eq $usage "TREE"}}
+                      <!-- Shares Container Node Icon '<' -->
+                      <div class="tn-share-tree-icon" title="Shares Parent Node">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="18" cy="5" r="3"></circle>
+                          <circle cx="6" cy="12" r="3"></circle>
+                          <circle cx="18" cy="19" r="3"></circle>
+                          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                        </svg>
+                      </div>
+                    {{else if eq $usage "SMB"}}
+                      <!-- SMB Badge -->
+                      <div class="tn-badge-protocol" title="SMB File Share">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        <span>SMB</span>
+                      </div>
+                    {{else if eq $usage "NFS"}}
+                      <!-- NFS Badge -->
+                      <div class="tn-badge-protocol" title="NFS Network Export">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                          <line x1="8" y1="21" x2="16" y2="21"></line>
+                          <line x1="12" y1="17" x2="12" y2="21"></line>
+                        </svg>
+                        <span>NFS</span>
+                      </div>
+                    {{else}}
+                      <span style="color: transparent; font-size: 0.7rem;">--</span>
+                    {{end}}
+                  </div>
+
+                  <!-- Quick Action Buttons on Hover -->
+                  <div class="tn-row-actions">
+                    <button class="btn btn-secondary btn-sm" @click.stop="openDatasetProps('{{$ds.Name}}', '{{$ds.Compression}}', '{{$ds.RecordSize}}', '{{$ds.Quota}}', '{{$ds.Atime}}', '{{$ds.ReadOnly}}', '{{$ds.Type}}')">Properties</button>
+                    <button class="btn btn-secondary btn-sm" @click.stop="openCreateSnapModal('{{$ds.Name}}')">Snap</button>
+                    {{if eq $ds.Type "filesystem"}}
+                      <button class="btn btn-secondary btn-sm" @click.stop="openCreateShare('{{$ds.Name}}', '{{$ds.Mountpoint}}')">Share</button>
+                    {{end}}
+                    <button class="btn btn-danger btn-sm" @click.stop="openDangerConfirm('dataset', '{{$ds.Name}}')">Destroy</button>
+                  </div>
+                </td>
+              </tr>
+            {{end}}
           {{end}}
-        {{end}}
-      </tbody>
-    </table>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
-
