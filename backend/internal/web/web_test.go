@@ -2,6 +2,8 @@ package web
 
 import (
 	"bytes"
+	"io/fs"
+	"strings"
 	"testing"
 )
 
@@ -227,6 +229,32 @@ func TestEngine_RenderAll(t *testing.T) {
 		var pBuf bytes.Buffer
 		if err := engine.Render(&pBuf, p, testData); err != nil {
 			t.Errorf("Failed to render partial %s: %v", p, err)
+		}
+	}
+}
+
+func TestModals_NestedHxGetIsolatedFromParentForm(t *testing.T) {
+	entries, err := fs.ReadDir(templateFiles, "templates/modals")
+	if err != nil {
+		t.Fatalf("failed reading modal templates: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".html") {
+			continue
+		}
+		raw, err := templateFiles.ReadFile("templates/modals/" + entry.Name())
+		if err != nil {
+			t.Fatalf("failed reading modal %s: %v", entry.Name(), err)
+		}
+		content := string(raw)
+		if !strings.Contains(content, "hx-get=") {
+			continue
+		}
+		if !strings.Contains(content, `hx-target="this"`) {
+			t.Errorf("modal %s uses nested hx-get without hx-target=\"this\" (would inherit parent form hx-target)", entry.Name())
+		}
+		if strings.Contains(content, "@htmx:after-request") && !strings.Contains(content, "event.target === $el") {
+			t.Errorf("modal %s uses @htmx:after-request with nested hx-get without checking event.target === $el (inner request would close modal)", entry.Name())
 		}
 	}
 }

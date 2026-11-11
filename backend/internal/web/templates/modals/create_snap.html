@@ -4,12 +4,12 @@
       <h3>Create Manual ZFS Snapshot</h3>
       <button type="button" class="modal-close" @click="openCreateSnapModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/zfs/snapshots" hx-target="#snapshots-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) { openCreateSnapModal = false; snapName = ''; }">
+    <form hx-post="/ui/actions/zfs/snapshots" hx-target="#snapshots-container" hx-swap="morph" @htmx:after-request="if (event.target === $el && event.detail.successful) { openCreateSnapModal = false; snapName = ''; }">
       <div class="form-group">
         <label>Target Dataset</label>
         <input type="text" name="dataset" x-show="snapDataset" :value="snapDataset" :disabled="!snapDataset" readonly class="font-mono" style="background: rgba(15,23,42,0.6);">
         <select name="dataset" x-show="!snapDataset" :disabled="!!snapDataset" required
-                hx-get="/ui/partials/modals/snap_datasets" hx-trigger="poolUpdate from:body, datasetUpdate from:body" hx-swap="innerHTML">
+                hx-get="/ui/partials/modals/snap_datasets" hx-trigger="poolUpdate from:body, datasetUpdate from:body" hx-target="this" hx-swap="innerHTML">
           {{template "partials/snap_datasets_options.html" .}}
         </select>
       </div>

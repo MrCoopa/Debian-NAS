@@ -163,12 +163,12 @@
         },
         openCreatePool() {
           this.openCreatePoolModal = true;
-          if (window.htmx) htmx.trigger(document.body, 'refreshPoolDisks');
+          if (window.htmx) htmx.trigger(document.body, 'refreshCreatePoolDisks');
         },
         openAddVdev(pool) {
           this.addVdevPool = pool;
           this.openAddVdevModal = true;
-          if (window.htmx) htmx.trigger(document.body, 'refreshPoolDisks');
+          if (window.htmx) htmx.trigger(document.body, 'refreshAddVdevDisks');
         },
         openDiskAction(type, pool, targetDevice) {
           this.diskAction = { type: type, pool: pool, targetDevice: targetDevice };

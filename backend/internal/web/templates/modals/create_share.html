@@ -6,7 +6,7 @@
     </div>
     <form hx-post="/ui/actions/shares/save" hx-target="#shares-container" hx-swap="morph"
           @share-update.window="openShareModal = false"
-          @htmx:after-request="if (event.detail.successful) openShareModal = false">
+          @htmx:after-request="if (event.target === $el && event.detail.successful) openShareModal = false">
       <!-- Hidden tracking fields for edit and protocol submission -->
       <input type="hidden" name="orig_name" :value="shareForm.origName || ''">
       <input type="hidden" name="orig_path" :value="shareForm.origPath || ''">
