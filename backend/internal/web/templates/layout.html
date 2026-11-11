@@ -119,34 +119,52 @@
           <span class="omv-nav-title">Dashboard</span>
         </button>
 
-        <!-- 2. System -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'system' }" @click="currentTab = 'system'">
+        <!-- 2. Disks -->
+        <button class="omv-nav-item" :class="{ 'active': currentTab === 'disks' }" @click="currentTab = 'disks'">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
+            <path d="M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm0 2v4h12V4H6zm12 16V10H6v10h12zm-3-3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/>
           </svg>
-          <span class="omv-nav-title">System</span>
+          <span class="omv-nav-title">Disks</span>
           <span class="omv-nav-chevron">&#10095;</span>
         </button>
 
-        <!-- 3. Network -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'network' }" @click="currentTab = 'network'">
-          <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
-          </svg>
-          <span class="omv-nav-title">Network</span>
-          <span class="omv-nav-chevron">&#10095;</span>
-        </button>
-
-        <!-- 4. Storage (OpenZFS Native Engine) -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'pools' || currentTab === 'disks' }" @click="currentTab = 'pools'">
+        <!-- 3. Storage -->
+        <button class="omv-nav-item" :class="{ 'active': currentTab === 'pools' }" @click="currentTab = 'pools'">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M2 20h20v-4H2v4zm2-3h2v2H4v-2zM2 4v4h20V4H2zm4 3H4V5h2v2zm-4 7h20v-4H2v4zm2-3h2v2H4v-2z"/>
           </svg>
-          <span class="omv-nav-title">Storage (ZFS)</span>
+          <span class="omv-nav-title">Storage</span>
           <span class="omv-nav-chevron">&#10095;</span>
         </button>
 
-        <!-- 5. Services (SMB & NFS) -->
+        <!-- 4. Dataset -->
+        <button class="omv-nav-item" :class="{ 'active': currentTab === 'datasets' }" @click="currentTab = 'datasets'">
+          <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+          </svg>
+          <span class="omv-nav-title">Dataset</span>
+          <span class="omv-nav-chevron">&#10095;</span>
+        </button>
+
+        <!-- 5. User -->
+        <button class="omv-nav-item" :class="{ 'active': currentTab === 'users' }" @click="currentTab = 'users'">
+          <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+          </svg>
+          <span class="omv-nav-title">User</span>
+          <span class="omv-nav-chevron">&#10095;</span>
+        </button>
+
+        <!-- 6. Data Protection -->
+        <button class="omv-nav-item" :class="{ 'active': currentTab === 'protection' }" @click="currentTab = 'protection'">
+          <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>
+          </svg>
+          <span class="omv-nav-title">Data Protection</span>
+          <span class="omv-nav-chevron">&#10095;</span>
+        </button>
+
+        <!-- 7. Services -->
         <button class="omv-nav-item" :class="{ 'active': currentTab === 'shares' }" @click="currentTab = 'shares'">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-5 3c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2zm4 8h-8v-1c0-1.33 2.67-2 4-2s4 .67 4 2v1z"/>
@@ -155,21 +173,12 @@
           <span class="omv-nav-chevron">&#10095;</span>
         </button>
 
-        <!-- 6. Users -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'users' }" @click="currentTab = 'users'">
+        <!-- 8. System -->
+        <button class="omv-nav-item" :class="{ 'active': currentTab === 'system' }" @click="currentTab = 'system'">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+            <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
           </svg>
-          <span class="omv-nav-title">Users</span>
-          <span class="omv-nav-chevron">&#10095;</span>
-        </button>
-
-        <!-- 7. Diagnostics (Snapshots, Scrub, SMART) -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'protection' }" @click="currentTab = 'protection'">
-          <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-          </svg>
-          <span class="omv-nav-title">Diagnostics</span>
+          <span class="omv-nav-title">System</span>
           <span class="omv-nav-chevron">&#10095;</span>
         </button>
       </nav>
@@ -188,65 +197,57 @@
           <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
         </span>
         <span class="omv-crumb-divider">|</span>
-        <span class="omv-crumb-title" x-text="currentTab === 'dashboard' ? 'Dashboard' : (currentTab === 'pools' ? 'Storage > ZFS Storage Pools' : (currentTab === 'disks' ? 'Storage > Physical Disks' : (currentTab === 'shares' ? 'Services > SMB & NFS' : (currentTab === 'users' ? 'Users > Storage Users' : (currentTab === 'protection' ? 'Diagnostics > Snapshots & Scrub' : (currentTab === 'network' ? 'Network' : 'System'))))))">Dashboard</span>
+        <span class="omv-crumb-title" x-text="currentTab === 'dashboard' ? 'Dashboard' : (currentTab === 'disks' ? 'Disks > Physical Disks & S.M.A.R.T.' : (currentTab === 'pools' ? 'Storage > ZFS Storage Pools' : (currentTab === 'datasets' ? 'Dataset > ZFS Datasets & Volumes' : (currentTab === 'users' ? 'User > Storage Users' : (currentTab === 'protection' ? 'Data Protection > Snapshots & Scrub' : (currentTab === 'shares' ? 'Services > SMB & NFS' : 'System > Host & Network'))))))">Dashboard</span>
       </div>
 
       <main class="omv-main-content">
-        <!-- TAB 1: DASHBOARD -->
+        <!-- 1. DASHBOARD -->
         <section class="tab-pane" :class="{ 'active': currentTab === 'dashboard' }" x-show="currentTab === 'dashboard'">
           {{template "partials/system_metrics.html" .}}
         </section>
 
-        <!-- TAB 2: STORAGE POOLS & DATASETS -->
-        <section class="tab-pane" :class="{ 'active': currentTab === 'pools' }" x-show="currentTab === 'pools'" x-cloak>
-          <div class="page-header">
-            <div class="page-title-group">
-              <h1>Native OpenZFS Storage Pools &amp; Datasets</h1>
-            </div>
-            <div class="page-actions" style="display: flex; gap: 0.5rem;">
-              <button class="btn btn-secondary btn-sm" @click="currentTab = 'disks'">Physical Disks &rarr;</button>
-              <button class="btn btn-secondary btn-sm" @click="openImportModal = true">Import Pool</button>
-              <button class="btn btn-primary btn-sm" @click="openCreatePoolModal = true">+ Create Pool</button>
-            </div>
-          </div>
-
-          {{template "partials/pools_list.html" .}}
-
-          <div style="margin-top: 1.5rem;">
-            {{template "partials/datasets_list.html" .}}
-          </div>
-        </section>
-
-        <!-- TAB 3: PHYSICAL DISKS -->
+        <!-- 2. DISKS -->
         <section class="tab-pane" :class="{ 'active': currentTab === 'disks' }" x-show="currentTab === 'disks'" x-cloak>
           <div class="page-header">
             <div class="page-title-group">
               <h1>Physical Disks &amp; S.M.A.R.T.</h1>
-            </div>
-            <div class="page-actions">
-              <button class="btn btn-secondary btn-sm" @click="currentTab = 'pools'">&larr; ZFS Storage Pools</button>
             </div>
           </div>
 
           {{template "partials/disks_table.html" .}}
         </section>
 
-        <!-- TAB 4: SHARES (SMB & NFS) -->
-        <section class="tab-pane" :class="{ 'active': currentTab === 'shares' }" x-show="currentTab === 'shares'" x-cloak>
+        <!-- 3. STORAGE (ZFS POOLS) -->
+        <section class="tab-pane" :class="{ 'active': currentTab === 'pools' }" x-show="currentTab === 'pools'" x-cloak>
           <div class="page-header">
             <div class="page-title-group">
-              <h1>File Sharing Services (SMB &amp; NFS)</h1>
+              <h1>Native OpenZFS Storage Pools</h1>
             </div>
             <div class="page-actions" style="display: flex; gap: 0.5rem;">
-              <button class="btn btn-secondary btn-sm" @click="currentTab = 'users'">Manage Users &rarr;</button>
-              <button class="btn btn-primary btn-sm" @click="openCreateShare('', '')">+ Add Network Share</button>
+              <button class="btn btn-secondary btn-sm" @click="openImportModal = true">Import Pool</button>
+              <button class="btn btn-primary btn-sm" @click="openCreatePoolModal = true">+ Create Pool</button>
             </div>
           </div>
 
-          {{template "partials/shares_list.html" .}}
+          {{template "partials/pools_list.html" .}}
         </section>
 
-        <!-- TAB 5: USERS -->
+        <!-- 4. DATASET (ZFS DATASETS & VOLUMES) -->
+        <section class="tab-pane" :class="{ 'active': currentTab === 'datasets' }" x-show="currentTab === 'datasets'" x-cloak>
+          <div class="page-header">
+            <div class="page-title-group">
+              <h1>ZFS Datasets &amp; Block Volumes (Zvols)</h1>
+            </div>
+            <div class="page-actions" style="display: flex; gap: 0.5rem;">
+              <button class="btn btn-secondary btn-sm" @click="openCreateZvolModal = true">+ Create Zvol</button>
+              <button class="btn btn-primary btn-sm" @click="openCreateDatasetModal = true">+ Create Dataset</button>
+            </div>
+          </div>
+
+          {{template "partials/datasets_list.html" .}}
+        </section>
+
+        <!-- 5. USER -->
         <section class="tab-pane" :class="{ 'active': currentTab === 'users' }" x-show="currentTab === 'users'" x-cloak>
           <div class="page-header">
             <div class="page-title-group">
@@ -260,11 +261,11 @@
           {{template "partials/users_list.html" .}}
         </section>
 
-        <!-- TAB 5: DATA PROTECTION (SNAPSHOTS & SCRUB) -->
+        <!-- 6. DATA PROTECTION (SNAPSHOTS & SCRUB) -->
         <section class="tab-pane" :class="{ 'active': currentTab === 'protection' }" x-show="currentTab === 'protection'" x-cloak>
           <div class="page-header">
             <div class="page-title-group">
-              <h1>Diagnostics &amp; Data Protection (Snapshots &amp; Scrub)</h1>
+              <h1>Data Protection (Snapshots &amp; Scrub)</h1>
             </div>
             <div class="page-actions">
               <button class="btn btn-primary btn-sm" @click="openCreateSnapModal('')">+ Create Snapshot</button>
@@ -274,22 +275,25 @@
           {{template "partials/snapshots_list.html" .}}
         </section>
 
-        <!-- TAB 6: NETWORKING -->
-        <section class="tab-pane" :class="{ 'active': currentTab === 'network' }" x-show="currentTab === 'network'" x-cloak>
+        <!-- 7. SERVICES (SMB & NFS) -->
+        <section class="tab-pane" :class="{ 'active': currentTab === 'shares' }" x-show="currentTab === 'shares'" x-cloak>
           <div class="page-header">
             <div class="page-title-group">
-              <h1>Network Interfaces &amp; Routing</h1>
+              <h1>File Sharing Services (SMB &amp; NFS)</h1>
+            </div>
+            <div class="page-actions" style="display: flex; gap: 0.5rem;">
+              <button class="btn btn-primary btn-sm" @click="openCreateShare('', '')">+ Add Network Share</button>
             </div>
           </div>
 
-          {{template "partials/network_list.html" .}}
+          {{template "partials/shares_list.html" .}}
         </section>
 
-        <!-- TAB 7: SYSTEM & SERVICES -->
+        <!-- 8. SYSTEM & NETWORK -->
         <section class="tab-pane" :class="{ 'active': currentTab === 'system' }" x-show="currentTab === 'system'" x-cloak>
           <div class="page-header">
             <div class="page-title-group">
-              <h1>System Information &amp; Services</h1>
+              <h1>System Information &amp; Network</h1>
             </div>
           </div>
 
@@ -310,6 +314,10 @@
                 <tr><td style="font-weight: 600;">NFS Server Daemon</td><td><span class="badge-status green">nfs-kernel-server active</span></td></tr>
               </tbody>
             </table>
+          </div>
+
+          <div style="margin-top: 1.5rem;">
+            {{template "partials/network_list.html" .}}
           </div>
         </section>
       </main>
