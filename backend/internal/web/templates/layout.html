@@ -38,7 +38,13 @@
         openDangerConfirmModal: false,
         dangerConfirm: { type: 'pool', targetName: '', inputName: '' },
         openImportModal: false,
-        expandedDisk: null,
+        expandedDisks: {},
+        toggleDisk(name) {
+          this.expandedDisks[name] = !this.expandedDisks[name];
+        },
+        isDiskExpanded(name) {
+          return !!this.expandedDisks[name];
+        },
         toasts: [],
 
         openCreateShare(name, path) {

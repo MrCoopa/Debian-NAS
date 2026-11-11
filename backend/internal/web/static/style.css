@@ -967,3 +967,12 @@ body {
 .toast.error {
   border-left-color: var(--omv-red);
 }
+
+/* Disk Table Expandable Detail Rows */
+.disk-detail-row {
+  display: none !important;
+}
+
+.disk-detail-row.expanded {
+  display: table-row !important;
+}

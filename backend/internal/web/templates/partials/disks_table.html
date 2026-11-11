@@ -1,7 +1,6 @@
 <div id="disks-container" hx-get="/ui/partials/disks" hx-trigger="every 10s, diskUpdate from:body" hx-ext="morph" hx-swap="morph"
      x-data="{
        selectedDisks: [],
-       expandedDisk: null,
        toggleAll(e) {
          if (e.target.checked) {
            this.selectedDisks = [{{range $i, $d := .Disks}}{{if $i}},{{end}}'{{$d.Name}}'{{end}}];
@@ -30,12 +29,12 @@
       <tbody>
         {{range $d := .Disks}}
           <tr style="border-bottom: 1px solid #1f1f1f; transition: background 0.15s ease;"
-              :style="expandedDisk === '{{$d.Name}}' ? 'background: #1c1c1c;' : ''">
+              :style="isDiskExpanded('{{$d.Name}}') ? 'background: #1c1c1c;' : ''">
             <td style="padding: 0.75rem 1rem;">
               <input type="checkbox" class="disk-checkbox" value="{{$d.Name}}" x-model="selectedDisks">
             </td>
             <td style="padding: 0.75rem 1rem;">
-              <span class="font-mono text-white" style="cursor: pointer; font-weight: 600;" @click="expandedDisk = (expandedDisk === '{{$d.Name}}' ? null : '{{$d.Name}}')">{{$d.Name}}</span>
+              <span class="font-mono text-white" style="cursor: pointer; font-weight: 600;" @click="toggleDisk('{{$d.Name}}')">{{$d.Name}}</span>
             </td>
             <td style="padding: 0.75rem 1rem;">
               <span class="font-mono text-dim" style="font-size: 0.78rem;">{{if $d.Serial}}{{$d.Serial}}{{else}}--{{end}}</span>
@@ -62,8 +61,8 @@
             </td>
             <td style="padding: 0.75rem 1rem; text-align: right;">
               <button type="button" class="btn-chevron"
-                      :class="{ 'open': expandedDisk === '{{$d.Name}}' }"
-                      @click="expandedDisk = (expandedDisk === '{{$d.Name}}' ? null : '{{$d.Name}}')"
+                      :class="{ 'open': isDiskExpanded('{{$d.Name}}') }"
+                      @click="toggleDisk('{{$d.Name}}')"
                       title="Toggle Disk Details">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
@@ -73,7 +72,10 @@
           </tr>
 
           <!-- Expandable Detail Row (All Hardware Inspection & Actions) -->
-          <tr x-show="expandedDisk === '{{$d.Name}}'" x-cloak style="background: #171717; border-bottom: 1px solid #262626;">
+          <tr class="disk-detail-row"
+              :class="{ 'expanded': isDiskExpanded('{{$d.Name}}') }"
+              x-show="isDiskExpanded('{{$d.Name}}')"
+              style="background: #171717; border-bottom: 1px solid #262626;">
             <td colspan="8" style="padding: 1.25rem 1.5rem;">
               <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; font-size: 0.8rem;">
                 <div>
