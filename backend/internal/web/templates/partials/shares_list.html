@@ -54,7 +54,7 @@
           <td class="col-actions">
             <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
               <button class="btn btn-secondary btn-sm"
-                @click="openEditShare('{{$s.Name}}', '{{$s.Path}}', {{$s.ReadOnly}}, {{$s.GuestOk}}, '{{join $s.ValidUsers ","}}')">Edit</button>
+                @click="openEditSmbShare('{{$s.Name}}', '{{$s.Path}}', {{$s.ReadOnly}}, {{$s.GuestOk}}, '{{join $s.ValidUsers ","}}')">Edit</button>
               <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/smb?name={{$s.Name}}"
                 hx-confirm="Delete SMB share '{{$s.Name}}'?" hx-target="#shares-container"
                 hx-swap="morph">Delete</button>
@@ -82,6 +82,8 @@
           <td><span class="badge-status green">Active</span></td>
           <td class="col-actions">
             <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
+              <button class="btn btn-secondary btn-sm"
+                @click="openEditNfsShare('{{$n.Path}}', {{$n.ReadOnly}}, '{{$n.AllowedClients}}')">Edit</button>
               <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/nfs?path={{$n.Path}}"
                 hx-confirm="Remove NFS export '{{$n.Path}}'?" hx-target="#shares-container"
                 hx-swap="morph">Delete</button>

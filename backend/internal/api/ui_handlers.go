@@ -172,14 +172,17 @@ func (s *Server) handleUIActionSaveSmb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proto := r.FormValue("proto")
+	proto := strings.ToLower(strings.TrimSpace(r.FormValue("proto")))
 	name := strings.TrimSpace(r.FormValue("name"))
 	path := strings.TrimSpace(r.FormValue("path"))
 	comment := strings.TrimSpace(r.FormValue("comment"))
-	access := r.FormValue("access")
+	access := strings.ToLower(strings.TrimSpace(r.FormValue("access")))
 	allowedClients := strings.TrimSpace(r.FormValue("allowed_clients"))
 	if allowedClients == "" {
 		allowedClients = "*"
+	}
+	if proto == "nfs" && name == "" {
+		name = path
 	}
 
 	if name == "" || path == "" {
@@ -189,21 +192,39 @@ func (s *Server) handleUIActionSaveSmb(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if proto == "nfs" {
+		origPath := strings.TrimSpace(r.FormValue("orig_path"))
+		if origPath != "" && origPath != path {
+			_ = s.shares.DeleteNfs(origPath)
+		}
+
+		isReadOnly := (access == "readonly")
+		opts := "rw,sync,no_subtree_check"
+		if isReadOnly {
+			opts = "ro,sync,no_subtree_check"
+		}
 		exp := &shares.NfsExport{
 			Path:           path,
 			AllowedClients: allowedClients,
-			Options:        "rw,sync,no_subtree_check",
-			ReadOnly:       false,
+			Options:        opts,
+			ReadOnly:       isReadOnly,
 			Enabled:        true,
 		}
 		if err := s.shares.SaveNfs(exp); err != nil {
-			s.setHXTrigger(w, "Error creating NFS export: "+err.Error(), "error")
+			s.setHXTrigger(w, "Error saving NFS export: "+err.Error(), "error")
 		} else {
 			s.setHXTrigger(w, fmt.Sprintf("NFS export '%s' successfully saved", path), "success", "shareUpdate")
 		}
 	} else {
-		users := r.Form["users"]
-		readOnly := r.FormValue("read_only") == "true"
+		origName := strings.TrimSpace(r.FormValue("orig_name"))
+		if origName != "" && origName != name {
+			_ = s.shares.DeleteSmb(origName)
+		}
+
+		users := r.Form["valid_users"]
+		if len(users) == 0 {
+			users = r.Form["users"]
+		}
+		readOnly := (access == "readonly") || (r.FormValue("read_only") == "true")
 		guestOk := (access == "guest")
 
 		smb := &shares.SmbShare{

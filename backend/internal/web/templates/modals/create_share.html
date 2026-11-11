@@ -1,14 +1,23 @@
 <div class="modal-backdrop" x-show="openShareModal" x-cloak>
   <div class="modal-box" @click.outside="openShareModal = false" x-data="{ customPathMode: false }">
     <div class="modal-header">
-      <h3 x-text="isEditingShare ? ('Edit SMB Share: ' + shareForm.name) : 'Create Network File Share'"></h3>
+      <h3 x-text="isEditingShare ? ('Edit ' + (shareForm.proto === 'nfs' ? 'NFS Export: ' : 'SMB Share: ') + (shareForm.name || shareForm.path)) : 'Create Network File Share'"></h3>
       <button type="button" class="modal-close" @click="openShareModal = false">&times;</button>
     </div>
     <form hx-post="/ui/actions/shares/save" hx-target="#shares-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openShareModal = false">
-      <div class="form-group">
+      <!-- Hidden tracking fields for edit and protocol submission -->
+      <input type="hidden" name="orig_name" :value="shareForm.origName || ''">
+      <input type="hidden" name="orig_path" :value="shareForm.origPath || ''">
+      <input type="hidden" name="proto" :value="shareForm.proto">
+
+      <!-- Share Name (Only required for SMB) -->
+      <div class="form-group" x-show="shareForm.proto === 'smb'">
         <label>Share Name</label>
-        <input type="text" name="name" x-model="shareForm.name" :readonly="isEditingShare" placeholder="e.g. Media, Backups" required>
+        <input type="text" name="name" x-model="shareForm.name" :readonly="isEditingShare" placeholder="e.g. Media, Backups" :required="shareForm.proto === 'smb'">
       </div>
+      <template x-if="shareForm.proto === 'nfs'">
+        <input type="hidden" name="name" :value="shareForm.name || shareForm.path">
+      </template>
 
       <div class="form-group">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
@@ -94,11 +103,11 @@
 
       <!-- Access Control -->
       <div class="form-group">
-        <label>Access Control</label>
+        <label>Access Control / Permissions</label>
         <select name="access" x-model="shareForm.access">
-          <option value="restricted">Restricted (Authorized NAS users with login only)</option>
-          <option value="guest">Public / Guest Access (No password required)</option>
-          <option value="readonly">Read-Only (Write-protected)</option>
+          <option value="restricted" x-text="shareForm.proto === 'nfs' ? 'Read / Write (Normal NFS read & write access)' : 'Restricted (Authorized NAS users with login only)'"></option>
+          <option value="guest" x-show="shareForm.proto === 'smb'">Public / Guest Access (No password required)</option>
+          <option value="readonly" x-text="shareForm.proto === 'nfs' ? 'Read-Only (Write-protected NFS mount)' : 'Read-Only (Write-protected)'"></option>
         </select>
       </div>
 

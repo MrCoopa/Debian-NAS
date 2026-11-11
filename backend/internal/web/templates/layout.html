@@ -49,15 +49,49 @@
 
         openCreateShare(name, path) {
           this.isEditingShare = false;
-          this.shareForm = { name: name || '', path: path || '', proto: 'smb', access: 'restricted', allowed_clients: '*', users: [] };
+          this.shareForm = { name: name || '', origName: '', path: path || '', origPath: '', proto: 'smb', access: 'restricted', allowed_clients: '*', users: [] };
           this.openShareModal = true;
         },
-        openEditShare(name, path, proto, access, allowedClients, usersJson) {
-          this.isEditingShare = true;
+        openEditSmbShare(name, path, readOnly, guestOk, usersStr) {
           let u = [];
-          try { u = typeof usersJson === 'string' ? JSON.parse(usersJson || '[]') : (usersJson || []); } catch(e) { u = []; }
-          this.shareForm = { name: name, path: path, proto: proto || 'smb', access: access || 'restricted', allowed_clients: allowedClients || '*', users: u };
+          if (usersStr) {
+            u = usersStr.split(',').map(s => s.trim()).filter(Boolean);
+          }
+          let access = 'restricted';
+          if (guestOk) {
+            access = 'guest';
+          } else if (readOnly) {
+            access = 'readonly';
+          }
+          this.isEditingShare = true;
+          this.shareForm = {
+            name: name,
+            origName: name,
+            path: path,
+            origPath: path,
+            proto: 'smb',
+            access: access,
+            allowed_clients: '*',
+            users: u
+          };
           this.openShareModal = true;
+        },
+        openEditNfsShare(path, readOnly, allowedClients) {
+          this.isEditingShare = true;
+          this.shareForm = {
+            name: path,
+            origName: path,
+            path: path,
+            origPath: path,
+            proto: 'nfs',
+            access: readOnly ? 'readonly' : 'restricted',
+            allowed_clients: allowedClients || '*',
+            users: []
+          };
+          this.openShareModal = true;
+        },
+        openEditShare(name, path, readOnly, guestOk, usersStr) {
+          this.openEditSmbShare(name, path, readOnly, guestOk, usersStr);
         },
         openAddVdev(pool) {
           this.addVdevPool = pool;
