@@ -1,4 +1,4 @@
-<div id="users-container" hx-get="/ui/partials/users" hx-trigger="userUpdate from:body" hx-ext="morph" hx-swap="morph">
+<div id="users-container" hx-get="/ui/partials/users" hx-trigger="userUpdate from:body" hx-swap="outerHTML">
   <div class="table-card">
     <div class="table-toolbar">
       <span class="toolbar-title">Storage Users &amp; SMB Credentials</span>
@@ -6,6 +6,7 @@
         <button class="btn btn-primary btn-sm" @click="openCreateUserModal = true">+ New Storage User</button>
       </div>
     </div>
+    <div class="table-responsive">
     <table class="pf-table">
       <thead>
         <tr>
@@ -45,12 +46,13 @@
                 {{end}}
               </td>
               <td class="col-actions">
-                <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/users?username={{$u.Username}}" hx-confirm="Delete storage user '{{$u.Username}}'?" hx-target="#users-container" hx-swap="morph">Delete</button>
+                <button type="button" class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/users?username={{urlquery $u.Username}}" hx-confirm="Delete storage user '{{$u.Username}}'?" hx-target="#users-container" hx-swap="outerHTML">Delete</button>
               </td>
             </tr>
           {{end}}
         {{end}}
       </tbody>
     </table>
+    </div>
   </div>
 </div>

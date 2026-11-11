@@ -6,7 +6,7 @@
     </div>
     <form hx-post="/ui/actions/zfs/pools/disk/action"
           hx-target="#pools-container" hx-swap="morph"
-          @htmx:after-request="if (event.detail.successful) openDiskActionModal = false">
+          @htmx:after-request="if (event.target === $el && event.detail.successful) openDiskActionModal = false">
       <input type="hidden" name="action_type" :value="diskAction.type">
       <input type="hidden" name="pool" :value="diskAction.pool">
       <input type="hidden" name="target_device" :value="diskAction.targetDevice">
@@ -15,15 +15,12 @@
       
       <div class="form-group">
         <label>Select New Replacement / Mirror Disk</label>
-        <select name="new_device" required>
-          <option value="">-- Select an available disk --</option>
-          {{range $d := .Disks}}
-            {{if and (not $d.ZfsPool) (not $d.IsSystemDisk)}}
-              <option value="{{if $d.ByIDPath}}{{$d.ByIDPath}}{{else}}{{$d.Path}}{{end}}">
-                {{$d.Name}} - {{$d.Model}} ({{formatBytes $d.SizeBytes}})
-              </option>
-            {{end}}
-          {{end}}
+        <select name="new_device" required
+                hx-get="/ui/partials/modals/available_disks"
+                hx-trigger="poolUpdate from:body, diskUpdate from:body"
+                hx-target="this"
+                hx-swap="innerHTML">
+          {{template "partials/available_disks_options.html" .}}
         </select>
         <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
           The replacement disk capacity must be greater than or equal to the existing disk.

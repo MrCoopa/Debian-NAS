@@ -216,7 +216,7 @@
     </div>
 
     <!-- Datasets Tree Table -->
-    <div class="tn-tree-card">
+    <div class="tn-tree-card table-responsive">
       <table class="tn-tree-table">
         <thead>
           <tr>
@@ -245,7 +245,7 @@
               {{$hasChildren := hasChildDatasets $ds.Name $allDatasets}}
               {{$usage := datasetUsage $ds.Name $ds.Mountpoint $smbShares $nfsExports $allDatasets}}
 
-              <tr class="tn-tree-row"
+              <tr id="row-ds-{{domId $ds.Name}}" class="tn-tree-row"
                   x-show="isVisible('{{$ds.Name}}')"
                   @click="selected = '{{$ds.Name}}'"
                   :class="{ 'is-selected': selected === '{{$ds.Name}}' }"
@@ -353,7 +353,7 @@
                     <button class="btn btn-secondary btn-sm" @click.stop="openDatasetProps('{{$ds.Name}}', '{{$ds.Compression}}', '{{$ds.RecordSize}}', '{{$ds.Quota}}', '{{$ds.Atime}}', '{{$ds.ReadOnly}}', '{{$ds.Type}}')">Properties</button>
                     <button class="btn btn-secondary btn-sm" @click.stop="openCreateSnap('{{$ds.Name}}')">Snap</button>
                     {{if eq $ds.Type "filesystem"}}
-                      <button class="btn btn-secondary btn-sm" @click.stop="openCreateShare('{{$ds.Name}}', '{{$ds.Mountpoint}}')">Share</button>
+                      <button class="btn btn-secondary btn-sm" @click.stop="openCreateShare('{{baseName $ds.Name}}', '{{$ds.Mountpoint}}', 'smb')">Share</button>
                     {{end}}
                     {{if gt $depth 0}}
                       <button class="btn btn-danger btn-sm" @click.stop="openDangerConfirm('dataset', '{{$ds.Name}}')">Destroy</button>

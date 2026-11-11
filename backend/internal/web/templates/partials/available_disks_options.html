@@ -1,0 +1,8 @@
+<option value="">-- Select an available disk --</option>
+{{range $d := .Disks}}
+  {{if and (not $d.ZfsPool) (not $d.IsSystemDisk)}}
+    <option value="{{if $d.ByIDPath}}{{$d.ByIDPath}}{{else}}{{$d.Path}}{{end}}">
+      {{$d.Name}} - {{$d.Model}} ({{formatBytes $d.SizeBytes}})
+    </option>
+  {{end}}
+{{end}}

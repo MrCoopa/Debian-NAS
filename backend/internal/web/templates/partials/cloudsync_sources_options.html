@@ -1,0 +1,6 @@
+{{range $p := .Pools}}
+  <option value="/mnt/{{$p.Name}}">/mnt/{{$p.Name}} (Pool Root)</option>
+{{end}}
+{{range $ds := .Datasets}}
+  <option value="/mnt/{{$ds.Name}}">/mnt/{{$ds.Name}}</option>
+{{end}}

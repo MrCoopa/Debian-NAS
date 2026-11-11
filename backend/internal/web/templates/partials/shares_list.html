@@ -1,10 +1,9 @@
-<div id="shares-container" hx-get="/ui/partials/shares" hx-trigger="shareUpdate from:body" hx-ext="morph"
-  hx-swap="morph">
+<div id="shares-container" hx-get="/ui/partials/shares" hx-trigger="shareUpdate from:body" hx-swap="outerHTML">
 
   <!-- 1. SMB / CIFS Shares Table -->
   <div class="table-card" style="margin-bottom: 1.5rem;">
     <div class="table-toolbar">
-      <div style="display: flex; align-items: center; gap: 0.6rem;">
+      <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
         <span class="toolbar-title">SMB / CIFS Shares (Windows &amp; macOS)</span>
         <span class="badge font-mono" style="background: rgba(0,139,229,0.18); color: #93c5fd; border: 1px solid rgba(0,139,229,0.3); font-size: 0.72rem; padding: 1px 6px;">
           {{len .SmbShares}} Active
@@ -14,6 +13,7 @@
         <button class="btn btn-primary btn-sm" @click="openCreateShare('', '', 'smb')">+ Add SMB Share</button>
       </div>
     </div>
+    <div class="table-responsive">
     <table class="pf-table">
       <thead>
         <tr>
@@ -63,12 +63,17 @@
           </td>
           <td><span class="badge-status green">Active</span></td>
           <td class="col-actions">
-            <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
-              <button class="btn btn-secondary btn-sm"
-                @click="openEditSmbShare('{{$s.Name}}', '{{$s.Path}}', {{$s.ReadOnly}}, {{$s.GuestOk}}, '{{join $s.ValidUsers ","}}')">Edit</button>
-              <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/smb?name={{$s.Name}}"
+            <div style="display: flex; gap: 0.35rem; justify-content: flex-end; flex-wrap: wrap;">
+              <button type="button" class="btn btn-secondary btn-sm"
+                data-name="{{$s.Name}}"
+                data-path="{{$s.Path}}"
+                data-readonly="{{$s.ReadOnly}}"
+                data-guest="{{$s.GuestOk}}"
+                data-users="{{join $s.ValidUsers ","}}"
+                @click="openEditSmbShare($el.dataset.name, $el.dataset.path, $el.dataset.readonly === 'true', $el.dataset.guest === 'true', $el.dataset.users)">Edit</button>
+              <button type="button" class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/smb?name={{urlquery $s.Name}}"
                 hx-confirm="Delete SMB share '{{$s.Name}}'?" hx-target="#shares-container"
-                hx-swap="morph">Delete</button>
+                hx-swap="outerHTML">Delete</button>
             </div>
           </td>
         </tr>
@@ -76,12 +81,13 @@
         {{end}}
       </tbody>
     </table>
+    </div>
   </div>
 
   <!-- 2. NFSv4 Exports Table -->
   <div class="table-card">
     <div class="table-toolbar">
-      <div style="display: flex; align-items: center; gap: 0.6rem;">
+      <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
         <span class="toolbar-title">NFS Exports (Linux, Proxmox &amp; Kubernetes)</span>
         <span class="badge font-mono" style="background: rgba(245,158,11,0.18); color: #fcd34d; border: 1px solid rgba(245,158,11,0.3); font-size: 0.72rem; padding: 1px 6px;">
           {{len .NfsExports}} Active
@@ -91,6 +97,7 @@
         <button class="btn btn-secondary btn-sm" @click="openCreateShare('', '', 'nfs')">+ Add NFS Export</button>
       </div>
     </div>
+    <div class="table-responsive">
     <table class="pf-table">
       <thead>
         <tr>
@@ -132,12 +139,15 @@
           </td>
           <td><span class="badge-status green">Active</span></td>
           <td class="col-actions">
-            <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
-              <button class="btn btn-secondary btn-sm"
-                @click="openEditNfsShare('{{$n.Path}}', {{$n.ReadOnly}}, '{{$n.AllowedClients}}')">Edit</button>
-              <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/nfs?path={{$n.Path}}"
+            <div style="display: flex; gap: 0.35rem; justify-content: flex-end; flex-wrap: wrap;">
+              <button type="button" class="btn btn-secondary btn-sm"
+                data-path="{{$n.Path}}"
+                data-readonly="{{$n.ReadOnly}}"
+                data-clients="{{$n.AllowedClients}}"
+                @click="openEditNfsShare($el.dataset.path, $el.dataset.readonly === 'true', $el.dataset.clients)">Edit</button>
+              <button type="button" class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/nfs?path={{urlquery $n.Path}}"
                 hx-confirm="Remove NFS export '{{$n.Path}}'?" hx-target="#shares-container"
-                hx-swap="morph">Delete</button>
+                hx-swap="outerHTML">Delete</button>
             </div>
           </td>
         </tr>
@@ -145,6 +155,7 @@
         {{end}}
       </tbody>
     </table>
+    </div>
   </div>
 
 </div>

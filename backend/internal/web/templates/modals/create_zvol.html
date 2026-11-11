@@ -4,18 +4,15 @@
       <h3>Create New Zvol (Block Device)</h3>
       <button type="button" class="modal-close" @click="openCreateZvolModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/zfs/zvols" hx-target="#datasets-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openCreateZvolModal = false">
+    <form hx-post="/ui/actions/zfs/zvols" hx-target="#datasets-container" hx-swap="morph" @htmx:after-request="if (event.target === $el && event.detail.successful) openCreateZvolModal = false">
       <div class="form-group">
         <label>Parent Pool / Dataset</label>
-        <select name="parent" required>
-          {{range $p := .Pools}}
-            <option value="{{$p.Name}}">{{$p.Name}} (Root Pool)</option>
-          {{end}}
-          {{range $ds := .Datasets}}
-            {{if and (eq $ds.Type "filesystem") (contains $ds.Name "/")}}
-              <option value="{{$ds.Name}}">{{$ds.Name}}</option>
-            {{end}}
-          {{end}}
+        <select name="parent" required
+                hx-get="/ui/partials/modals/parent_datasets"
+                hx-trigger="poolUpdate from:body, datasetUpdate from:body"
+                hx-target="this"
+                hx-swap="innerHTML">
+          {{template "partials/parent_datasets_options.html" .}}
         </select>
       </div>
 

@@ -1,4 +1,4 @@
-<div class="omv-dashboard-grid" id="system-metrics-container" hx-get="/ui/partials/system" hx-trigger="every 4s" hx-ext="morph" hx-swap="morph">
+<div class="omv-dashboard-grid" id="system-metrics-container" hx-get="/ui/partials/system" hx-trigger="every 4s [currentTab === 'dashboard' && !document.hidden], nasRefresh" hx-ext="morph" hx-swap="morph">
 
   <!-- =========================================================================
        COLUMN 1: CPU RRD, CPU UTILIZATION DONUT, FILE SYSTEMS
@@ -80,6 +80,7 @@
     <!-- 3. File Systems (Native ZFS Storage) -->
     <div class="omv-card">
       <div class="omv-card-title">File Systems (OpenZFS Native)</div>
+      <div class="table-responsive">
       <table class="pf-table">
         <thead>
           <tr>
@@ -116,6 +117,7 @@
           {{end}}
         </tbody>
       </table>
+      </div>
     </div>
 
   </div>
@@ -327,6 +329,7 @@
         </div>
       </div>
 
+      <div class="table-responsive">
       <table class="pf-table">
         <thead>
           <tr>
@@ -364,6 +367,7 @@
           {{end}}
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- 3. S.M.A.R.T. Disks Card -->
@@ -371,7 +375,7 @@
       <div class="omv-card-title">S.M.A.R.T.</div>
       <div class="omv-smart-disks-grid">
         {{range $d := .Disks}}
-          <button type="button" class="omv-smart-btn" @click="currentTab = 'disks'; expandedDisk = '{{$d.Name}}'">
+          <button type="button" class="omv-smart-btn" data-disk="{{$d.Name}}" @click="expandedDisks[$el.dataset.disk] = true; setTab('disks')">
             {{$d.Path}}
           </button>
         {{else}}

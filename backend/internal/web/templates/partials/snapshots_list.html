@@ -15,6 +15,7 @@
         <button class="btn btn-primary btn-sm" @click="openCreateSnap('')">+ Take Manual Snapshot</button>
       </div>
     </div>
+    <div class="table-responsive">
     <table class="pf-table">
       <thead>
         <tr>
@@ -31,14 +32,14 @@
           <tr><td colspan="6" class="text-dim" style="text-align: center; padding: 1.5rem;">No snapshots found. Snapshots take 0 additional space until data is modified.</td></tr>
         {{else}}
           {{range $s := .Snapshots}}
-            <tr x-show="matchesSnap('{{$s.Name}}', '{{$s.Dataset}}')">
+            <tr id="row-snap-{{domId $s.Name}}" x-show="matchesSnap('{{$s.Name}}', '{{$s.Dataset}}')">
               <td><strong class="font-mono text-blue">{{$s.Name}}</strong></td>
               <td><span class="font-mono text-dim">{{$s.Dataset}}</span></td>
               <td class="font-mono">{{formatBytes $s.ReferencedBytes}}</td>
               <td class="font-mono text-dim">{{formatBytes $s.UsedBytes}}</td>
               <td class="font-mono text-dim" style="font-size: 0.78rem;">{{formatTime $s.Created}}</td>
               <td class="col-actions">
-                <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
+                <div style="display: flex; gap: 0.35rem; justify-content: flex-end; flex-wrap: wrap;">
                   <button class="btn btn-secondary btn-sm" hx-post="/ui/actions/zfs/snapshots/rollback" hx-vals='{"snapshot": "{{$s.Name}}"}' hx-confirm="WARNING: Rollback dataset to snapshot '{{$s.Name}}'? All newer data and snapshots will be lost!" hx-target="#snapshots-container" hx-swap="morph">Rollback</button>
                   <button class="btn btn-secondary btn-sm" @click="openCloneSnap('{{$s.Name}}')">Clone</button>
                   <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/zfs/snapshots?name={{urlquery $s.Name}}" hx-confirm="Destroy snapshot '{{$s.Name}}'?" hx-target="#snapshots-container" hx-swap="morph">Destroy</button>
@@ -49,5 +50,6 @@
         {{end}}
       </tbody>
     </table>
+    </div>
   </div>
 </div>

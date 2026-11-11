@@ -150,7 +150,11 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("GET /ui/partials/modals/create_share", s.handleUIPartialCreateShareModal)
 		mux.HandleFunc("GET /ui/partials/modals/share_users", s.handleUIPartialShareModalUsers)
 		mux.HandleFunc("GET /ui/partials/modals/snap_datasets", s.handleUIPartialModalSnapDatasets)
+		mux.HandleFunc("GET /ui/partials/modals/parent_datasets", s.handleUIPartialModalParentDatasets)
 		mux.HandleFunc("GET /ui/partials/modals/pool_disks", s.handleUIPartialModalPoolDisks)
+		mux.HandleFunc("GET /ui/partials/modals/share_datasets", s.handleUIPartialModalShareDatasets)
+		mux.HandleFunc("GET /ui/partials/modals/available_disks", s.handleUIPartialModalAvailableDisks)
+		mux.HandleFunc("GET /ui/partials/modals/cloudsync_sources", s.handleUIPartialModalCloudSyncSources)
 
 		mux.HandleFunc("POST /ui/actions/zfs/snapshot-tasks/save", s.handleUIActionSaveSnapshotTask)
 		mux.HandleFunc("POST /ui/actions/zfs/snapshot-tasks/toggle", s.handleUIActionToggleSnapshotTask)

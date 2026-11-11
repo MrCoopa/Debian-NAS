@@ -1,0 +1,8 @@
+{{range $p := .Pools}}
+  <option value="{{$p.Name}}">{{$p.Name}} (Root Pool)</option>
+{{end}}
+{{range $ds := .Datasets}}
+  {{if and (eq $ds.Type "filesystem") (contains $ds.Name "/")}}
+    <option value="{{$ds.Name}}">{{$ds.Name}}</option>
+  {{end}}
+{{end}}

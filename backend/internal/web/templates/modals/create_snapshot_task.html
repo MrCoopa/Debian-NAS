@@ -7,7 +7,7 @@
 
     <form hx-post="/ui/actions/zfs/snapshot-tasks/save"
           hx-target="#snapshot-tasks-container"
-          hx-swap="morph"
+          hx-swap="outerHTML"
           @htmx:after-request="if (event.target === $el && event.detail.successful) { openSnapTaskModal = false; }">
       <input type="hidden" name="id" :value="snapTaskForm.id">
 

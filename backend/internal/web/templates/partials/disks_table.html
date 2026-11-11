@@ -1,4 +1,4 @@
-<div id="disks-container" hx-get="/ui/partials/disks" hx-trigger="every 10s, diskUpdate from:body" hx-ext="morph" hx-swap="morph"
+<div id="disks-container" hx-get="/ui/partials/disks" hx-trigger="every 10s [currentTab === 'disks' && !document.hidden], diskUpdate from:body" hx-ext="morph" hx-swap="morph"
      x-data="{
        selectedDisks: [],
        toggleAll(e) {
@@ -11,6 +11,7 @@
      }">
   <!-- Disks Table View (TrueNAS Schema) -->
   <div class="table-card" style="background: #141414; border: 1px solid #262626; border-radius: 4px; overflow: hidden;">
+    <div class="table-responsive">
     <table class="pf-table truenas-disk-table" style="width: 100%; border-collapse: collapse;">
       <thead>
         <tr style="border-bottom: 1px solid #262626; font-size: 0.78rem; color: #a0a0a0; text-align: left;">
@@ -28,7 +29,7 @@
       </thead>
       <tbody>
         {{range $d := .Disks}}
-          <tr style="border-bottom: 1px solid #1f1f1f; transition: background 0.15s ease;"
+          <tr id="row-disk-{{domId $d.Name}}" style="border-bottom: 1px solid #1f1f1f; transition: background 0.15s ease;"
               :style="isDiskExpanded('{{$d.Name}}') ? 'background: #1c1c1c;' : ''">
             <td style="padding: 0.75rem 1rem;">
               <input type="checkbox" class="disk-checkbox" value="{{$d.Name}}" x-model="selectedDisks">
@@ -72,7 +73,7 @@
           </tr>
 
           <!-- Expandable Detail Row (All Hardware Inspection & Actions) -->
-          <tr class="disk-detail-row"
+          <tr id="row-disk-detail-{{domId $d.Name}}" class="disk-detail-row"
               :class="{ 'expanded': isDiskExpanded('{{$d.Name}}') }"
               x-show="isDiskExpanded('{{$d.Name}}')"
               style="background: #171717; border-bottom: 1px solid #262626;">
@@ -181,5 +182,6 @@
         {{end}}
       </tbody>
     </table>
+    </div>
   </div>
 </div>

@@ -221,14 +221,69 @@ func TestEngine_RenderAll(t *testing.T) {
 		"partials/shares_list.html",
 		"partials/users_list.html",
 		"partials/snapshots_list.html",
+		"partials/snapshot_tasks.html",
 		"partials/network_list.html",
 		"partials/cloudsync_tasks.html",
+		"partials/share_datasets_picker.html",
+		"partials/parent_datasets_options.html",
+		"partials/available_disks_options.html",
+		"partials/cloudsync_sources_options.html",
+		"partials/share_users_checkboxes.html",
+		"partials/snap_datasets_options.html",
+		"partials/pool_disks_checkboxes.html",
 	}
 
 	for _, p := range partials {
 		var pBuf bytes.Buffer
 		if err := engine.Render(&pBuf, p, testData); err != nil {
 			t.Errorf("Failed to render partial %s: %v", p, err)
+		}
+		if pBuf.Len() == 0 {
+			t.Errorf("Partial %s rendered empty", p)
+		}
+	}
+}
+
+func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
+	checks := []struct {
+		file    string
+		want    []string
+		notWant []string
+	}{
+		{
+			file: "templates/partials/topbar.html",
+			want: []string{`toggleSidebar()`, `setTab('system')`},
+		},
+		{
+			file: "templates/layout.html",
+			want: []string{`omv-sidebar-backdrop`, `toggleSidebar()`, `setTab(`, `shareCustomPathMode`, `table-responsive`},
+		},
+		{
+			file: "templates/partials/shares_list.html",
+			want: []string{`hx-swap="outerHTML"`, `data-name="`, `openEditSmbShare($el.dataset.name`, `openEditNfsShare($el.dataset.path`, `table-responsive`},
+		},
+		{
+			file: "templates/partials/system_metrics.html",
+			want: []string{`currentTab === 'dashboard' && !document.hidden`, `expandedDisks[$el.dataset.disk] = true`, `table-responsive`},
+			notWant: []string{`expandedDisk =`},
+		},
+	}
+
+	for _, c := range checks {
+		raw, err := templateFiles.ReadFile(c.file)
+		if err != nil {
+			t.Fatalf("failed reading %s: %v", c.file, err)
+		}
+		text := string(raw)
+		for _, w := range c.want {
+			if !strings.Contains(text, w) {
+				t.Errorf("%s missing required markup %q", c.file, w)
+			}
+		}
+		for _, nw := range c.notWant {
+			if strings.Contains(text, nw) {
+				t.Errorf("%s still contains stale/buggy markup %q", c.file, nw)
+			}
 		}
 	}
 }

@@ -305,6 +305,20 @@ func funcMap() template.FuncMap {
 		"join":      strings.Join,
 		"hasPrefix": strings.HasPrefix,
 		"contains":  strings.Contains,
+		"domId": func(s string) string {
+			var b strings.Builder
+			for _, r := range s {
+				if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+					b.WriteRune(r)
+				} else {
+					b.WriteByte('_')
+				}
+			}
+			if b.Len() == 0 {
+				return "empty"
+			}
+			return b.String()
+		},
 		"seq": func(n int) []int {
 			out := make([]int, n)
 			for i := range out {

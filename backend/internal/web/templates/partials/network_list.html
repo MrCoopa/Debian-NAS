@@ -1,8 +1,9 @@
-<div id="network-container" hx-get="/ui/partials/network" hx-trigger="every 5s" hx-ext="morph" hx-swap="morph">
+<div id="network-container" hx-get="/ui/partials/network" hx-trigger="every 5s [currentTab === 'system' && !document.hidden], nasRefresh" hx-ext="morph" hx-swap="morph">
   <div class="table-card">
     <div class="table-toolbar">
       <span class="toolbar-title">Physical &amp; Virtual Network Interfaces</span>
     </div>
+    <div class="table-responsive">
     <table class="pf-table">
       <thead>
         <tr>
@@ -18,7 +19,7 @@
       </thead>
       <tbody>
         {{range $iface := .System.Network}}
-          <tr>
+          <tr id="row-iface-{{domId $iface.Name}}">
             <td><strong class="font-mono text-blue">{{$iface.Name}}</strong></td>
             <td><span class="badge-status slate font-mono" style="font-size: 0.72rem;">{{$iface.Type}}</span></td>
             <td><span class="font-mono">{{$iface.Speed}}</span></td>
@@ -31,6 +32,7 @@
         {{end}}
       </tbody>
     </table>
+    </div>
   </div>
 </div>
 

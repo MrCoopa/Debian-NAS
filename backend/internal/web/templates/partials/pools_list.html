@@ -1,4 +1,4 @@
-<div id="pools-container" hx-get="/ui/partials/pools" hx-trigger="every 5s, poolUpdate from:body" hx-ext="morph" hx-swap="morph">
+<div id="pools-container" hx-get="/ui/partials/pools" hx-trigger="every 5s [currentTab === 'pools' && !document.hidden], poolUpdate from:body" hx-ext="morph" hx-swap="morph">
   {{if eq (len .Pools) 0}}
     <div class="empty-state-card" style="text-align: center; padding: 3rem 1.5rem; background: var(--fn-bg-card); border: 1px dashed var(--fn-border-main); border-radius: 2px;">
       <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--fn-text-secondary);">No active OpenZFS pools found</h3>
@@ -10,7 +10,7 @@
     </div>
   {{else}}
     {{range $p := .Pools}}
-      <div class="pool-detail-card" style="background: var(--fn-bg-card); border: 1px solid var(--fn-border-main); border-radius: 2px; margin-bottom: 1.5rem; overflow: hidden;">
+      <div id="pool-card-{{domId $p.Name}}" class="pool-detail-card" style="background: var(--fn-bg-card); border: 1px solid var(--fn-border-main); border-radius: 2px; margin-bottom: 1.5rem; overflow: hidden;">
         <!-- Header Strip -->
         <div style="background: var(--fn-bg-card-header); border-bottom: 1px solid var(--fn-border-main); padding: 0.85rem 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
           <div style="display: flex; align-items: center; gap: 0.75rem;">
@@ -51,7 +51,7 @@
         {{end}}
 
         <!-- Metrics Strip -->
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--fn-border-main); padding: 0.75rem 1.25rem; font-size: 0.8rem; background: var(--fn-bg-card-subtle);">
+        <div class="pool-metrics-grid">
           <div>
             <span class="text-dim">Allocated:</span>
             <strong>{{formatBytes $p.Allocated}}</strong> <span class="text-dim">({{formatPercent (add $p.CapPercent 0)}}%)</span>
@@ -71,6 +71,7 @@
         </div>
 
         <!-- Vdevs & Member Disks Table -->
+        <div class="table-responsive">
         <table class="pf-table" style="margin: 0; border: none;">
           <thead>
             <tr>
@@ -86,7 +87,7 @@
           <tbody>
             {{range $v := $p.Vdevs}}
               {{if $v.IsDisk}}
-                <tr>
+                <tr id="row-vdev-{{domId $p.Name}}-{{domId $v.Name}}">
                   <td>
                     <strong class="font-mono text-blue" style="cursor: pointer;" @click="openDiskDrawer('{{$v.Name}}')">
                       {{$v.Name}}
@@ -117,6 +118,7 @@
             {{end}}
           </tbody>
         </table>
+        </div>
       </div>
     {{end}}
   {{end}}

@@ -4,7 +4,7 @@
       <h3>Create Storage User &amp; SMB Credentials</h3>
       <button type="button" class="modal-close" @click="openCreateUserModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/shares/users" hx-target="#users-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openCreateUserModal = false">
+    <form hx-post="/ui/actions/shares/users" hx-target="#users-container" hx-swap="outerHTML" @htmx:after-request="if (event.detail.successful) openCreateUserModal = false">
       <div class="form-group">
         <label>Linux Storage Username</label>
         <input type="text" name="username" placeholder="e.g. backupuser, admin" required pattern="^[a-z_][a-z0-9_-]{0,31}$">

@@ -1,11 +1,150 @@
 // Debian Storage Appliance - Modern Go + HTMX + Alpine.js Architecture
 console.log("Debian Storage Appliance: Go + HTMX + Alpine.js initialized.");
 
-// Ensure Alpine.js processes newly swapped/morphed DOM elements
-document.addEventListener("htmx:afterSettle", function(event) {
-  if (window.Alpine && event.detail && event.detail.target) {
+(function () {
+  var lastActionSwap = {};
+
+  var TAB_CONTAINER_MAP = {
+    dashboard: { id: "system-metrics-container", event: "nasRefresh" },
+    disks: { id: "disks-container", event: "diskUpdate" },
+    pools: { id: "pools-container", event: "poolUpdate" },
+    datasets: { id: "datasets-container", event: "datasetUpdate" },
+    shares: { id: "shares-container", event: "shareUpdate" },
+    users: { id: "users-container", event: "userUpdate" },
+    protection: { id: "snapshots-container", event: "snapshotUpdate" },
+    system: { id: "network-container", event: "nasRefresh" }
+  };
+
+  window.nasTriggerHasError = function (xhr) {
+    if (!xhr || typeof xhr.getResponseHeader !== "function") {
+      return { hasError: false, message: "" };
+    }
+    var raw = xhr.getResponseHeader("HX-Trigger");
+    if (!raw) {
+      return { hasError: false, message: "" };
+    }
     try {
-      window.Alpine.initTree(event.detail.target);
-    } catch(e) {}
-  }
-});
+      var parsed = JSON.parse(raw);
+      var toast = parsed.showToast || parsed["show-toast"];
+      if (toast && toast.type === "error") {
+        return { hasError: true, message: toast.message || "Operation failed" };
+      }
+    } catch (e) {}
+    return { hasError: false, message: "" };
+  };
+
+  window.nasSyncSharePathMode = function (pathValue) {
+    var path = (pathValue || "").trim();
+    if (!path) {
+      return false;
+    }
+    var select = document.getElementById("share-dataset-select");
+    if (!select || !select.options) {
+      return false;
+    }
+    for (var i = 0; i < select.options.length; i++) {
+      if (select.options[i].value === path) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  window.nasRefreshTab = function (tabName) {
+    var target = TAB_CONTAINER_MAP[tabName];
+    if (target && window.htmx) {
+      var el = document.getElementById(target.id);
+      if (el) {
+        delete lastActionSwap[target.id];
+        el.dataset.nasManualRefresh = String(Date.now());
+        window.htmx.trigger(el, target.event);
+      }
+    }
+    if (tabName === "protection" && window.htmx) {
+      var tasks = document.getElementById("snapshot-tasks-container");
+      var cloud = document.getElementById("cloudsync-container");
+      if (tasks) {
+        delete lastActionSwap["snapshot-tasks-container"];
+        tasks.dataset.nasManualRefresh = String(Date.now());
+        window.htmx.trigger(tasks, "snapshotTaskUpdate");
+      }
+      if (cloud) {
+        delete lastActionSwap["cloudsync-container"];
+        cloud.dataset.nasManualRefresh = String(Date.now());
+        window.htmx.trigger(cloud, "cloudSyncUpdate");
+      }
+    }
+  };
+
+  // Deduplicate immediate self-triggered partial GETs right after an action response already updated the same container.
+  document.addEventListener("htmx:beforeRequest", function (event) {
+    var detail = event.detail;
+    if (!detail || !detail.requestConfig || detail.requestConfig.verb !== "get") {
+      return;
+    }
+    var elt = detail.elt;
+    if (!elt || !elt.id) {
+      return;
+    }
+    var reqPath = detail.requestConfig.path || "";
+    if (reqPath.indexOf("/ui/partials/") !== 0) {
+      return;
+    }
+    var trig = detail.requestConfig.triggeringEvent;
+    if (trig && trig.type && trig.type.indexOf("every") === 0) {
+      return;
+    }
+    if (elt.dataset && elt.dataset.nasManualRefresh) {
+      var manualAge = Date.now() - Number(elt.dataset.nasManualRefresh);
+      delete elt.dataset.nasManualRefresh;
+      if (manualAge < 500) {
+        return;
+      }
+    }
+    var swappedAt = lastActionSwap[elt.id];
+    if (swappedAt && Date.now() - swappedAt < 450) {
+      event.preventDefault();
+    }
+  });
+
+  document.addEventListener("htmx:afterSwap", function (event) {
+    var detail = event.detail;
+    if (!detail) {
+      return;
+    }
+    var target = detail.target;
+    if (target && target.id && detail.requestConfig && detail.requestConfig.verb !== "get") {
+      lastActionSwap[target.id] = Date.now();
+    }
+  });
+
+  // Ensure both HTMX and Alpine.js initialize newly swapped/morphed DOM elements
+  document.addEventListener("htmx:afterSettle", function (event) {
+    var target = event.detail && event.detail.target;
+    if (!target) {
+      return;
+    }
+    if (window.htmx && typeof window.htmx.process === "function") {
+      try {
+        window.htmx.process(target);
+      } catch (e) {}
+    }
+    if (window.Alpine && typeof window.Alpine.initTree === "function") {
+      try {
+        window.Alpine.initTree(target);
+      } catch (e) {}
+    }
+  });
+
+  document.addEventListener("htmx:responseError", function () {
+    window.dispatchEvent(new CustomEvent("show-toast", {
+      detail: { message: "Request failed. Please check NAS connection.", type: "error" }
+    }));
+  });
+
+  document.addEventListener("htmx:sendError", function () {
+    window.dispatchEvent(new CustomEvent("show-toast", {
+      detail: { message: "Network error reaching NAS backend.", type: "error" }
+    }));
+  });
+})();

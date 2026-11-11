@@ -37,7 +37,33 @@ type ViewData struct {
 	ErrorMessage  string
 }
 
+type viewFetchMask struct {
+	system        bool
+	pools         bool
+	disks         bool
+	datasets      bool
+	shares        bool
+	users         bool
+	snapshots     bool
+	snapshotTasks bool
+	cloud         bool
+}
+
 func (s *Server) buildViewData(req ...*http.Request) *ViewData {
+	return s.buildPartialViewData(viewFetchMask{
+		system:        true,
+		pools:         true,
+		disks:         true,
+		datasets:      true,
+		shares:        true,
+		users:         true,
+		snapshots:     true,
+		snapshotTasks: true,
+		cloud:         true,
+	}, req...)
+}
+
+func (s *Server) buildPartialViewData(mask viewFetchMask, req ...*http.Request) *ViewData {
 	currentUser := "root"
 	if len(req) > 0 && req[0] != nil {
 		if c, err := req[0].Cookie("nas_user"); err == nil && strings.TrimSpace(c.Value) != "" {
@@ -45,28 +71,59 @@ func (s *Server) buildViewData(req ...*http.Request) *ViewData {
 		}
 	}
 
-	status := s.sys.GetStatus()
+	var status *system.SystemStatus
+	if mask.system && s.sys != nil {
+		status = s.sys.GetStatus()
+	}
+
 	var pools []*zfs.Pool
-	if s.zfs != nil {
+	if (mask.pools || mask.disks) && s.zfs != nil {
 		var poolsErr error
 		pools, poolsErr = s.zfs.ListPools()
-		if poolsErr == nil && s.disks != nil {
+		if poolsErr == nil && mask.disks && s.disks != nil {
 			_, _ = s.disks.ListDisks()
 			s.syncDiskPoolMembershipFromPools(pools)
 		}
 	}
+
 	var allDisks []*disks.DiskInfo
-	if s.disks != nil {
+	if mask.disks && s.disks != nil {
 		allDisks, _ = s.disks.ListDisks()
 	}
-	datasets, _ := s.zfs.ListDatasets()
-	snapshots, _ := s.zfs.ListSnapshots()
-	snapTasks := s.zfs.ListSnapshotTasks()
-	smbShares, _ := s.shares.ListSmb()
-	nfsExports, _ := s.shares.ListNfs()
-	users, _ := s.shares.ListUsers()
-	cloudJobs, _ := s.cloudsync.ListJobs()
-	cloudRemotes, _ := s.cloudsync.ListRemotes()
+
+	var datasets []*zfs.Dataset
+	if mask.datasets && s.zfs != nil {
+		datasets, _ = s.zfs.ListDatasets()
+	}
+
+	var snapshots []*zfs.Snapshot
+	if mask.snapshots && s.zfs != nil {
+		snapshots, _ = s.zfs.ListSnapshots()
+	}
+
+	var snapTasks []*zfs.SnapshotTask
+	if mask.snapshotTasks && s.zfs != nil {
+		snapTasks = s.zfs.ListSnapshotTasks()
+	}
+
+	var smbShares []*shares.SmbShare
+	var nfsExports []*shares.NfsExport
+	if mask.shares && s.shares != nil {
+		smbShares, _ = s.shares.ListSmb()
+		nfsExports, _ = s.shares.ListNfs()
+	}
+
+	var users []shares.StorageUser
+	if mask.users && s.shares != nil {
+		users, _ = s.shares.ListUsers()
+	}
+
+	var cloudJobs []*cloudsync.SyncJob
+	var cloudRemotes []cloudsync.Remote
+	if mask.cloud && s.cloudsync != nil {
+		cloudJobs, _ = s.cloudsync.ListJobs()
+		cloudRemotes, _ = s.cloudsync.ListRemotes()
+	}
 
 	standbyCount := 0
 	spinningCount := 0
@@ -106,6 +163,12 @@ func (s *Server) buildViewData(req ...*http.Request) *ViewData {
 		StandbyCount:  standbyCount,
 		SpinningCount: spinningCount,
 	}
+}
+
+func (s *Server) renderUIPartial(w http.ResponseWriter, tmpl string, data *ViewData) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	_ = s.web.Render(w, tmpl, data)
 }
 
 func (s *Server) setHXTrigger(w http.ResponseWriter, toastMsg, toastType string, extraTriggers ...string) {
@@ -230,73 +293,111 @@ func (s *Server) handleUIRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUIPartialSystem(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/system_metrics.html", s.buildViewData(r))
+	s.renderUIPartial(w, "partials/system_metrics.html", s.buildPartialViewData(viewFetchMask{
+		system: true, pools: true, disks: true, datasets: true,
+	}, r))
 }
 
 func (s *Server) handleUIPartialTop(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/topbar.html", s.buildViewData(r))
+	s.renderUIPartial(w, "partials/topbar.html", s.buildPartialViewData(viewFetchMask{
+		system: true,
+	}, r))
 }
 
 func (s *Server) handleUIPartialPools(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/pools_list.html", s.buildViewData())
+	s.renderUIPartial(w, "partials/pools_list.html", s.buildPartialViewData(viewFetchMask{
+		pools: true,
+	}))
 }
 
 func (s *Server) handleUIPartialDisks(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/disks_table.html", s.buildViewData())
+	s.renderUIPartial(w, "partials/disks_table.html", s.buildPartialViewData(viewFetchMask{
+		pools: true, disks: true,
+	}))
 }
 
 func (s *Server) handleUIPartialDatasets(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/datasets_list.html", s.buildViewData())
+	s.renderUIPartial(w, "partials/datasets_list.html", s.buildPartialViewData(viewFetchMask{
+		datasets: true, shares: true,
+	}))
 }
 
 func (s *Server) handleUIPartialShares(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/shares_list.html", s.buildViewData())
+	s.renderUIPartial(w, "partials/shares_list.html", s.buildPartialViewData(viewFetchMask{
+		shares: true,
+	}))
 }
 
 func (s *Server) handleUIPartialUsers(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/users_list.html", s.buildViewData())
+	s.renderUIPartial(w, "partials/users_list.html", s.buildPartialViewData(viewFetchMask{
+		users: true, shares: true,
+	}))
 }
 
 func (s *Server) handleUIPartialSnapshots(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/snapshots_list.html", s.buildViewData())
+	s.renderUIPartial(w, "partials/snapshots_list.html", s.buildPartialViewData(viewFetchMask{
+		snapshots: true,
+	}))
 }
 
 func (s *Server) handleUIPartialNetwork(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/network_list.html", s.buildViewData())
+	s.renderUIPartial(w, "partials/network_list.html", s.buildPartialViewData(viewFetchMask{
+		system: true,
+	}))
 }
 
 func (s *Server) handleUIPartialCloudSync(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/cloudsync_tasks.html", s.buildViewData())
+	s.renderUIPartial(w, "partials/cloudsync_tasks.html", s.buildPartialViewData(viewFetchMask{
+		cloud: true,
+	}))
 }
 
 func (s *Server) handleUIPartialCreateShareModal(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "modals/create_share.html", s.buildViewData())
+	s.renderUIPartial(w, "modals/create_share.html", s.buildPartialViewData(viewFetchMask{
+		pools: true, datasets: true, users: true,
+	}))
 }
 
 func (s *Server) handleUIPartialShareModalUsers(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/share_users_checkboxes.html", s.buildViewData())
+	s.renderUIPartial(w, "partials/share_users_checkboxes.html", s.buildPartialViewData(viewFetchMask{
+		users: true,
+	}))
 }
 
 func (s *Server) handleUIPartialModalSnapDatasets(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/snap_datasets_options.html", s.buildViewData())
+	s.renderUIPartial(w, "partials/snap_datasets_options.html", s.buildPartialViewData(viewFetchMask{
+		pools: true, datasets: true,
+	}))
+}
+
+func (s *Server) handleUIPartialModalParentDatasets(w http.ResponseWriter, r *http.Request) {
+	s.renderUIPartial(w, "partials/parent_datasets_options.html", s.buildPartialViewData(viewFetchMask{
+		pools: true, datasets: true,
+	}))
 }
 
 func (s *Server) handleUIPartialModalPoolDisks(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/pool_disks_checkboxes.html", s.buildViewData(r))
+	s.renderUIPartial(w, "partials/pool_disks_checkboxes.html", s.buildPartialViewData(viewFetchMask{
+		pools: true, disks: true,
+	}, r))
+}
+
+func (s *Server) handleUIPartialModalShareDatasets(w http.ResponseWriter, r *http.Request) {
+	s.renderUIPartial(w, "partials/share_datasets_picker.html", s.buildPartialViewData(viewFetchMask{
+		pools: true, datasets: true,
+	}))
+}
+
+func (s *Server) handleUIPartialModalAvailableDisks(w http.ResponseWriter, r *http.Request) {
+	s.renderUIPartial(w, "partials/available_disks_options.html", s.buildPartialViewData(viewFetchMask{
+		pools: true, disks: true,
+	}))
+}
+
+func (s *Server) handleUIPartialModalCloudSyncSources(w http.ResponseWriter, r *http.Request) {
+	s.renderUIPartial(w, "partials/cloudsync_sources_options.html", s.buildPartialViewData(viewFetchMask{
+		pools: true, datasets: true,
+	}))
 }
 
 // ==============================================================================
@@ -1201,8 +1302,9 @@ func (s *Server) handleUIActionSaveCloudSync(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleUIPartialSnapshotTasks(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = s.web.Render(w, "partials/snapshot_tasks.html", s.buildViewData())
+	s.renderUIPartial(w, "partials/snapshot_tasks.html", s.buildPartialViewData(viewFetchMask{
+		snapshotTasks: true,
+	}))
 }
 
 func (s *Server) handleUIActionSaveSnapshotTask(w http.ResponseWriter, r *http.Request) {

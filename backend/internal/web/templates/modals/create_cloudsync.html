@@ -4,7 +4,7 @@
       <h3 x-text="isEditingCloudSync ? 'Edit Cloud Sync Task' : 'Add Cloud Sync Task'">Add Cloud Sync Task</h3>
       <button type="button" class="modal-close" @click="openCloudSyncModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/cloudsync/save" hx-target="#cloudsync-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openCloudSyncModal = false">
+    <form hx-post="/ui/actions/cloudsync/save" hx-target="#cloudsync-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el && event.detail.successful) openCloudSyncModal = false">
       <input type="hidden" name="id" :value="cloudSyncForm.id">
 
       <div class="form-group">
@@ -28,13 +28,12 @@
 
       <div class="form-group">
         <label>Local Source Dataset / Path</label>
-        <select name="source_path" x-model="cloudSyncForm.source_path" required>
-          {{range $p := .Pools}}
-            <option value="/mnt/{{$p.Name}}">/mnt/{{$p.Name}} (Pool Root)</option>
-          {{end}}
-          {{range $ds := .Datasets}}
-            <option value="/mnt/{{$ds.Name}}">/mnt/{{$ds.Name}}</option>
-          {{end}}
+        <select name="source_path" x-model="cloudSyncForm.source_path" required
+                hx-get="/ui/partials/modals/cloudsync_sources"
+                hx-trigger="poolUpdate from:body, datasetUpdate from:body"
+                hx-target="this"
+                hx-swap="innerHTML">
+          {{template "partials/cloudsync_sources_options.html" .}}
         </select>
       </div>
 

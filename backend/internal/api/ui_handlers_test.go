@@ -713,6 +713,149 @@ func TestUI_DestroyPoolWithChildDatasetsAndShares(t *testing.T) {
 	}
 }
 
+func TestUI_FreshShareCreateImmediatelyEditableAndModalsLiveRefresh(t *testing.T) {
+	srv := createTestServer(t)
+	handler := srv.Routes()
+
+	// 1. All live modal partial endpoints must return 200 OK with no-store Cache-Control.
+	liveModalPartials := []string{
+		"/ui/partials/modals/share_datasets",
+		"/ui/partials/modals/parent_datasets",
+		"/ui/partials/modals/available_disks",
+		"/ui/partials/modals/cloudsync_sources",
+		"/ui/partials/shares",
+	}
+	for _, ep := range liveModalPartials {
+		req := httptest.NewRequest("GET", ep, nil)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("GET %s returned status %d, expected 200", ep, rr.Code)
+		}
+		if cc := rr.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+			t.Fatalf("GET %s missing no-store Cache-Control header, got: %q", ep, cc)
+		}
+	}
+
+	// 2. Create a new pool and dataset without reloading the root page.
+	poolForm := url.Values{
+		"name":        {"livepool"},
+		"vdev_type":   {"stripe"},
+		"disks":       {"/dev/sdb"},
+		"compression": {"lz4"},
+	}
+	poolReq := httptest.NewRequest("POST", "/ui/actions/zfs/pools/create", strings.NewReader(poolForm.Encode()))
+	poolReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	poolRR := httptest.NewRecorder()
+	handler.ServeHTTP(poolRR, poolReq)
+	if poolRR.Code != http.StatusOK || !strings.Contains(poolRR.Header().Get("HX-Trigger"), "poolUpdate") {
+		t.Fatalf("failed creating livepool: %d %s", poolRR.Code, poolRR.Header().Get("HX-Trigger"))
+	}
+
+	dsForm := url.Values{
+		"parent":      {"livepool"},
+		"name":        {"livefs"},
+		"compression": {"lz4"},
+		"recordsize":  {"128K"},
+	}
+	dsReq := httptest.NewRequest("POST", "/ui/actions/zfs/datasets", strings.NewReader(dsForm.Encode()))
+	dsReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	dsRR := httptest.NewRecorder()
+	handler.ServeHTTP(dsRR, dsReq)
+	if dsRR.Code != http.StatusOK || !strings.Contains(dsRR.Header().Get("HX-Trigger"), "datasetUpdate") {
+		t.Fatalf("failed creating livepool/livefs: %d %s", dsRR.Code, dsRR.Header().Get("HX-Trigger"))
+	}
+
+	// Verify live modal endpoints immediately include the new dataset without a page reload.
+	for _, ep := range []string{
+		"/ui/partials/modals/share_datasets",
+		"/ui/partials/modals/parent_datasets",
+		"/ui/partials/modals/cloudsync_sources",
+	} {
+		req := httptest.NewRequest("GET", ep, nil)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if !strings.Contains(rr.Body.String(), "livepool/livefs") {
+			t.Fatalf("expected %s to immediately expose new dataset livepool/livefs, got: %s", ep, rr.Body.String())
+		}
+	}
+
+	// 3. Create an SMB share on the newly created dataset and verify returned markup is directly editable.
+	smbForm := url.Values{
+		"name":   {"live-smb"},
+		"path":   {"/mnt/livepool/livefs"},
+		"proto":  {"smb"},
+		"access": {"restricted"},
+	}
+	smbReq := httptest.NewRequest("POST", "/ui/actions/shares/save", strings.NewReader(smbForm.Encode()))
+	smbReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	smbRR := httptest.NewRecorder()
+	handler.ServeHTTP(smbRR, smbReq)
+	smbBody := smbRR.Body.String()
+	for _, expect := range []string{
+		`data-name="live-smb"`,
+		`data-path="/mnt/livepool/livefs"`,
+		`openEditSmbShare($el.dataset.name`,
+		`hx-swap="outerHTML"`,
+	} {
+		if !strings.Contains(smbBody, expect) {
+			t.Fatalf("saved SMB share partial missing %q so Edit without reload would fail", expect)
+		}
+	}
+
+	// Edit that SMB share right away without reloading and verify Read-Only updates immediately in returned HTML.
+	smbEditForm := url.Values{
+		"orig_name": {"live-smb"},
+		"orig_path": {"/mnt/livepool/livefs"},
+		"name":      {"live-smb"},
+		"path":      {"/mnt/livepool/livefs"},
+		"proto":     {"smb"},
+		"access":    {"readonly"},
+	}
+	smbEditReq := httptest.NewRequest("POST", "/ui/actions/shares/save", strings.NewReader(smbEditForm.Encode()))
+	smbEditReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	smbEditRR := httptest.NewRecorder()
+	handler.ServeHTTP(smbEditRR, smbEditReq)
+	if !strings.Contains(smbEditRR.Body.String(), `data-readonly="true"`) {
+		t.Fatalf("expected immediately updated SMB share to reflect data-readonly=\"true\", got: %s", smbEditRR.Body.String())
+	}
+
+	// 4. Create an NFS export and verify immediate editability without reload.
+	nfsForm := url.Values{
+		"name":            {"/mnt/livepool/livefs"},
+		"path":            {"/mnt/livepool/livefs"},
+		"proto":           {"nfs"},
+		"access":          {"restricted"},
+		"allowed_clients": {"192.168.10.0/24"},
+	}
+	nfsReq := httptest.NewRequest("POST", "/ui/actions/shares/save", strings.NewReader(nfsForm.Encode()))
+	nfsReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	nfsRR := httptest.NewRecorder()
+	handler.ServeHTTP(nfsRR, nfsReq)
+	nfsBody := nfsRR.Body.String()
+	if !strings.Contains(nfsBody, `data-clients="192.168.10.0/24"`) || !strings.Contains(nfsBody, `openEditNfsShare($el.dataset.path`) {
+		t.Fatalf("saved NFS export missing immediate edit bindings: %s", nfsBody)
+	}
+
+	// 5. Render create_share modal and ensure error responses stay inline via nasTriggerHasError/shareFormError.
+	var shareModalBuf strings.Builder
+	if err := srv.web.Render(&shareModalBuf, "modals/create_share.html", srv.buildViewData()); err != nil {
+		t.Fatalf("failed rendering modals/create_share.html: %v", err)
+	}
+	shareModalHTML := shareModalBuf.String()
+	for _, expect := range []string{
+		`/ui/partials/modals/share_datasets`,
+		`hx-target="this"`,
+		`nasTriggerHasError`,
+		`shareFormError`,
+		`hx-swap="outerHTML"`,
+	} {
+		if !strings.Contains(shareModalHTML, expect) {
+			t.Fatalf("modals/create_share.html missing %q", expect)
+		}
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
