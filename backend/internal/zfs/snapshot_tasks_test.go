@@ -197,3 +197,41 @@ func TestSnapshotTasks_NoMockSeedInRealMode(t *testing.T) {
 	}
 }
 
+func TestSnapshotTasks_CronMatchingAndNamingSchema(t *testing.T) {
+	tm := time.Date(2026, time.November, 15, 14, 30, 0, 0, time.UTC) // Sunday (weekday=0)
+
+	if got := expandNamingSchema("auto-%Y-%m-%d_%H-%M-%S", tm); got != "auto-2026-11-15_14-30-00" {
+		t.Errorf("expandNamingSchema full = %q", got)
+	}
+	if got := namingSchemaPrefix("daily-%Y-%m-%d"); got != "daily-" {
+		t.Errorf("namingSchemaPrefix = %q, want daily-", got)
+	}
+
+	cases := []struct {
+		expr string
+		tm   time.Time
+		want bool
+	}{
+		{"30 14 * * *", tm, true},
+		{"*/15 10-16 * * 0", tm, true},
+		{"*/15 10-16 * * 7", tm, true}, // Sunday via 7
+		{"0,30 14 15 11 *", tm, true},
+		{"45 14 * * *", tm, false},
+		{"30 14 * * 1-5", tm, false},
+	}
+	for _, tc := range cases {
+		if got := matchesCronSchedule(tc.expr, tc.tm); got != tc.want {
+			t.Errorf("matchesCronSchedule(%q) = %v, want %v", tc.expr, got, tc.want)
+		}
+	}
+
+	next := computeNextCronTime("0 15 * * *", tm)
+	if next.Hour() != 15 || next.Minute() != 0 {
+		t.Errorf("computeNextCronTime = %v, want 15:00", next)
+	}
+
+	if u, err := normalizeLifetimeUnit("weeks"); err != nil || u != "week(s)" {
+		t.Errorf("normalizeLifetimeUnit(weeks) = %q, %v", u, err)
+	}
+}
+

@@ -780,6 +780,10 @@ func (m *Manager) scanLinuxPools() ([]*Pool, error) {
 		}
 	}
 
+	return parseZpoolList(out, m.scanPoolStatus), nil
+}
+
+func parseZpoolList(out []byte, fetchStatus func(poolName string) ([]Vdev, ScrubStatus)) []*Pool {
 	var pools []*Pool
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	for _, line := range lines {
@@ -794,12 +798,12 @@ func (m *Manager) scanLinuxPools() ([]*Pool, error) {
 			}
 		}
 		var size, alloc, free uint64
-		var frag, cap int
+		var frag, capPct int
 		fmt.Sscanf(f[1], "%d", &size)
 		fmt.Sscanf(f[2], "%d", &alloc)
 		fmt.Sscanf(f[3], "%d", &free)
 		fmt.Sscanf(strings.TrimSuffix(f[4], "%"), "%d", &frag)
-		fmt.Sscanf(strings.TrimSuffix(f[5], "%"), "%d", &cap)
+		fmt.Sscanf(strings.TrimSuffix(f[5], "%"), "%d", &capPct)
 
 		autotrim := "off"
 		autoexpand := "on"
@@ -810,12 +814,16 @@ func (m *Manager) scanLinuxPools() ([]*Pool, error) {
 			autoexpand = strings.TrimSpace(f[8])
 		}
 
-		poolName := f[0]
-		vdevs, scrub := m.scanPoolStatus(poolName)
+		poolName := strings.TrimSpace(f[0])
+		var vdevs []Vdev
+		var scrub ScrubStatus
+		if fetchStatus != nil {
+			vdevs, scrub = fetchStatus(poolName)
+		}
 
 		p := &Pool{
 			Name:          poolName,
-			Health:        PoolHealth(f[6]),
+			Health:        PoolHealth(strings.TrimSpace(f[6])),
 			SizeBytes:     size,
 			SizeHuman:     formatZfsBytes(size),
 			Allocated:     alloc,
@@ -823,7 +831,7 @@ func (m *Manager) scanLinuxPools() ([]*Pool, error) {
 			FreeBytes:     free,
 			FreeHuman:     formatZfsBytes(free),
 			Fragmentation: frag,
-			CapPercent:    cap,
+			CapPercent:    capPct,
 			Vdevs:         vdevs,
 			Scrub:         scrub,
 			AtimeDefault:  "off",
@@ -833,7 +841,7 @@ func (m *Manager) scanLinuxPools() ([]*Pool, error) {
 		syncPoolFields(p)
 		pools = append(pools, p)
 	}
-	return pools, nil
+	return pools
 }
 
 func (m *Manager) scanPoolStatus(poolName string) ([]Vdev, ScrubStatus) {
@@ -888,9 +896,13 @@ func parseZpoolStatus(r io.Reader, poolName string) ([]Vdev, ScrubStatus) {
 			}
 
 			parts := strings.Fields(trimmed)
-			if len(parts) >= 2 {
+			isAuxHeader := len(parts) == 1 && (parts[0] == "logs" || parts[0] == "spares" || parts[0] == "cache" || parts[0] == "special" || parts[0] == "dedup")
+			if len(parts) >= 2 || isAuxHeader {
 				name := parts[0]
-				health := parts[1]
+				health := "ONLINE"
+				if len(parts) >= 2 {
+					health = parts[1]
+				}
 				if name == poolName {
 					continue
 				}
@@ -1048,6 +1060,10 @@ func (m *Manager) ListDatasets() ([]*Dataset, error) {
 		}
 	}
 
+	return parseZfsDatasets(out, snapCounts), nil
+}
+
+func parseZfsDatasets(out []byte, snapCounts map[string]int) []*Dataset {
 	var datasets []*Dataset
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	for _, line := range lines {
@@ -1116,7 +1132,7 @@ func (m *Manager) ListDatasets() ([]*Dataset, error) {
 	sort.Slice(datasets, func(i, j int) bool {
 		return datasets[i].Name < datasets[j].Name
 	})
-	return datasets, nil
+	return datasets
 }
 
 func formatRecordSize(raw string) string {
@@ -1896,6 +1912,9 @@ func (m *Manager) CreatePool(name, vdevType string, disks []string, ashift int, 
 	}
 
 	if m.mockMode {
+		if _, exists := m.mockPools[name]; exists {
+			return fmt.Errorf("pool '%s' already exists", name)
+		}
 		var vdevs []Vdev
 		role := "stripe"
 		if vdevType != "" {
@@ -2189,9 +2208,13 @@ func (m *Manager) FindImportablePools() ([]*ImportablePool, error) {
 	if len(out) == 0 {
 		out, _ = runCommandOutput(fastZfsTimeout, "zpool", "import", "-d", "/dev/disk/by-id")
 	}
+	return parseImportablePools(out), nil
+}
+
+func parseImportablePools(out []byte) []*ImportablePool {
 	var list []*ImportablePool
 	if len(out) == 0 {
-		return list, nil
+		return list
 	}
 
 	scanner := bufio.NewScanner(bytes.NewReader(out))
@@ -2226,7 +2249,7 @@ func (m *Manager) FindImportablePools() ([]*ImportablePool, error) {
 		list = append(list, current)
 	}
 
-	return list, nil
+	return list
 }
 
 // ImportPool imports an existing storage pool
@@ -2781,16 +2804,29 @@ func (m *Manager) CreateZvol(name string, sizeBytes uint64, volblocksize string,
 	if err := validate.DatasetName(name); err != nil {
 		return fmt.Errorf("invalid zvol name: %w", err)
 	}
+	if !strings.Contains(name, "/") {
+		return fmt.Errorf("zvol name '%s' must include pool prefix (e.g. 'DATA/my-zvol')", name)
+	}
 	if sizeBytes == 0 {
 		return fmt.Errorf("zvol size must be greater than 0")
 	}
 
+	volblocksize = strings.TrimSpace(volblocksize)
 	if volblocksize == "" {
 		volblocksize = "16k"
+	}
+	if err := validate.DatasetProperty("recordsize", volblocksize); err != nil {
+		return fmt.Errorf("invalid volblocksize: %w", err)
 	}
 
 	if m.mockMode {
 		poolName := strings.Split(name, "/")[0]
+		if _, ok := m.mockPools[poolName]; !ok {
+			return fmt.Errorf("pool '%s' does not exist", poolName)
+		}
+		if _, exists := m.mockDS[name]; exists {
+			return fmt.Errorf("dataset or zvol '%s' already exists", name)
+		}
 		ds := &Dataset{
 			Name:           name,
 			Pool:           poolName,

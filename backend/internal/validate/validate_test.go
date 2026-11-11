@@ -159,3 +159,58 @@ func TestDevicePath(t *testing.T) {
 	}
 }
 
+func TestSnapshotNameAndZfsProperties(t *testing.T) {
+	if err := SnapshotName("DATA/media", "auto-2026-11-11_18-00"); err != nil {
+		t.Errorf("expected valid snapshot name, got: %v", err)
+	}
+	for _, bad := range []struct{ ds, snap string }{
+		{"", "s1"},
+		{"DATA", ""},
+		{"DATA", "bad@name"},
+		{"DATA", "../evil"},
+		{"mirror", "s1"},
+	} {
+		if err := SnapshotName(bad.ds, bad.snap); err == nil {
+			t.Errorf("expected SnapshotName(%q, %q) error", bad.ds, bad.snap)
+		}
+	}
+
+	for _, okProp := range []struct{ k, v string }{
+		{"compression", "zstd-3"},
+		{"recordsize", "128k"},
+		{"atime", "off"},
+		{"xattr", "sa"},
+		{"acltype", "posixacl"},
+		{"readonly", "on"},
+		{"quota", "500G"},
+		{"refquota", "none"},
+	} {
+		if err := DatasetProperty(okProp.k, okProp.v); err != nil {
+			t.Errorf("DatasetProperty(%q, %q) unexpected error: %v", okProp.k, okProp.v, err)
+		}
+	}
+	for _, badProp := range []struct{ k, v string }{
+		{"compression", "rar"},
+		{"recordsize", "13K"},
+		{"atime", "yes"},
+		{"xattr", "bad"},
+		{"acltype", "ntfs"},
+		{"quota", "huge"},
+		{"mountpoint", "/etc"},
+	} {
+		if err := DatasetProperty(badProp.k, badProp.v); err == nil {
+			t.Errorf("expected DatasetProperty(%q, %q) error", badProp.k, badProp.v)
+		}
+	}
+
+	if err := PoolProperty("autotrim", "on"); err != nil {
+		t.Errorf("PoolProperty(autotrim, on) failed: %v", err)
+	}
+	if err := PoolProperty("autoexpand", "off"); err != nil {
+		t.Errorf("PoolProperty(autoexpand, off) failed: %v", err)
+	}
+	if err := PoolProperty("autotrim", "maybe"); err == nil {
+		t.Error("expected PoolProperty(autotrim, maybe) error")
+	}
+}
+
