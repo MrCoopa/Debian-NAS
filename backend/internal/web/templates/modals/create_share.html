@@ -121,6 +121,7 @@
         <div id="share-modal-users"
              hx-get="/ui/partials/modals/share_users"
              hx-trigger="userUpdate from:body"
+             hx-target="this"
              hx-swap="innerHTML"
              style="background: rgba(15,23,42,0.6); border: 1px solid var(--pf-border-color); border-radius: 4px; padding: 0.6rem; max-height: 130px; overflow-y: auto;">
           {{template "partials/share_users_checkboxes.html" .}}
