@@ -146,6 +146,16 @@ func funcMap() template.FuncMap {
 		"sub": func(a, b interface{}) float64 {
 			return toFloat64(a) - toFloat64(b)
 		},
+		"mul": func(a, b interface{}) float64 {
+			return toFloat64(a) * toFloat64(b)
+		},
+		"div": func(a, b interface{}) float64 {
+			denom := toFloat64(b)
+			if denom == 0 {
+				return 0
+			}
+			return toFloat64(a) / denom
+		},
 		"gt": func(a, b interface{}) bool {
 			return toFloat64(a) > toFloat64(b)
 		},

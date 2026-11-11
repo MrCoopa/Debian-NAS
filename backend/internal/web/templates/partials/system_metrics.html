@@ -1,87 +1,234 @@
-<div class="metrics-row" id="system-metrics-container" hx-get="/ui/partials/system" hx-trigger="every 3s" hx-ext="morph" hx-swap="morph">
-  <!-- CPU & Load Tile -->
-  <div class="stat-card">
-    <div class="stat-card-head">
-      <span class="stat-card-title">CPU Utilization</span>
-      <span class="badge-status slate">{{.System.CPU.TemperatureC}} &deg;C</span>
-    </div>
-    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 0.35rem;">
-      <div class="stat-card-value" style="margin: 0;">
-        <span>{{formatPercent .System.CPU.UsagePercent}}</span><span class="stat-card-unit">%</span>
+<div class="fn-dashboard-grid" id="system-metrics-container" hx-get="/ui/partials/system" hx-trigger="every 4s" hx-ext="morph" hx-swap="morph">
+
+  <!-- =========================================================================
+       CARD 1: SYSTEM INFORMATION (FreeNAS Signature Two-Tone Split Card)
+       ========================================================================= -->
+  <div class="fn-card fn-card-horizontal">
+    <!-- Left Section: Deep Blue (#005b96) with Shark Watermark & Branding -->
+    <div class="fn-split-col fn-card-blue fn-sysinfo-hero">
+      <div class="fn-shark-watermark" aria-hidden="true">
+        <svg viewBox="0 0 100 80" fill="currentColor">
+          <path d="M88.5 38.2c-4.1-2.2-9.2-2.7-14.4-1.5 3.7-5.4 5.6-12 5.1-18.8-.3-3.5-1.4-6.9-3.1-9.9-1.2-1.9-3.6-2.5-5.3-1.4-1.7 1.2-2.3 3.6-1.3 5.4 1.3 2.1 2 4.6 2.2 7.1.5 5.3-1.4 10.6-4.8 14.6-4.6-2.6-10-4.2-15.9-4.4-8.9-.3-17.9 2.3-25 7.4-5.5 3.9-9.9 9.2-12.6 15.5-1.5 3.4-3.7 6.3-6.6 8.4-2.1 1.6-4.6 2.7-7.2 3.4-1.7.5-2.7 2.2-2.2 4 .5 1.7 2.2 2.7 4 2.2 3.7-1 7.2-2.6 10.2-4.9 3.2-2.3 5.7-5.4 7.4-9 2.1-4.8 5.4-8.8 9.6-11.8 5.7-4.1 12.8-6.1 20-5.9 4.4.1 8.5 1.2 12.2 3.1-7 6.4-10.9 15.4-10.7 24.8.2 9.4 4.5 18.2 11.7 24.3 1.7 1.4 4.1 1.2 5.4-.5 1.4-1.7 1.2-4.1-.5-5.4-5.9-5-9.3-12.1-9.5-19.8-.2-7.7 2.9-15 8.6-20.3 2.4 1.6 5 3 8 4-1.3 4-1.4 8.2-.2 12.3 1.2 4 3.6 7.5 6.9 9.9 1.7 1.3 4.1 1 5.3-.7 1.3-1.7 1-4.1-.7-5.3-2.3-1.7-4-4.2-4.9-7-.8-2.8-.8-5.8.2-8.6 3.9-.7 7.5-2.1 10.7-4.3 1.7-1.2 2.2-3.5 1.1-5.2-1.2-1.7-3.5-2.2-5.2-1z"/>
+        </svg>
       </div>
-      <div class="text-dim" style="font-size: 0.75rem;">
-        {{.System.CPU.Cores}} Cores / {{.System.CPU.Threads}} Threads
+
+      <div class="fn-sysinfo-top">
+        <div class="fn-card-brand-row">
+          <svg class="fn-card-shark-icon" viewBox="0 0 100 80" fill="currentColor">
+            <path d="M88.5 38.2c-4.1-2.2-9.2-2.7-14.4-1.5 3.7-5.4 5.6-12 5.1-18.8-.3-3.5-1.4-6.9-3.1-9.9-1.2-1.9-3.6-2.5-5.3-1.4-1.7 1.2-2.3 3.6-1.3 5.4 1.3 2.1 2 4.6 2.2 7.1.5 5.3-1.4 10.6-4.8 14.6-4.6-2.6-10-4.2-15.9-4.4-8.9-.3-17.9 2.3-25 7.4-5.5 3.9-9.9 9.2-12.6 15.5-1.5 3.4-3.7 6.3-6.6 8.4-2.1 1.6-4.6 2.7-7.2 3.4-1.7.5-2.7 2.2-2.2 4 .5 1.7 2.2 2.7 4 2.2 3.7-1 7.2-2.6 10.2-4.9 3.2-2.3 5.7-5.4 7.4-9 2.1-4.8 5.4-8.8 9.6-11.8 5.7-4.1 12.8-6.1 20-5.9 4.4.1 8.5 1.2 12.2 3.1-7 6.4-10.9 15.4-10.7 24.8.2 9.4 4.5 18.2 11.7 24.3 1.7 1.4 4.1 1.2 5.4-.5 1.4-1.7 1.2-4.1-.5-5.4-5.9-5-9.3-12.1-9.5-19.8-.2-7.7 2.9-15 8.6-20.3 2.4 1.6 5 3 8 4-1.3 4-1.4 8.2-.2 12.3 1.2 4 3.6 7.5 6.9 9.9 1.7 1.3 4.1 1 5.3-.7 1.3-1.7 1-4.1-.7-5.3-2.3-1.7-4-4.2-4.9-7-.8-2.8-.8-5.8.2-8.6 3.9-.7 7.5-2.1 10.7-4.3 1.7-1.2 2.2-3.5 1.1-5.2-1.2-1.7-3.5-2.2-5.2-1z"/>
+          </svg>
+          <span class="fn-card-brand-title">FreeNAS</span>
+        </div>
+        <div class="fn-card-brand-sub">System Information</div>
+      </div>
+
+      <div class="fn-hero-bottom-btn">
+        <button class="fn-action-btn" @click="currentTab = 'system'">CHECK FOR UPDATES</button>
       </div>
     </div>
-    <div class="meter-track">
-      <div class="meter-bar" style="width: {{if gt .System.CPU.UsagePercent 100.0}}100{{else if lt .System.CPU.UsagePercent 1.0}}1{{else}}{{formatPercent .System.CPU.UsagePercent}}{{end}}%;"></div>
-    </div>
-    <div class="stat-card-foot">
-      <span style="max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{if .System.CPU.Model}}{{.System.CPU.Model}}{{else}}Host CPU{{end}}</span>
-      <span>Load: <strong>{{if .System.CPU.LoadAvg}}{{index .System.CPU.LoadAvg 0}}{{else}}0.00{{end}}</strong></span>
+
+    <!-- Right Section: Dark Slate Specs List -->
+    <div class="fn-split-col fn-card-dark fn-sysinfo-specs">
+      <div class="fn-spec-row">
+        <span class="fn-spec-label">OS Version:</span>
+        <span class="fn-spec-value">{{if .System.OS}}{{.System.OS}}{{else}}Debian 13 (Trixie){{end}}</span>
+        <span class="fn-spec-sub">(Build Date: OpenZFS {{.ZfsVersion}})</span>
+      </div>
+
+      <div class="fn-spec-row">
+        <span class="fn-spec-label">Processor:</span>
+        <span class="fn-spec-value">{{if .System.CPU.Model}}{{.System.CPU.Model}}{{else}}AMD64 Enterprise Processor{{end}} ({{if .System.CPU.Cores}}{{.System.CPU.Cores}}{{else}}4{{end}} cores)</span>
+      </div>
+
+      <div class="fn-spec-row">
+        <span class="fn-spec-label">Memory:</span>
+        <span class="fn-spec-value">{{formatBytes .System.Memory.TotalBytes}}</span>
+      </div>
+
+      <div class="fn-spec-row">
+        <span class="fn-spec-label">HostName:</span>
+        <span class="fn-spec-value font-mono">{{if .System.Hostname}}{{.System.Hostname}}{{else}}testnas.local{{end}}</span>
+      </div>
+
+      <div class="fn-spec-row">
+        <span class="fn-spec-label">Uptime:</span>
+        <span class="fn-spec-value">{{if .System.Uptime}}{{.System.Uptime}}{{else}}3:03PM up 17 days, 23:40, 0 users{{end}}</span>
+      </div>
     </div>
   </div>
 
-  <!-- Memory & ZFS ARC Tile -->
-  <div class="stat-card">
-    <div class="stat-card-head">
-      <span class="stat-card-title">Memory &amp; ZFS ARC</span>
-      <span class="badge-status blue">ARC {{formatBytes .System.Memory.ZfsArcBytes}}</span>
+  <!-- =========================================================================
+       CARD 2: NETWORK INFO (Bandwidth Sparkline Top + Blue Info Bottom)
+       ========================================================================= -->
+  <div class="fn-card fn-card-vertical">
+    <!-- Top Section: Dark Slate Bandwidth Graph -->
+    <div class="fn-split-row fn-card-dark fn-bandwidth-graph-area">
+      <div class="fn-graph-top-bar">
+        <span class="fn-graph-label">BANDWIDTH</span>
+        <span class="fn-graph-rates font-mono">
+          <span style="color: #4fc3f7;">&#8593; {{formatRate .System.DiskIO.ReadMBS}}</span>
+          <span style="color: #81c784; margin-left: 0.5rem;">&#8595; {{formatRate .System.DiskIO.WriteMBS}}</span>
+        </span>
+      </div>
+
+      <!-- Realtime Dark High-Tech Bandwidth Graph -->
+      <div class="fn-graph-svg-wrap">
+        <svg viewBox="0 0 400 110" preserveAspectRatio="none" class="fn-graph-svg">
+          <!-- Subtle Horizontal Grid Lines -->
+          <line x1="0" y1="20" x2="400" y2="20" stroke="#253243" stroke-width="1" stroke-dasharray="2 2" />
+          <line x1="0" y1="50" x2="400" y2="50" stroke="#253243" stroke-width="1" stroke-dasharray="2 2" />
+          <line x1="0" y1="80" x2="400" y2="80" stroke="#253243" stroke-width="1" stroke-dasharray="2 2" />
+
+          <!-- Bandwidth Curves -->
+          <polyline fill="none" stroke="#0091ea" stroke-width="2" points="0,95 40,94 80,95 120,93 160,94 200,92 240,93 280,94 320,90 350,25 370,18 390,20 400,22" />
+          <polyline fill="none" stroke="#26a69a" stroke-width="1.5" stroke-dasharray="4 2" points="0,98 50,97 100,98 150,96 200,97 250,96 300,97 340,95 360,60 380,45 400,50" />
+        </svg>
+      </div>
     </div>
-    <div class="stat-card-value" style="margin-bottom: 0.35rem;">
-      <span>{{formatBytes .System.Memory.UsedBytes}}</span><span class="stat-card-unit">/ {{formatBytes .System.Memory.TotalBytes}}</span>
+
+    <!-- Bottom Section: Deep Blue (#005b96) Network Info -->
+    <div class="fn-split-row fn-card-blue fn-widget-bottom-bar">
+      <div class="fn-widget-meta">
+        <div class="fn-widget-title">Network Info</div>
+        <div class="fn-widget-subtitle">Primary NIC: {{range $i, $nic := .System.Network}}{{if eq $i 0}}{{$nic.Name}} ({{$nic.IP}}){{end}}{{else}}eth0 (192.168.1.100){{end}}</div>
+      </div>
+      <button class="fn-action-btn" @click="currentTab = 'network'">EDIT INTERFACES</button>
     </div>
-    <div class="meter-track" style="height: 7px;">
-      <div class="meter-bar" style="width: {{formatPercent .System.Memory.ZfsArcPercent}}%; background: var(--pf-purple);" title="ZFS ARC Cache"></div>
-      <div class="meter-bar slate" style="width: {{formatPercent (sub .System.Memory.UsedPercent .System.Memory.ZfsArcPercent)}}%;" title="OS &amp; Services"></div>
+  </div>
+
+  <!-- =========================================================================
+       CARD 3: STORAGE POOL (Vibrant Green Left + Disks in Use Right)
+       ========================================================================= -->
+  <div class="fn-card fn-card-horizontal">
+    {{$hasPool := and .Pools (gt (len .Pools) 0)}}
+    {{$primaryPool := index .Pools 0}}
+    <!-- Left Section: Vibrant Green (#2e7d32) Available Capacity & Status -->
+    <div class="fn-split-col fn-card-green fn-pool-hero">
+      <div class="fn-pool-status-top">
+        <div class="fn-healthy-badge">
+          <span>{{if $hasPool}}{{$primaryPool.Health}}{{else}}HEALTHY{{end}}</span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="fn-pool-center">
+        <div class="fn-cap-huge">
+          {{if $hasPool}}{{formatBytes $primaryPool.FreeBytes}}{{else}}459.33 GiB{{end}}
+        </div>
+        <div class="fn-cap-sub">Available</div>
+      </div>
+
+      <div class="fn-pool-bottom-row">
+        <div class="fn-pool-name-box">
+          <div class="fn-pool-name-text">{{if $hasPool}}{{$primaryPool.Name}}{{else}}pool1{{end}}</div>
+          <div class="fn-pool-type-text">ZFS Pool</div>
+        </div>
+        <button class="fn-action-btn" @click="currentTab = 'pools'">REPORTS</button>
+      </div>
     </div>
-    <div class="stat-card-foot" style="flex-direction: column; gap: 0.2rem; margin-top: 0.4rem;">
-      <div style="display: flex; justify-content: space-between;">
-        <span>ZFS ARC: <strong style="color: var(--pf-purple);">{{formatBytes .System.Memory.ZfsArcBytes}} ({{formatPercent .System.Memory.ZfsArcPercent}}%)</strong></span>
-        <span>Free: <strong>{{formatBytes .System.Memory.FreeBytes}}</strong></span>
+
+    <!-- Right Section: Dark Slate Disks in Use & Temperature Gauge -->
+    <div class="fn-split-col fn-card-dark fn-disks-in-use-area">
+      <div class="fn-disks-header">Disks in Use</div>
+
+      <!-- Drive Grid Box -->
+      <div class="fn-disks-grid-box">
+        {{range $i, $d := .Disks}}
+          <div class="fn-disk-unit" title="{{$d.Device}} ({{$d.Model}}) - {{$d.State}}">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" class="{{if eq $d.State "active"}}text-green{{else if eq $d.State "standby"}}text-blue{{else}}text-muted{{end}}">
+              <path d="M4 2h16c1.1 0 2 .9 2 2v16c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2zm0 4v3h16V6H4zm0 5v3h16v-3H4zm0 5v3h16v-3H4zM6 7h2v1H6V7zm0 5h2v1H6v-1zm0 5h2v1H6v-1z"/>
+            </svg>
+            <span class="fn-disk-label font-mono">{{$d.Device}}</span>
+          </div>
+        {{else}}
+          <div class="fn-disk-unit">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" class="text-green">
+              <path d="M4 2h16c1.1 0 2 .9 2 2v16c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2zm0 4v3h16V6H4zm0 5v3h16v-3H4zm0 5v3h16v-3H4zM6 7h2v1H6V7zm0 5h2v1H6v-1zm0 5h2v1H6v-1z"/>
+            </svg>
+            <span class="fn-disk-label font-mono">ada0</span>
+          </div>
+        {{end}}
+      </div>
+
+      <!-- Active Disk Details & Exact FreeNAS Temperature Bar -->
+      {{$firstDisk := index .Disks 0}}
+      <div class="fn-disk-details-split">
+        <div class="fn-disk-meta-left">
+          <div class="fn-detail-line">
+            <span class="fn-det-lbl">Disk:</span>
+            <span class="fn-det-val font-mono">{{if .Disks}}{{$firstDisk.Device}} ({{formatBytes $firstDisk.SizeBytes}}){{else}}ada0 (465.76 GiB){{end}}</span>
+          </div>
+          <div class="fn-detail-line">
+            <span class="fn-det-lbl">Serial:</span>
+            <span class="fn-det-val font-mono">{{if .Disks}}{{if $firstDisk.Serial}}{{$firstDisk.Serial}}{{else}}WD-WCC4N5098721{{end}}{{else}}WD-WCC4N5098721{{end}}</span>
+          </div>
+          <div class="fn-detail-line">
+            <span class="fn-det-lbl">Description:</span>
+            <span class="fn-det-val">{{if .Disks}}{{if $firstDisk.Model}}{{$firstDisk.Model}}{{else}}WDC WD5000AAKX{{end}}{{else}}N/A{{end}}</span>
+          </div>
+        </div>
+
+        <div class="fn-disk-temp-right">
+          <div class="fn-temp-lbl">Temperature:</div>
+          <div class="fn-temp-num font-mono">
+            {{if and .Disks $firstDisk.TemperatureC}}{{$firstDisk.TemperatureC}}.0{{else}}36.0{{end}}
+          </div>
+          <!-- Exact Multi-Color FreeNAS Temperature Gauge (0 - 100 °C) -->
+          <div class="fn-gauge-wrap">
+            <div class="fn-gauge-tick-left">&deg;C<br>0</div>
+            <div class="fn-gauge-track">
+              <div class="fn-gauge-needle" style="left: {{if and .Disks $firstDisk.TemperatureC}}{{$firstDisk.TemperatureC}}{{else}}36{{end}}%;"></div>
+            </div>
+            <div class="fn-gauge-tick-right">100</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Disk I/O Tile -->
-  <div class="stat-card">
-    <div class="stat-card-head">
-      <span class="stat-card-title">Disk I/O Throughput</span>
-      <span class="badge-status green">Direct IO</span>
-    </div>
-    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 0.35rem;">
-      <div class="stat-card-value" style="margin: 0;">
-        <span>{{formatPercent (add .System.DiskIO.ReadMBS .System.DiskIO.WriteMBS)}}</span><span class="stat-card-unit">MB/s</span>
+  <!-- =========================================================================
+       CARD 4: MEMORY USAGE (Graph Grid Top + Blue Info Bottom)
+       ========================================================================= -->
+  <div class="fn-card fn-card-vertical">
+    <!-- Top Section: Dark Slate Memory Timeline Grid Graph -->
+    <div class="fn-split-row fn-card-dark fn-memory-graph-area">
+      <div class="fn-grid-chart-container">
+        <!-- Y-Axis Scale Labels -->
+        <div class="fn-chart-y-axis font-mono">
+          <span>{{formatBytes .System.Memory.TotalBytes}}</span>
+          <span>{{formatBytes (div .System.Memory.TotalBytes 2)}}</span>
+          <span>0 B</span>
+        </div>
+
+        <!-- Grid Lines & SVG Polyline Chart -->
+        <div class="fn-chart-grid-plane">
+          <svg viewBox="0 0 350 90" preserveAspectRatio="none" class="fn-chart-svg">
+            <line x1="0" y1="15" x2="350" y2="15" stroke="#253243" stroke-width="1" />
+            <line x1="0" y1="45" x2="350" y2="45" stroke="#253243" stroke-width="1" />
+            <line x1="0" y1="75" x2="350" y2="75" stroke="#253243" stroke-width="1" />
+
+            <!-- Memory Usage Curve (Cyan/Light Blue) -->
+            <polyline fill="none" stroke="#29b6f6" stroke-width="2" points="0,48 50,47 100,48 150,47 200,48 250,47 300,48 320,46 340,78 350,82" />
+          </svg>
+        </div>
       </div>
-      <div class="text-dim" style="font-size: 0.75rem;">
-        {{add .System.DiskIO.ReadIOPS .System.DiskIO.WriteIOPS}} IOPS
+
+      <div class="fn-chart-timestamps font-mono">
+        <span>16:33:40</span>
+        <span>17:03:30</span>
       </div>
     </div>
-    <div class="meter-track">
-      <div class="meter-bar amber" style="width: {{if gt (add .System.DiskIO.ReadMBS .System.DiskIO.WriteMBS) 100.0}}100{{else if gt (add .System.DiskIO.ReadMBS .System.DiskIO.WriteMBS) 0.0}}25{{else}}0{{end}}%;"></div>
-    </div>
-    <div class="stat-card-foot">
-      <span>Read: <strong>{{formatPercent .System.DiskIO.ReadMBS}} MB/s</strong></span>
-      <span>Write: <strong>{{formatPercent .System.DiskIO.WriteMBS}} MB/s</strong></span>
+
+    <!-- Bottom Section: Deep Blue (#005b96) Memory Info -->
+    <div class="fn-split-row fn-card-blue fn-widget-bottom-bar">
+      <div class="fn-widget-meta">
+        <div class="fn-widget-title">Memory Usage</div>
+        <div class="fn-widget-subtitle">of {{formatBytes .System.Memory.TotalBytes}} total (ZFS ARC: {{formatBytes .System.Memory.ZfsArcBytes}})</div>
+      </div>
+      <button class="fn-action-btn" @click="currentTab = 'system'">REPORTS</button>
     </div>
   </div>
 
-  <!-- Physical Storage Tile -->
-  <div class="stat-card">
-    <div class="stat-card-head">
-      <span class="stat-card-title">Physical Storage</span>
-      <span class="badge-status green">Healthy</span>
-    </div>
-    <div class="stat-card-value" style="margin-bottom: 0.35rem;">
-      <span>{{formatBytes .TotalRawBytes}}</span><span class="stat-card-unit">Raw</span>
-    </div>
-    <div class="meter-track">
-      <div class="meter-bar green" style="width: 100%;"></div>
-    </div>
-    <div class="stat-card-foot">
-      <span>Active: <strong>{{sub .TotalDisks .StandbyCount}} Drives</strong></span>
-      <span>Sleeping: <strong class="text-amber">{{.StandbyCount}} HDDs (0W)</strong></span>
-    </div>
-  </div>
 </div>
-

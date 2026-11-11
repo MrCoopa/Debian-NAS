@@ -1,62 +1,43 @@
 /* ==============================================================================
-   DEBIAN STORAGE APPLIANCE - TRUENAS SCALE ENTERPRISE DESIGN SYSTEM
-   Authentic Dark Navy & Shark Cyan Palette (TrueNAS SCALE / CORE Aesthetic)
+   DEBIAN STORAGE APPLIANCE - FREENAS 11.2 / 12.0 CLASSIC DESIGN SYSTEM
+   Authentic Enterprise Storage Management Console (Industrial & High-Density)
    ============================================================================== */
 
 :root {
-  /* TrueNAS SCALE Dark Navy Palette */
-  --pf-bg-base: #0a0f1d;
-  --pf-bg-masthead: #0e1628;
-  --pf-bg-sidebar: #0b1222;
-  --pf-bg-card: #131c31;
-  --pf-bg-card-subtle: #0f172a;
-  --pf-bg-card-hover: #18243e;
-  --pf-bg-input: #080d1a;
-  --pf-bg-header: #10192d;
+  /* FreeNAS 11.2 Core Theme Palette */
+  --fn-bg-topbar: #0f334c;         /* Classic Ocean Navy Masthead */
+  --fn-bg-sidebar: #161c24;        /* Dark Charcoal Slate Sidebar */
+  --fn-bg-subbar: #161c24;         /* Sub-navigation bar */
+  --fn-bg-canvas: #12181f;         /* Main Content Workspace Background */
+  --fn-bg-card: #1e2631;           /* Slate Navy Card Body */
+  --fn-bg-card-subtle: #171f2a;
+  --fn-bg-card-header: #19222c;
+  --fn-bg-input: #12181f;
 
-  --pf-border-color: #1e2c47;
-  --pf-border-subtle: #162238;
-  --pf-border-light: rgba(148, 163, 184, 0.08);
+  /* Card Split Hero Colors */
+  --fn-card-blue: #005b96;         /* Signature Royal Blue */
+  --fn-card-blue-hover: #006eb5;
+  --fn-card-green: #2e7d32;        /* Signature Healthy Green */
+  --fn-card-green-hover: #388e3c;
+  --fn-card-amber: #b26a00;        /* Warning Orange/Amber */
+  --fn-card-red: #c62828;          /* Alert Red */
 
-  --pf-text-primary: #f8fafc;
-  --pf-text-secondary: #94a3b8;
-  --pf-text-muted: #64748b;
-  --pf-text-disabled: #475569;
+  /* Borders & Dividers */
+  --fn-border-main: #263242;
+  --fn-border-subtle: #1c2633;
+  --fn-border-dark: #10151c;
+  --fn-border-light: rgba(255, 255, 255, 0.08);
 
-  /* TrueNAS SCALE Functional Colors */
-  --pf-blue: #0095d5;          /* TrueNAS Shark Cyan */
-  --pf-blue-hover: #0080b8;
-  --pf-blue-subtle: rgba(0, 149, 213, 0.15);
-  --pf-blue-light: #38bdf8;
+  /* Typography Colors */
+  --fn-text-primary: #ffffff;
+  --fn-text-secondary: #b0bec5;
+  --fn-text-muted: #78909c;
+  --fn-text-dim: #546e7a;
+  --fn-cyan-active: #29b6f6;       /* FreeNAS Active Nav Cyan */
 
-  --pf-green: #22c55e;         /* TrueNAS Emerald Green */
-  --pf-green-hover: #16a34a;
-  --pf-green-subtle: rgba(34, 197, 94, 0.15);
-  --pf-green-light: #4ade80;
-
-  --pf-amber: #f59e0b;         /* TrueNAS Amber */
-  --pf-amber-hover: #d97706;
-  --pf-amber-subtle: rgba(245, 158, 11, 0.15);
-  --pf-amber-light: #fbbf24;
-
-  --pf-red: #ef4444;           /* TrueNAS Ruby Red */
-  --pf-red-hover: #dc2626;
-  --pf-red-subtle: rgba(239, 68, 68, 0.15);
-  --pf-red-light: #f87171;
-
-  --pf-purple: #8b5cf6;        /* TrueNAS ARC / Cache Accent */
-  --pf-purple-subtle: rgba(139, 92, 246, 0.15);
-
-  --pf-slate: #64748b;
-  --pf-slate-subtle: rgba(100, 116, 139, 0.15);
-
-  --pf-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --pf-font-mono: 'JetBrains Mono', 'Consolas', 'SFMono-Regular', Menlo, Monaco, monospace;
-
-  --pf-radius-xs: 3px;
-  --pf-radius-sm: 5px;
-  --pf-radius-md: 8px;
-  --pf-radius-lg: 12px;
+  /* Typography Fonts */
+  --fn-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --fn-font-mono: "JetBrains Mono", Consolas, "Liberation Mono", Menlo, Courier, monospace;
 }
 
 * {
@@ -70,26 +51,25 @@
 }
 
 body {
-  font-family: var(--pf-font-sans);
-  background-color: var(--pf-bg-base);
-  color: var(--pf-text-primary);
+  font-family: var(--fn-font-sans);
+  background-color: var(--fn-bg-canvas);
+  color: var(--fn-text-primary);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 /* ==============================================================================
-   1. TrueNAS Masthead (Topbar)
+   1. FREENAS TOPBAR (MASTHEAD)
    ============================================================================== */
-.app-topbar {
-  height: 52px;
-  background-color: var(--pf-bg-masthead);
-  border-bottom: 1px solid var(--pf-border-color);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+.fn-topbar {
+  height: 48px;
+  background-color: var(--fn-bg-topbar);
+  border-bottom: 1px solid #092030;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -97,260 +77,251 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
 }
 
-.brand-logo {
+.fn-topbar-left {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 1.2rem;
 }
 
-.brand-icon-box {
-  width: 30px;
-  height: 30px;
-  background: var(--pf-blue-subtle);
-  border: 1px solid rgba(0, 149, 213, 0.5);
-  border-radius: var(--pf-radius-sm);
+.fn-brand-link {
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: var(--pf-blue-light);
-  box-shadow: 0 0 10px rgba(0, 149, 213, 0.25);
-}
-
-.brand-title {
-  font-size: 1.05rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  gap: 0.6rem;
+  text-decoration: none;
   color: #ffffff;
 }
 
-.brand-title .text-blue {
-  color: var(--pf-blue-light);
-  margin-left: 2px;
+.fn-brand-shark {
+  width: 28px;
+  height: 22px;
+  color: #ffffff;
 }
 
-.version-tag {
-  font-size: 0.65rem;
-  padding: 2px 7px;
-  border-radius: 9999px;
-  background: rgba(0, 149, 213, 0.12);
-  border: 1px solid rgba(0, 149, 213, 0.3);
-  color: var(--pf-blue-light);
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+.fn-brand-text {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #ffffff;
 }
 
-.topbar-meta-strip {
-  display: flex;
-  align-items: center;
-  gap: 1.25rem;
-  font-size: 0.78rem;
-  color: var(--pf-text-secondary);
-  white-space: nowrap;
-}
-
-.meta-item {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.meta-item strong {
-  color: var(--pf-text-primary);
-}
-
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  display: inline-block;
-}
-.status-dot.green { background-color: var(--pf-green); box-shadow: 0 0 6px rgba(34, 197, 94, 0.6); }
-.status-dot.blue { background-color: var(--pf-blue-light); box-shadow: 0 0 6px rgba(56, 189, 248, 0.6); }
-.status-dot.amber { background-color: var(--pf-amber-light); box-shadow: 0 0 6px rgba(251, 191, 36, 0.6); }
-.status-dot.red { background-color: var(--pf-red); box-shadow: 0 0 6px rgba(239, 68, 68, 0.6); }
-.status-dot.slate { background-color: var(--pf-slate); }
-
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-}
-
-.io-pill {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  background: var(--pf-bg-card-subtle);
-  border: 1px solid var(--pf-border-color);
-  padding: 4px 10px;
-  border-radius: 9999px;
-  font-family: var(--pf-font-mono);
-  font-size: 0.72rem;
-}
-
-.io-pill .r { color: var(--pf-blue-light); }
-.io-pill .w { color: var(--pf-amber-light); }
-
-.hdd-spindown-badge {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  background: rgba(34, 197, 94, 0.12);
-  border: 1px solid rgba(34, 197, 94, 0.35);
-  color: #4ade80;
-  padding: 4px 10px;
-  border-radius: 9999px;
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-
-.icon-btn {
-  background: var(--pf-bg-card-subtle);
-  border: 1px solid var(--pf-border-color);
-  color: var(--pf-text-secondary);
-  width: 30px;
-  height: 30px;
-  border-radius: var(--pf-radius-sm);
+.fn-topbar-btn {
+  background: transparent;
+  border: none;
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  padding: 4px;
+  border-radius: 2px;
+  transition: opacity 0.15s ease;
+  opacity: 0.85;
+}
+
+.fn-topbar-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.fn-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.fn-copyright-text {
+  font-size: 0.72rem;
+  color: #8faac2;
+  letter-spacing: 0.02em;
+}
+
+.fn-utility-icons {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.fn-icon-btn {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 2px;
+  position: relative;
+  opacity: 0.88;
   transition: all 0.15s ease;
 }
 
-.icon-btn:hover {
-  background: var(--pf-bg-card-hover);
-  color: #ffffff;
-  border-color: var(--pf-blue-light);
-  box-shadow: 0 0 8px rgba(0, 149, 213, 0.3);
+.fn-icon-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.fn-bell-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  background-color: #29b6f6;
+  border-radius: 50%;
 }
 
 /* ==============================================================================
-   2. TrueNAS SCALE Layout & Vertical Sidebar
+   2. FREENAS SIDEBAR & LAYOUT
    ============================================================================== */
 .app-layout {
   display: flex;
   flex: 1;
+  min-height: calc(100vh - 48px);
 }
 
-.app-sidebar {
-  width: 240px;
-  background-color: var(--pf-bg-sidebar);
-  border-right: 1px solid var(--pf-border-color);
+.fn-sidebar {
+  width: 220px;
+  background-color: var(--fn-bg-sidebar);
+  border-right: 1px solid var(--fn-border-dark);
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: 1rem 0;
-  position: sticky;
-  top: 52px;
-  height: calc(100vh - 52px);
+  flex-shrink: 0;
+  z-index: 90;
 }
 
-.sidebar-category {
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--pf-text-muted);
-  padding: 0.85rem 1.25rem 0.35rem;
-  text-transform: uppercase;
-}
-
-.sidebar-menu {
+.fn-sidebar-header {
+  padding: 1.25rem 1rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 0.6rem;
+  border-bottom: 1px solid var(--fn-border-subtle);
 }
 
-.nav-item {
+.fn-ix-emblem {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #0288d1 0%, #01579b 100%);
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.6rem 1.25rem;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 1.2rem;
+  letter-spacing: -0.05em;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.fn-user-lock {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--fn-text-secondary);
+  font-weight: 500;
+}
+
+.fn-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.fn-nav-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.6rem 1.15rem;
   background: transparent;
   border: none;
-  border-left: 3px solid transparent;
-  color: var(--pf-text-secondary);
-  font-size: 0.82rem;
+  color: var(--fn-text-secondary);
+  font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
   text-align: left;
-  transition: all 0.15s ease;
-  border-top-right-radius: var(--pf-radius-sm);
-  border-bottom-right-radius: var(--pf-radius-sm);
-  margin-right: 0.5rem;
+  transition: all 0.12s ease;
+  position: relative;
 }
 
-.nav-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+.fn-nav-row:hover {
+  background: #1e2632;
   color: #ffffff;
 }
 
-.nav-item.active {
-  background: rgba(0, 149, 213, 0.14);
-  border-left-color: var(--pf-blue);
-  color: #ffffff;
+.fn-nav-row.active {
+  background: #1c2531;
+  color: var(--fn-cyan-active);
   font-weight: 600;
 }
 
-.nav-item .nav-icon {
+.fn-nav-icon {
+  margin-right: 0.75rem;
   flex-shrink: 0;
-  color: var(--pf-text-muted);
-  transition: color 0.15s ease;
+  color: var(--fn-text-muted);
 }
 
-.nav-item:hover .nav-icon {
-  color: #ffffff;
+.fn-nav-row.active .fn-nav-icon {
+  color: var(--fn-cyan-active);
 }
 
-.nav-item.active .nav-icon {
-  color: var(--pf-blue-light);
-  filter: drop-shadow(0 0 6px rgba(0, 149, 213, 0.5));
+.fn-nav-title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.nav-badge {
-  margin-left: auto;
-  font-size: 0.68rem;
-  padding: 1px 6px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--pf-border-color);
-  border-radius: 9999px;
-  color: var(--pf-text-secondary);
-  font-weight: 600;
+.fn-nav-chevron {
+  font-size: 0.65rem;
+  color: var(--fn-text-muted);
+  margin-left: 0.4rem;
 }
 
-.nav-item.active .nav-badge {
-  background: rgba(0, 149, 213, 0.2);
-  border-color: rgba(0, 149, 213, 0.4);
-  color: var(--pf-blue-light);
-}
-
-.sidebar-footer {
-  border-top: 1px solid var(--pf-border-color);
-  padding: 0.85rem 1.25rem;
-  font-size: 0.72rem;
-  color: var(--pf-text-muted);
+.fn-sidebar-bottom-info {
+  border-top: 1px solid var(--fn-border-subtle);
+  padding: 0.75rem 1.15rem;
+  font-size: 0.7rem;
+  color: var(--fn-text-muted);
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  background: rgba(0, 0, 0, 0.15);
-}
-
-.footer-title {
-  color: var(--pf-text-primary);
-  font-weight: 600;
+  gap: 0.2rem;
 }
 
 /* ==============================================================================
-   3. Content Header, Toolbar & Action Controls
+   3. SUB-NAVBAR & MAIN CONTAINER
    ============================================================================== */
+.app-main-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--fn-bg-canvas);
+  overflow-x: hidden;
+}
+
+.fn-subbar {
+  height: 38px;
+  background-color: var(--fn-bg-subbar);
+  border-bottom: 1px solid var(--fn-border-dark);
+  display: flex;
+  align-items: center;
+  padding: 0 1.5rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #e0e0e0;
+}
+
 .app-main {
   flex: 1;
-  padding: 1.5rem 2rem;
-  max-width: 1600px;
-  margin: 0 auto;
+  padding: 1.25rem 1.5rem;
+  max-width: 1700px;
   width: 100%;
 }
 
@@ -366,24 +337,16 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.25rem;
-  padding-bottom: 0.85rem;
-  border-bottom: 1px solid var(--pf-border-color);
-  flex-wrap: wrap;
-  gap: 1rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--fn-border-main);
 }
 
 .page-title-group h1 {
-  font-size: 1.35rem;
-  font-weight: 700;
-  color: var(--pf-text-primary);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #ffffff;
   letter-spacing: -0.01em;
-}
-
-.page-title-group p {
-  font-size: 0.8rem;
-  color: var(--pf-text-secondary);
-  margin-top: 0.2rem;
 }
 
 .page-actions {
@@ -392,144 +355,497 @@ body {
   gap: 0.5rem;
 }
 
-/* TrueNAS Styled Buttons */
-.btn {
-  padding: 0.42rem 0.9rem;
-  border-radius: var(--pf-radius-sm);
-  font-size: 0.78rem;
-  font-weight: 600;
+/* ==============================================================================
+   4. FREENAS TWO-TONE SPLIT CARDS (DASHBOARD WIDGETS)
+   ============================================================================== */
+.fn-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 1200px) {
+  .fn-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fn-card {
+  background: var(--fn-bg-card);
+  border: 1px solid var(--fn-border-main);
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  min-height: 240px;
+}
+
+.fn-card-horizontal {
+  display: flex;
+  flex-direction: row;
+}
+
+.fn-card-vertical {
+  display: flex;
+  flex-direction: column;
+}
+
+.fn-split-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.fn-split-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.fn-card-blue {
+  background-color: var(--fn-card-blue);
+  color: #ffffff;
+}
+
+.fn-card-green {
+  background-color: var(--fn-card-green);
+  color: #ffffff;
+}
+
+.fn-card-dark {
+  background-color: var(--fn-bg-card);
+  color: var(--fn-text-secondary);
+}
+
+/* FreeNAS Action Button (Ghost / Flat Uppercase) */
+.fn-action-btn {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 6px 12px;
   cursor: pointer;
-  border: 1px solid transparent;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
+  border-radius: 2px;
   transition: all 0.15s ease;
   font-family: inherit;
-  line-height: 1.2;
 }
 
-.btn-primary {
-  background-color: var(--pf-blue);
-  border-color: var(--pf-blue);
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(0, 149, 213, 0.35);
+.fn-action-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
 }
 
-.btn-primary:hover {
-  background-color: var(--pf-blue-hover);
-  border-color: var(--pf-blue-hover);
-  box-shadow: 0 4px 14px rgba(0, 149, 213, 0.5);
-}
-
-.btn-secondary {
-  background-color: var(--pf-bg-card-subtle);
-  border: 1px solid var(--pf-border-color);
-  color: var(--pf-text-primary);
-}
-
-.btn-secondary:hover {
-  background-color: var(--pf-bg-card-hover);
-  border-color: var(--pf-blue-light);
-  color: #ffffff;
-}
-
-.btn-danger {
-  background-color: var(--pf-red-subtle);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #fca5a5;
-}
-
-.btn-danger:hover {
-  background-color: var(--pf-red);
-  border-color: var(--pf-red);
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
-}
-
-.btn-sm {
-  padding: 0.25rem 0.6rem;
-  font-size: 0.72rem;
-}
-
-/* TrueNAS Pill Badges */
-.badge-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 9999px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.badge-status.green {
-  background: rgba(34, 197, 94, 0.14);
-  border: 1px solid rgba(34, 197, 94, 0.35);
-  color: #4ade80;
-}
-
-.badge-status.blue {
-  background: rgba(0, 149, 213, 0.14);
-  border: 1px solid rgba(0, 149, 213, 0.35);
-  color: #38bdf8;
-}
-
-.badge-status.amber {
-  background: rgba(245, 158, 11, 0.14);
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  color: #fbbf24;
-}
-
-.badge-status.red {
-  background: rgba(239, 68, 68, 0.14);
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  color: #f87171;
-}
-
-.badge-status.slate {
-  background: rgba(100, 116, 139, 0.14);
-  border: 1px solid rgba(100, 116, 139, 0.3);
-  color: #94a3b8;
-}
-
-/* ==============================================================================
-   4. TrueNAS DataTables
-   ============================================================================== */
-.table-card {
-  background: var(--pf-bg-card);
-  border: 1px solid var(--pf-border-color);
-  border-radius: var(--pf-radius-md);
+/* --- CARD 1: SYSTEM INFORMATION --- */
+.fn-sysinfo-hero {
+  width: 38%;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
   overflow: hidden;
-  margin-bottom: 1.25rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  background-color: var(--fn-card-blue);
 }
 
-.table-toolbar {
-  padding: 0.85rem 1.25rem;
-  background: var(--pf-bg-header);
-  border-bottom: 1px solid var(--pf-border-color);
+.fn-shark-watermark {
+  position: absolute;
+  top: 10px;
+  right: -25px;
+  width: 170px;
+  height: 130px;
+  opacity: 0.18;
+  color: #000000;
+  pointer-events: none;
+}
+
+.fn-sysinfo-top {
+  position: relative;
+  z-index: 2;
+}
+
+.fn-card-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.fn-card-shark-icon {
+  width: 24px;
+  height: 19px;
+  color: #ffffff;
+}
+
+.fn-card-brand-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.fn-card-brand-sub {
+  font-size: 0.75rem;
+  color: #e0f2fe;
+  font-weight: 500;
+}
+
+.fn-hero-bottom-btn {
+  position: relative;
+  z-index: 2;
+}
+
+.fn-sysinfo-specs {
+  flex: 1;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.65rem;
+  background-color: var(--fn-bg-card);
+}
+
+.fn-spec-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.fn-spec-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--fn-text-muted);
+}
+
+.fn-spec-value {
+  font-size: 0.82rem;
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.fn-spec-sub {
+  font-size: 0.72rem;
+  color: var(--fn-text-dim);
+  font-family: var(--fn-font-mono);
+}
+
+/* --- CARD 2: NETWORK INFO --- */
+.fn-bandwidth-graph-area {
+  flex: 1;
+  padding: 1rem 1.25rem 0.5rem;
+  background-color: var(--fn-bg-card);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.fn-graph-top-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.fn-graph-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fn-text-muted);
+}
+
+.fn-graph-rates {
+  font-size: 0.72rem;
+}
+
+.fn-graph-svg-wrap {
+  width: 100%;
+  height: 90px;
+}
+
+.fn-graph-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.fn-widget-bottom-bar {
+  padding: 0.85rem 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--fn-card-blue);
+}
+
+.fn-widget-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.fn-widget-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.fn-widget-subtitle {
+  font-size: 0.72rem;
+  color: #e0f2fe;
+}
+
+/* --- CARD 3: STORAGE POOL --- */
+.fn-pool-hero {
+  width: 40%;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background-color: var(--fn-card-green);
+}
+
+.fn-pool-status-top {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fn-healthy-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #ffffff;
+}
+
+.fn-pool-center {
+  margin: 0.75rem 0;
+}
+
+.fn-cap-huge {
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.fn-cap-sub {
+  font-size: 0.8rem;
+  color: #e8f5e9;
+  font-weight: 500;
+}
+
+.fn-pool-bottom-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.fn-pool-name-box {
+  display: flex;
+  flex-direction: column;
+}
+
+.fn-pool-name-text {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.fn-pool-type-text {
+  font-size: 0.72rem;
+  color: #c8e6c9;
+}
+
+.fn-disks-in-use-area {
+  flex: 1;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background-color: var(--fn-bg-card);
+}
+
+.fn-disks-header {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--fn-text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.fn-disks-grid-box {
+  display: flex;
+  gap: 0.75rem;
   flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.fn-disk-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 4px 6px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--fn-border-subtle);
+  border-radius: 2px;
+}
+
+.fn-disk-label {
+  font-size: 0.68rem;
+  color: var(--fn-text-secondary);
+}
+
+.fn-disk-details-split {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.25rem;
+  border-top: 1px solid var(--fn-border-subtle);
+  padding-top: 0.75rem;
+}
+
+.fn-disk-meta-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+}
+
+.fn-detail-line {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.fn-det-lbl {
+  color: var(--fn-text-muted);
+  width: 70px;
+}
+
+.fn-det-val {
+  color: #ffffff;
+}
+
+.fn-disk-temp-right {
+  display: flex;
+  flex-direction: column;
+  width: 140px;
+}
+
+.fn-temp-lbl {
+  font-size: 0.72rem;
+  color: var(--fn-text-muted);
+}
+
+.fn-temp-num {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.fn-gauge-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.fn-gauge-tick-left, .fn-gauge-tick-right {
+  font-size: 0.65rem;
+  color: var(--fn-text-muted);
+  line-height: 1;
+}
+
+.fn-gauge-track {
+  flex: 1;
+  height: 6px;
+  background: linear-gradient(to right, #0091ea 0%, #00e676 35%, #ffd600 65%, #ff1744 100%);
+  border-radius: 2px;
+  position: relative;
+}
+
+.fn-gauge-needle {
+  position: absolute;
+  top: -3px;
+  width: 3px;
+  height: 12px;
+  background: #ffffff;
+  border: 1px solid #000000;
+  transform: translateX(-50%);
+}
+
+/* --- CARD 4: MEMORY USAGE --- */
+.fn-memory-graph-area {
+  flex: 1;
+  padding: 1rem 1.25rem 0.5rem;
+  background-color: var(--fn-bg-card);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.fn-grid-chart-container {
+  display: flex;
+  gap: 0.75rem;
+  height: 90px;
+}
+
+.fn-chart-y-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  color: var(--fn-text-muted);
+  text-align: right;
+  width: 45px;
+}
+
+.fn-chart-grid-plane {
+  flex: 1;
+  position: relative;
+}
+
+.fn-chart-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.fn-chart-timestamps {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  color: var(--fn-text-dim);
+  margin-top: 0.25rem;
+}
+
+/* ==============================================================================
+   5. TABLES & APPLIANCE CARDS
+   ============================================================================== */
+.table-card {
+  background: var(--fn-bg-card);
+  border: 1px solid var(--fn-border-main);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+}
+
+.table-toolbar {
+  padding: 0.65rem 1rem;
+  background: var(--fn-bg-card-header);
+  border-bottom: 1px solid var(--fn-border-main);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .toolbar-title {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--pf-text-primary);
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fn-text-secondary);
 }
 
 .pf-table {
@@ -540,21 +856,21 @@ body {
 }
 
 .pf-table th {
-  background: var(--pf-bg-header);
-  color: var(--pf-text-muted);
+  background: var(--fn-bg-card-header);
+  color: var(--fn-text-muted);
   font-size: 0.68rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.7rem 1.25rem;
-  border-bottom: 1px solid var(--pf-border-color);
+  letter-spacing: 0.06em;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--fn-border-main);
   white-space: nowrap;
 }
 
 .pf-table td {
-  padding: 0.75rem 1.25rem;
-  border-bottom: 1px solid var(--pf-border-light);
-  color: var(--pf-text-primary);
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--fn-border-subtle);
+  color: var(--fn-text-primary);
   vertical-align: middle;
 }
 
@@ -563,7 +879,7 @@ body {
 }
 
 .pf-table tr:hover td {
-  background: rgba(0, 149, 213, 0.04);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .col-actions {
@@ -571,284 +887,153 @@ body {
   white-space: nowrap;
 }
 
-.font-mono {
-  font-family: var(--pf-font-mono);
-}
-
-.text-dim { color: var(--pf-text-muted); }
-.text-blue { color: var(--pf-blue-light); }
-.text-green { color: #4ade80; }
-.text-amber { color: #fbbf24; }
-.text-red { color: #f87171; }
-
-/* ==============================================================================
-   5. TrueNAS Dashboard Metric Cards (Widgets)
-   ============================================================================== */
-.metrics-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1.25rem;
-  margin-bottom: 1.5rem;
-}
-
-.stat-card {
-  background: var(--pf-bg-card);
-  border: 1px solid var(--pf-border-color);
-  border-radius: var(--pf-radius-md);
-  padding: 1.15rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  transition: border-color 0.15s ease, transform 0.15s ease;
-}
-
-.stat-card:hover {
-  border-color: rgba(0, 149, 213, 0.4);
-}
-
-.stat-card-head {
-  display: flex;
-  justify-content: space-between;
+/* Technical Buttons */
+.btn {
+  padding: 0.38rem 0.75rem;
+  border-radius: 2px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  display: inline-flex;
   align-items: center;
-  margin-bottom: 0.4rem;
+  gap: 0.35rem;
+  transition: all 0.12s ease;
+  font-family: inherit;
+  line-height: 1.2;
 }
 
-.stat-card-title {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 700;
-  color: var(--pf-text-secondary);
-}
-
-.stat-card-value {
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--pf-text-primary);
-  line-height: 1.1;
-  font-family: var(--pf-font-mono);
-  margin: 0.25rem 0 0.5rem;
-}
-
-.stat-card-unit {
-  font-size: 0.8rem;
-  font-weight: 400;
-  color: var(--pf-text-secondary);
-  margin-left: 0.25rem;
-}
-
-.meter-track {
-  width: 100%;
-  height: 6px;
-  background: #080d1a;
-  border-radius: 9999px;
-  overflow: hidden;
-  margin-bottom: 0.65rem;
-  display: flex;
-}
-
-.meter-bar {
-  height: 100%;
-  background: linear-gradient(90deg, #0095d5, #38bdf8);
-  border-radius: 9999px;
-  transition: width 0.3s ease;
-}
-
-.meter-bar.green { background: linear-gradient(90deg, #10b981, #34d399); }
-.meter-bar.amber { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
-.meter-bar.red { background: linear-gradient(90deg, #ef4444, #f87171); }
-.meter-bar.slate { background: var(--pf-slate); }
-
-.stat-card-foot {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.72rem;
-  color: var(--pf-text-secondary);
-}
-
-.stat-card-foot strong {
-  color: var(--pf-text-primary);
-}
-
-/* ==============================================================================
-   6. TrueNAS Storage Pools & VDEV Topology
-   ============================================================================== */
-.pool-card, .pool-detail-card {
-  background: var(--pf-bg-card);
-  border: 1px solid var(--pf-border-color);
-  border-radius: var(--pf-radius-md);
-  margin-bottom: 1.5rem;
-  overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-}
-
-.pool-header {
-  padding: 1rem 1.25rem;
-  background: var(--pf-bg-header);
-  border-bottom: 1px solid var(--pf-border-color);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.pool-identity {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.pool-identity h2 {
-  font-size: 1.15rem;
-  font-weight: 700;
+.btn-primary {
+  background-color: var(--fn-card-blue);
+  border-color: var(--fn-card-blue);
   color: #ffffff;
 }
 
-/* ==============================================================================
-   7. 45Drives & TrueNAS Chassis Drive Bay View
-   ============================================================================== */
-.chassis-matrix {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.85rem;
-  padding: 1.25rem;
-  background: #080d1a;
-  border-radius: var(--pf-radius-md);
-  border: 1px solid var(--pf-border-color);
-  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5);
+.btn-primary:hover {
+  background-color: var(--fn-card-blue-hover);
+  border-color: var(--fn-card-blue-hover);
 }
 
-.chassis-slot {
-  background: var(--pf-bg-card);
-  border: 1px solid var(--pf-border-color);
-  border-radius: var(--pf-radius-sm);
-  padding: 0.85rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  min-height: 115px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  position: relative;
+.btn-secondary {
+  background-color: var(--fn-bg-card-subtle);
+  border: 1px solid var(--fn-border-main);
+  color: var(--fn-text-primary);
 }
 
-.chassis-slot:hover {
-  border-color: var(--pf-blue-light);
-  background: var(--pf-bg-card-hover);
-  box-shadow: 0 4px 14px rgba(0, 149, 213, 0.2);
+.btn-secondary:hover {
+  background-color: #243040;
+  border-color: var(--fn-cyan-active);
+  color: #ffffff;
 }
 
-.chassis-slot.selected {
-  border-color: var(--pf-blue-light);
-  outline: 2px solid var(--pf-blue);
-  background: #17243c;
+.btn-danger {
+  background-color: rgba(198, 40, 40, 0.15);
+  border: 1px solid rgba(198, 40, 40, 0.4);
+  color: #ef9a9a;
 }
 
-.slot-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.btn-danger:hover {
+  background-color: var(--fn-card-red);
+  border-color: var(--fn-card-red);
+  color: #ffffff;
+}
+
+.btn-sm {
+  padding: 0.22rem 0.5rem;
   font-size: 0.72rem;
+}
+
+/* Status Badges */
+.badge-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
   font-weight: 700;
-  font-family: var(--pf-font-mono);
-  color: var(--pf-text-muted);
+  padding: 2px 6px;
+  border-radius: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.slot-mid {
-  margin: 0.4rem 0;
+.badge-status.green {
+  background: rgba(46, 125, 50, 0.2);
+  border: 1px solid rgba(46, 125, 50, 0.5);
+  color: #81c784;
 }
 
-.slot-model {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--pf-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.badge-status.blue {
+  background: rgba(0, 91, 150, 0.25);
+  border: 1px solid rgba(0, 91, 150, 0.5);
+  color: #64b5f6;
 }
 
-.slot-size {
-  font-size: 0.72rem;
-  font-family: var(--pf-font-mono);
-  color: var(--pf-blue-light);
+.badge-status.amber {
+  background: rgba(178, 106, 0, 0.2);
+  border: 1px solid rgba(178, 106, 0, 0.5);
+  color: #ffb74d;
 }
 
-.slot-foot {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.7rem;
-  border-top: 1px solid var(--pf-border-light);
-  padding-top: 0.35rem;
-  color: var(--pf-text-muted);
+.badge-status.red {
+  background: rgba(198, 40, 40, 0.2);
+  border: 1px solid rgba(198, 40, 40, 0.5);
+  color: #e57373;
 }
 
-/* ==============================================================================
-   8. TrueNAS Slide-Over Drawer & Modals
-   ============================================================================== */
-.drawer-backdrop {
+.badge-status.slate {
+  background: rgba(120, 144, 156, 0.15);
+  border: 1px solid rgba(120, 144, 156, 0.3);
+  color: #b0bec5;
+}
+
+.font-mono {
+  font-family: var(--fn-font-mono);
+}
+
+.text-dim { color: var(--fn-text-muted); }
+.text-blue { color: #64b5f6; }
+.text-green { color: #81c784; }
+.text-amber { color: #ffb74d; }
+.text-red { color: #e57373; }
+.text-muted { color: var(--fn-text-dim); }
+.text-white { color: #ffffff; }
+
+/* Modals & Drawers */
+.modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(8, 14, 26, 0.75);
-  backdrop-filter: blur(4px);
-  z-index: 1000;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.drawer-panel {
-  width: 100%;
-  max-width: 480px;
-  height: 100%;
-  background: #0e1628;
-  border-left: 1px solid var(--pf-border-color);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.6);
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  padding: 1.5rem;
-}
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(8, 14, 26, 0.8);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  padding: 1rem;
 }
 
-.modal-box {
+.modal-dialog {
+  background: var(--fn-bg-card);
+  border: 1px solid var(--fn-border-main);
+  border-radius: 2px;
   width: 100%;
-  max-width: 520px;
-  background: #111a2e;
-  border: 1px solid var(--pf-border-color);
-  border-radius: var(--pf-radius-md);
-  padding: 1.5rem;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
-  animation: modalFadeIn 0.15s ease-out;
-}
-
-@keyframes modalFadeIn {
-  from { opacity: 0; transform: scale(0.97); }
-  to { opacity: 1; transform: scale(1); }
+  max-width: 580px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
 }
 
 .modal-header {
+  padding: 0.85rem 1.25rem;
+  background: var(--fn-bg-card-header);
+  border-bottom: 1px solid var(--fn-border-main);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.25rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--pf-border-color);
 }
 
-.modal-header h3 {
-  font-size: 1.05rem;
+.modal-title {
+  font-size: 0.95rem;
   font-weight: 700;
   color: #ffffff;
 }
@@ -856,99 +1041,86 @@ body {
 .modal-close {
   background: transparent;
   border: none;
-  color: var(--pf-text-muted);
-  font-size: 1.4rem;
+  color: var(--fn-text-muted);
+  font-size: 1.25rem;
   cursor: pointer;
-  line-height: 1;
 }
 
-.modal-close:hover {
-  color: #ffffff;
-}
-
-.form-group {
-  margin-bottom: 1rem;
-}
-
-.form-row {
+.modal-body {
+  padding: 1.25rem;
+  overflow-y: auto;
   display: flex;
+  flex-direction: column;
   gap: 1rem;
 }
 
-.col-6 {
-  flex: 1;
-}
-
-label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--pf-text-secondary);
-  margin-bottom: 0.35rem;
-}
-
-input[type="text"], input[type="password"], input[type="number"], select {
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  background: var(--pf-bg-input);
-  border: 1px solid var(--pf-border-color);
-  border-radius: var(--pf-radius-sm);
-  color: #ffffff;
-  font-family: inherit;
-  font-size: 0.82rem;
-  outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-input:focus, select:focus {
-  border-color: var(--pf-blue-light);
-  box-shadow: 0 0 0 2px rgba(0, 149, 213, 0.25);
-}
-
-.modal-actions {
+.modal-footer {
+  padding: 0.85rem 1.25rem;
+  background: var(--fn-bg-card-header);
+  border-top: 1px solid var(--fn-border-main);
   display: flex;
   justify-content: flex-end;
-  gap: 0.65rem;
-  margin-top: 1.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--pf-border-color);
+  gap: 0.5rem;
 }
 
-/* ==============================================================================
-   9. TrueNAS Toast Notifications
-   ============================================================================== */
-.toast-container {
-  position: fixed;
-  bottom: 1.25rem;
-  right: 1.25rem;
+.form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  z-index: 2000;
+  gap: 0.35rem;
+}
+
+.form-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--fn-text-secondary);
+}
+
+.form-input, .form-select {
+  background: var(--fn-bg-input);
+  border: 1px solid var(--fn-border-main);
+  color: #ffffff;
+  padding: 0.45rem 0.65rem;
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.form-input:focus, .form-select:focus {
+  border-color: var(--fn-cyan-active);
+}
+
+/* Toast Container */
+.toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 9999;
 }
 
 .toast {
-  padding: 0.75rem 1.25rem;
-  border-radius: 9999px;
-  background: #10192d;
-  border: 1px solid var(--pf-border-color);
+  background: #1e2631;
+  border: 1px solid #29b6f6;
+  border-left: 4px solid #29b6f6;
   color: #ffffff;
-  font-size: 0.82rem;
-  font-weight: 500;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
+  padding: 0.65rem 1rem;
+  border-radius: 2px;
+  font-size: 0.8rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
 .toast.success {
-  border-color: rgba(34, 197, 94, 0.4);
+  border-left-color: #2e7d32;
 }
 
 .toast.error {
-  border-color: rgba(239, 68, 68, 0.4);
+  border-left-color: #c62828;
 }
 
-.toast.info {
-  border-color: rgba(0, 149, 213, 0.4);
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }

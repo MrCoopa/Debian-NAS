@@ -1,51 +1,56 @@
-<header class="app-topbar" id="app-topbar">
-  <div class="brand-logo">
-    <div class="brand-icon-box">
-      <!-- TrueNAS Style Storage Topology Fin / Nodes Icon -->
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-        <polyline points="2 17 12 22 22 17"></polyline>
-        <polyline points="2 12 12 17 22 12"></polyline>
+<header class="fn-topbar" id="app-topbar">
+  <div class="fn-topbar-left">
+    <!-- FreeNAS Shark Logo & Brand -->
+    <a href="/" class="fn-brand-link">
+      <svg class="fn-brand-shark" viewBox="0 0 100 80" fill="currentColor">
+        <path d="M88.5 38.2c-4.1-2.2-9.2-2.7-14.4-1.5 3.7-5.4 5.6-12 5.1-18.8-.3-3.5-1.4-6.9-3.1-9.9-1.2-1.9-3.6-2.5-5.3-1.4-1.7 1.2-2.3 3.6-1.3 5.4 1.3 2.1 2 4.6 2.2 7.1.5 5.3-1.4 10.6-4.8 14.6-4.6-2.6-10-4.2-15.9-4.4-8.9-.3-17.9 2.3-25 7.4-5.5 3.9-9.9 9.2-12.6 15.5-1.5 3.4-3.7 6.3-6.6 8.4-2.1 1.6-4.6 2.7-7.2 3.4-1.7.5-2.7 2.2-2.2 4 .5 1.7 2.2 2.7 4 2.2 3.7-1 7.2-2.6 10.2-4.9 3.2-2.3 5.7-5.4 7.4-9 2.1-4.8 5.4-8.8 9.6-11.8 5.7-4.1 12.8-6.1 20-5.9 4.4.1 8.5 1.2 12.2 3.1-7 6.4-10.9 15.4-10.7 24.8.2 9.4 4.5 18.2 11.7 24.3 1.7 1.4 4.1 1.2 5.4-.5 1.4-1.7 1.2-4.1-.5-5.4-5.9-5-9.3-12.1-9.5-19.8-.2-7.7 2.9-15 8.6-20.3 2.4 1.6 5 3 8 4-1.3 4-1.4 8.2-.2 12.3 1.2 4 3.6 7.5 6.9 9.9 1.7 1.3 4.1 1 5.3-.7 1.3-1.7 1-4.1-.7-5.3-2.3-1.7-4-4.2-4.9-7-.8-2.8-.8-5.8.2-8.6 3.9-.7 7.5-2.1 10.7-4.3 1.7-1.2 2.2-3.5 1.1-5.2-1.2-1.7-3.5-2.2-5.2-1z"/>
       </svg>
-    </div>
-    <div class="brand-title">Debian<span class="text-blue">SCALE</span></div>
-    <span class="version-tag">ENTERPRISE ZFS</span>
-  </div>
+      <span class="fn-brand-text">FreeNAS</span>
+    </a>
 
-  <div class="topbar-meta-strip">
-    <div class="meta-item">
-      <span class="status-dot green"></span>
-      <span class="text-dim">Node:</span>
-      <strong class="font-mono">{{if .System.Hostname}}{{.System.Hostname}}{{else}}localhost{{end}}</strong>
-    </div>
-    <div class="meta-item">
-      <span class="text-dim">ZFS:</span>
-      <strong class="font-mono text-blue">{{if .ZfsVersion}}{{.ZfsVersion}}{{else}}OpenZFS 2.2{{end}}</strong>
-    </div>
-    <div class="meta-item">
-      <span class="text-dim">Raw Pool:</span>
-      <strong>{{formatBytes .TotalRawBytes}}</strong>
-      <span class="text-dim">({{len .Disks}} Disks)</span>
-    </div>
-    <div class="meta-item">
-      <span class="text-dim">Daemon:</span>
-      <strong class="text-green font-mono">{{formatPercent .System.DaemonRamMB}} MB RSS</strong>
-    </div>
-  </div>
-
-  <div class="topbar-right">
-    <div class="io-pill" title="ZFS Aggregate Storage I/O">
-      <span class="r">&#9650; <strong class="font-mono">{{formatRate .System.DiskIO.ReadMBS}}</strong></span>
-      <span class="w">&#9660; <strong class="font-mono">{{formatRate .System.DiskIO.WriteMBS}}</strong></span>
-    </div>
-    <div class="hdd-spindown-badge" title="Safe Non-Intrusive Spindown">
-      <span class="status-dot blue"></span>
-      <span>{{.StandbyCount}} HDDs Standby</span>
-    </div>
-    <button class="icon-btn" title="Refresh Telemetry" hx-get="/ui/partials/system" hx-target="#system-metrics-container" hx-swap="morph">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
-      </svg>
+    <!-- Hamburger & Collapse Toggle -->
+    <button class="fn-topbar-btn" title="Toggle Navigation">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
     </button>
+    <button class="fn-topbar-btn" title="Collapse Sidebar">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+    </button>
+  </div>
+
+  <div class="fn-topbar-right">
+    <div class="fn-copyright-text">
+      FreeNAS&reg; &copy; 2018 - iXsystems, Inc. &bull; Debian NAS Edition
+    </div>
+
+    <div class="fn-utility-icons">
+      <!-- Task Runner / Jobs Icon -->
+      <button class="fn-icon-btn" title="Background Tasks">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-2 14l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
+        </svg>
+      </button>
+
+      <!-- Alert Bell with Status Dot -->
+      <button class="fn-icon-btn fn-bell-btn" title="System Alerts">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"/>
+        </svg>
+        <span class="fn-bell-badge"></span>
+      </button>
+
+      <!-- Settings Gear -->
+      <button class="fn-icon-btn" title="System Settings" @click="currentTab = 'system'">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+        </svg>
+      </button>
+
+      <!-- Power / Reboot -->
+      <button class="fn-icon-btn" title="Power / Reboot">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/>
+        </svg>
+      </button>
+    </div>
   </div>
 </header>
