@@ -1,35 +1,46 @@
 <div id="shares-container" hx-get="/ui/partials/shares" hx-trigger="shareUpdate from:body" hx-ext="morph"
   hx-swap="morph">
-  <div class="table-card">
+
+  <!-- 1. SMB / CIFS Shares Table -->
+  <div class="table-card" style="margin-bottom: 1.5rem;">
     <div class="table-toolbar">
-      <span class="toolbar-title">Active Network Exports (SMB &amp; NFS)</span>
+      <div style="display: flex; align-items: center; gap: 0.6rem;">
+        <span class="toolbar-title">SMB / CIFS Shares (Windows &amp; macOS)</span>
+        <span class="badge font-mono" style="background: rgba(0,139,229,0.18); color: #93c5fd; border: 1px solid rgba(0,139,229,0.3); font-size: 0.72rem; padding: 1px 6px;">
+          {{len .SmbShares}} Active
+        </span>
+      </div>
       <div class="toolbar-actions">
-        <button class="btn btn-primary btn-sm" @click="openCreateShare('', '')">+ New Network Share</button>
+        <button class="btn btn-primary btn-sm" @click="openCreateShare('', '', 'smb')">+ Add SMB Share</button>
       </div>
     </div>
     <table class="pf-table">
       <thead>
         <tr>
-          <th>Protocol</th>
           <th>Share Name</th>
           <th>Target Dataset / Path</th>
           <th>Access / Permissions</th>
-          <th>Assigned Users / Hosts</th>
+          <th>Authorized Storage Users</th>
           <th>Status</th>
           <th class="col-actions">Actions</th>
         </tr>
       </thead>
       <tbody>
-        {{if and (eq (len .SmbShares) 0) (eq (len .NfsExports) 0)}}
+        {{if eq (len .SmbShares) 0}}
         <tr>
-          <td colspan="7" class="text-dim" style="text-align: center; padding: 1.5rem;">No active network shares
-            configured. Click "+ New Network Share".</td>
+          <td colspan="6" class="text-dim" style="text-align: center; padding: 1.5rem;">
+            No SMB shares configured. Click "+ Add SMB Share".
+          </td>
         </tr>
         {{else}}
         {{range $s := .SmbShares}}
         <tr>
-          <td><span class="badge-status blue">SMB / CIFS</span></td>
-          <td><strong class="font-mono text-blue">{{$s.Name}}</strong></td>
+          <td>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span class="badge-status blue" style="font-size: 0.68rem;">SMB</span>
+              <strong class="font-mono text-blue">{{$s.Name}}</strong>
+            </div>
+          </td>
           <td><span class="font-mono text-dim">{{$s.Path}}</span></td>
           <td>
             <span class="badge-status {{if $s.ReadOnly}}slate{{else}}green{{end}}">
@@ -62,11 +73,51 @@
           </td>
         </tr>
         {{end}}
+        {{end}}
+      </tbody>
+    </table>
+  </div>
 
+  <!-- 2. NFSv4 Exports Table -->
+  <div class="table-card">
+    <div class="table-toolbar">
+      <div style="display: flex; align-items: center; gap: 0.6rem;">
+        <span class="toolbar-title">NFS Exports (Linux, Proxmox &amp; Kubernetes)</span>
+        <span class="badge font-mono" style="background: rgba(245,158,11,0.18); color: #fcd34d; border: 1px solid rgba(245,158,11,0.3); font-size: 0.72rem; padding: 1px 6px;">
+          {{len .NfsExports}} Active
+        </span>
+      </div>
+      <div class="toolbar-actions">
+        <button class="btn btn-secondary btn-sm" @click="openCreateShare('', '', 'nfs')">+ Add NFS Export</button>
+      </div>
+    </div>
+    <table class="pf-table">
+      <thead>
+        <tr>
+          <th>Export Path</th>
+          <th>Target Dataset / Mountpoint</th>
+          <th>Access / Permissions</th>
+          <th>Allowed Clients / Subnets</th>
+          <th>Status</th>
+          <th class="col-actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{if eq (len .NfsExports) 0}}
+        <tr>
+          <td colspan="6" class="text-dim" style="text-align: center; padding: 1.5rem;">
+            No NFS exports configured. Click "+ Add NFS Export".
+          </td>
+        </tr>
+        {{else}}
         {{range $n := .NfsExports}}
         <tr>
-          <td><span class="badge-status amber">NFSv4</span></td>
-          <td><strong class="font-mono">{{$n.Path}}</strong></td>
+          <td>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span class="badge-status amber" style="font-size: 0.68rem;">NFSv4</span>
+              <strong class="font-mono text-white">{{$n.Path}}</strong>
+            </div>
+          </td>
           <td><span class="font-mono text-dim">{{$n.Path}}</span></td>
           <td>
             <span class="badge-status {{if $n.ReadOnly}}slate{{else}}green{{end}}">
@@ -75,7 +126,7 @@
           </td>
           <td>
             <span class="badge font-mono"
-              style="background: rgba(240,171,0,0.15); color: #f0ab00; border: 1px solid rgba(240,171,0,0.3); padding: 2px 6px; border-radius: 2px; font-size: 0.75rem;">
+              style="background: rgba(240,171,0,0.15); color: #f0ab00; border: 1px solid rgba(240,171,0,0.3); padding: 2px 7px; border-radius: 2px; font-size: 0.75rem;">
               🖥️ {{if $n.AllowedClients}}{{$n.AllowedClients}}{{else}}*{{end}}
             </span>
           </td>
@@ -95,4 +146,5 @@
       </tbody>
     </table>
   </div>
+
 </div>

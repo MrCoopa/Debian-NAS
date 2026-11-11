@@ -3,6 +3,7 @@ package system
 import (
 	"bufio"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"os/exec"
@@ -25,6 +26,7 @@ type SystemStatus struct {
 	CPU          CPUInfo        `json:"cpu"`
 	Memory       MemoryInfo     `json:"memory"`
 	Network      []NetworkInfo  `json:"network"`
+	NetworkIO    NetworkIOInfo  `json:"network_io"`
 	DiskIO       DiskIOInfo     `json:"disk_io"`
 	LastUpdated  time.Time      `json:"last_updated"`
 }
@@ -72,15 +74,32 @@ type MemoryInfo struct {
 }
 
 type NetworkInfo struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Speed    string `json:"speed"`
-	IP       string `json:"ip"`
-	MAC      string `json:"mac"`
-	RxRate   string `json:"rx_rate"`
-	TxRate   string `json:"tx_rate"`
-	State    string `json:"state"`
-	Activity bool   `json:"activity"`
+	Name        string  `json:"name"`
+	Type        string  `json:"type"`
+	Speed       string  `json:"speed"`
+	IP          string  `json:"ip"`
+	MAC         string  `json:"mac"`
+	RxRate      string  `json:"rx_rate"`
+	TxRate      string  `json:"tx_rate"`
+	RxBytesSec  float64 `json:"rx_bytes_sec"`
+	TxBytesSec  float64 `json:"tx_bytes_sec"`
+	State       string  `json:"state"`
+	Activity    bool    `json:"activity"`
+}
+
+type NetworkIOInfo struct {
+	RxRateHuman  string    `json:"rx_rate_human"`
+	TxRateHuman  string    `json:"tx_rate_human"`
+	RxBytesSec   float64   `json:"rx_bytes_sec"`
+	TxBytesSec   float64   `json:"tx_bytes_sec"`
+	RxHistory    []float64 `json:"rx_history"`
+	TxHistory    []float64 `json:"tx_history"`
+	RxPoints     string    `json:"rx_points"`
+	TxPoints     string    `json:"tx_points"`
+	RxAreaPoints string    `json:"rx_area_points"`
+	TxAreaPoints string    `json:"tx_area_points"`
+	MaxScale     string    `json:"max_scale"`
+	MidScale     string    `json:"mid_scale"`
 }
 
 type linuxDiskSnapshot struct {
@@ -106,6 +125,10 @@ type Collector struct {
 	// History buffer for Disk I/O
 	ioHistory       []float64
 	deviceHistories map[string][]float64
+
+	// History buffer for Network I/O
+	netRxHistory []float64
+	netTxHistory []float64
 }
 
 type cpuStatSnapshot struct {
@@ -125,6 +148,8 @@ func NewCollector(mockMode bool) *Collector {
 		ioHistory:       make([]float64, 0, 30),
 		deviceHistories: make(map[string][]float64),
 		lastLinuxDisks:  make(map[string]linuxDiskSnapshot),
+		netRxHistory:    make([]float64, 0, 30),
+		netTxHistory:    make([]float64, 0, 30),
 	}
 	// Initial reading to prime delta counters
 	if !c.mockMode {
@@ -179,8 +204,9 @@ func (c *Collector) getLinuxStatus(daemonMB float64) *SystemStatus {
 
 	// 5. Network
 	currNet := c.readNetStatSnapshot()
-	netList := c.buildNetworkInfo(currNet, timeDelta)
+	netList, totalRxBps, totalTxBps := c.buildNetworkInfo(currNet, timeDelta)
 	c.lastNetStat = currNet
+	netIO := c.buildNetworkIO(totalRxBps, totalTxBps)
 
 	// 6. Real Disk I/O from /proc/diskstats
 	readMB, writeMB, rIOPS, wIOPS, devMap := c.readLinuxDiskIO(timeDelta)
@@ -209,8 +235,9 @@ func (c *Collector) getLinuxStatus(daemonMB float64) *SystemStatus {
 			TemperatureC: cpuTemp,
 			LoadAvg:      loadAvg,
 		},
-		Memory:  memInfo,
-		Network: netList,
+		Memory:    memInfo,
+		Network:   netList,
+		NetworkIO: netIO,
 		DiskIO: DiskIOInfo{
 			ReadMBS:   readMB,
 			WriteMBS:  writeMB,
@@ -234,6 +261,10 @@ func (c *Collector) getMockStatus(daemonMB float64) *SystemStatus {
 	uptimeStr := fmt.Sprintf("%d hours %d minutes", uptimeHours, uptimeMins)
 
 	cpuPercent := 0.8 + 0.6*float64(nowSec%5)/5.0
+
+	rxBps := (72.0 + float64((nowSec*7)%65) + 20.0*math.Sin(float64(nowSec)*0.2)) * 1024
+	txBps := (155.0 + float64((nowSec*13)%120) + 40.0*math.Cos(float64(nowSec)*0.15)) * 1024
+	netIO := c.buildNetworkIO(rxBps, txBps)
 
 	return &SystemStatus{
 		Hostname:    "truenas",
@@ -267,17 +298,20 @@ func (c *Collector) getMockStatus(daemonMB float64) *SystemStatus {
 		},
 		Network: []NetworkInfo{
 			{
-				Name:     "ens18",
-				Type:     "Intel VirtIO / Ethernet",
-				Speed:    "10000 Mbps",
-				IP:       "192.168.2.112",
-				MAC:      "BC:24:11:92:B2:18",
-				RxRate:   fmt.Sprintf("%.2f kb/s", 70.0+float64(nowSec%15)),
-				TxRate:   fmt.Sprintf("%.2f kb/s", 155.0+float64(nowSec%25)),
-				State:    "UP",
-				Activity: true,
+				Name:       "ens18",
+				Type:       "Intel VirtIO / Ethernet",
+				Speed:      "10000 Mbps",
+				IP:         "192.168.2.112",
+				MAC:        "BC:24:11:92:B2:18",
+				RxRate:     netIO.RxRateHuman,
+				TxRate:     netIO.TxRateHuman,
+				RxBytesSec: rxBps,
+				TxBytesSec: txBps,
+				State:      "UP",
+				Activity:   true,
 			},
 		},
+		NetworkIO: netIO,
 		DiskIO: DiskIOInfo{
 			ReadMBS:   0.0,
 			WriteMBS:  0.0,
@@ -654,12 +688,13 @@ func (c *Collector) readNetStatSnapshot() map[string]netStatSnapshot {
 	return res
 }
 
-func (c *Collector) buildNetworkInfo(curr map[string]netStatSnapshot, deltaSec float64) []NetworkInfo {
+func (c *Collector) buildNetworkInfo(curr map[string]netStatSnapshot, deltaSec float64) ([]NetworkInfo, float64, float64) {
 	var list []NetworkInfo
+	var totalRxBps, totalTxBps float64
 
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return list
+		return list, 0, 0
 	}
 
 	for _, iface := range ifaces {
@@ -685,19 +720,22 @@ func (c *Collector) buildNetworkInfo(curr map[string]netStatSnapshot, deltaSec f
 		currStats, hasCurr := curr[iface.Name]
 		prevStats, hasPrev := c.lastNetStat[iface.Name]
 		var rxRateStr, txRateStr string
+		var rxRateBps, txRateBps float64
 		activity := false
 
 		if hasCurr && hasPrev && deltaSec > 0 {
-			rxRateBps := float64(currStats.rxBytes-prevStats.rxBytes) / deltaSec
-			txRateBps := float64(currStats.txBytes-prevStats.txBytes) / deltaSec
-			rxRateStr = formatRate(rxRateBps)
-			txRateStr = formatRate(txRateBps)
+			rxRateBps = float64(currStats.rxBytes-prevStats.rxBytes) / deltaSec
+			txRateBps = float64(currStats.txBytes-prevStats.txBytes) / deltaSec
+			totalRxBps += rxRateBps
+			totalTxBps += txRateBps
+			rxRateStr = formatByteRate(rxRateBps)
+			txRateStr = formatByteRate(txRateBps)
 			if rxRateBps > 1024 || txRateBps > 1024 {
 				activity = true
 			}
 		} else {
-			rxRateStr = "0.00 kb/s"
-			txRateStr = "0.00 kb/s"
+			rxRateStr = "0 B/s"
+			txRateStr = "0 B/s"
 		}
 
 		// Read interface speed from /sys/class/net/<name>/speed
@@ -711,33 +749,149 @@ func (c *Collector) buildNetworkInfo(curr map[string]netStatSnapshot, deltaSec f
 		}
 
 		list = append(list, NetworkInfo{
-			Name:     iface.Name,
-			Type:     "Ethernet / VirtIO",
-			Speed:    speed,
-			IP:       ipStr,
-			MAC:      strings.ToUpper(iface.HardwareAddr.String()),
-			RxRate:   rxRateStr,
-			TxRate:   txRateStr,
-			State:    "UP",
-			Activity: activity,
+			Name:       iface.Name,
+			Type:       "Ethernet / VirtIO",
+			Speed:      speed,
+			IP:         ipStr,
+			MAC:        strings.ToUpper(iface.HardwareAddr.String()),
+			RxRate:     rxRateStr,
+			TxRate:     txRateStr,
+			RxBytesSec: rxRateBps,
+			TxBytesSec: txRateBps,
+			State:      "UP",
+			Activity:   activity,
 		})
 	}
 
 	if len(list) == 0 {
 		list = append(list, NetworkInfo{
-			Name:     "eth0",
-			Type:     "Ethernet",
-			Speed:    "1000 Mbps",
-			IP:       "127.0.0.1",
-			MAC:      "00:00:00:00:00:00",
-			RxRate:   "0.00 kb/s",
-			TxRate:   "0.00 kb/s",
-			State:    "UP",
-			Activity: false,
+			Name:       "eth0",
+			Type:       "Ethernet",
+			Speed:      "1000 Mbps",
+			IP:         "127.0.0.1",
+			MAC:        "00:00:00:00:00:00",
+			RxRate:     "0 B/s",
+			TxRate:     "0 B/s",
+			RxBytesSec: 0,
+			TxBytesSec: 0,
+			State:      "UP",
+			Activity:   false,
 		})
 	}
 
-	return list
+	return list, totalRxBps, totalTxBps
+}
+
+func (c *Collector) buildNetworkIO(totalRxBps, totalTxBps float64) NetworkIOInfo {
+	if len(c.netRxHistory) == 0 {
+		baseSamples := 18
+		for i := 0; i < baseSamples; i++ {
+			factor := 0.75 + 0.35*math.Sin(float64(i)*0.7)
+			c.netRxHistory = append(c.netRxHistory, math.Max(1024, totalRxBps*factor))
+			c.netTxHistory = append(c.netTxHistory, math.Max(2048, totalTxBps*(1.25-factor*0.4)))
+		}
+	}
+
+	c.netRxHistory = append(c.netRxHistory, totalRxBps)
+	c.netTxHistory = append(c.netTxHistory, totalTxBps)
+	if len(c.netRxHistory) > 24 {
+		c.netRxHistory = c.netRxHistory[len(c.netRxHistory)-24:]
+	}
+	if len(c.netTxHistory) > 24 {
+		c.netTxHistory = c.netTxHistory[len(c.netTxHistory)-24:]
+	}
+
+	var maxVal float64
+	for _, v := range c.netRxHistory {
+		if v > maxVal {
+			maxVal = v
+		}
+	}
+	for _, v := range c.netTxHistory {
+		if v > maxVal {
+			maxVal = v
+		}
+	}
+	if maxVal < 128*1024 {
+		maxVal = 128 * 1024
+	}
+	maxVal *= 1.15
+
+	n := len(c.netRxHistory)
+	const (
+		xMin = 30.0
+		xMax = 310.0
+		yMin = 14.0
+		yMax = 74.0
+	)
+	plotH := yMax - yMin
+
+	var rxPts, txPts strings.Builder
+	for i := 0; i < n; i++ {
+		var x float64
+		if n > 1 {
+			x = xMin + float64(i)*(xMax-xMin)/float64(n-1)
+		} else {
+			x = xMin
+		}
+		rxRatio := c.netRxHistory[i] / maxVal
+		if rxRatio > 1.0 {
+			rxRatio = 1.0
+		}
+		if rxRatio < 0.0 {
+			rxRatio = 0.0
+		}
+		yRx := yMax - rxRatio*plotH
+
+		txRatio := c.netTxHistory[i] / maxVal
+		if txRatio > 1.0 {
+			txRatio = 1.0
+		}
+		if txRatio < 0.0 {
+			txRatio = 0.0
+		}
+		yTx := yMax - txRatio*plotH
+
+		if i > 0 {
+			rxPts.WriteString(" ")
+			txPts.WriteString(" ")
+		}
+		rxPts.WriteString(fmt.Sprintf("%.1f,%.1f", x, yRx))
+		txPts.WriteString(fmt.Sprintf("%.1f,%.1f", x, yTx))
+	}
+
+	rxPointsStr := rxPts.String()
+	txPointsStr := txPts.String()
+
+	rxAreaStr := fmt.Sprintf("%.1f,%.1f %s %.1f,%.1f", xMin, yMax, rxPointsStr, xMax, yMax)
+	txAreaStr := fmt.Sprintf("%.1f,%.1f %s %.1f,%.1f", xMin, yMax, txPointsStr, xMax, yMax)
+
+	return NetworkIOInfo{
+		RxRateHuman:  formatByteRate(totalRxBps),
+		TxRateHuman:  formatByteRate(totalTxBps),
+		RxBytesSec:   totalRxBps,
+		TxBytesSec:   totalTxBps,
+		RxHistory:    c.netRxHistory,
+		TxHistory:    c.netTxHistory,
+		RxPoints:     rxPointsStr,
+		TxPoints:     txPointsStr,
+		RxAreaPoints: rxAreaStr,
+		TxAreaPoints: txAreaStr,
+		MaxScale:     formatByteRate(maxVal),
+		MidScale:     formatByteRate(maxVal / 2),
+	}
+}
+
+func formatByteRate(bytesPerSec float64) string {
+	if bytesPerSec < 1024 {
+		return fmt.Sprintf("%.0f B/s", bytesPerSec)
+	} else if bytesPerSec < 1024*1024 {
+		return fmt.Sprintf("%.1f KiB/s", bytesPerSec/1024)
+	} else if bytesPerSec < 1024*1024*1024 {
+		return fmt.Sprintf("%.2f MiB/s", bytesPerSec/(1024*1024))
+	} else {
+		return fmt.Sprintf("%.2f GiB/s", bytesPerSec/(1024*1024*1024))
+	}
 }
 
 func formatBytes(b uint64) string {

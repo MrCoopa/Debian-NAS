@@ -166,6 +166,11 @@ func (s *Server) handleUIPartialCreateShareModal(w http.ResponseWriter, r *http.
 	_ = s.web.Render(w, "modals/create_share.html", s.buildViewData())
 }
 
+func (s *Server) handleUIPartialShareModalUsers(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.web.Render(w, "partials/share_users_checkboxes.html", s.buildViewData())
+}
+
 // ==============================================================================
 // UI Action Handlers (HTMX Form submissions & button triggers)
 // ==============================================================================

@@ -266,11 +266,65 @@
 
     <!-- 2. Network Interfaces Card -->
     <div class="omv-card">
-      <div class="omv-card-title">Network Interfaces</div>
+      <div class="omv-card-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Network Interfaces</span>
+        <span style="font-size: 0.7rem; color: #94a3b8; font-weight: normal; font-family: monospace;">
+          <span style="color: #10b981;">&#9660; {{if .System.NetworkIO.RxRateHuman}}{{.System.NetworkIO.RxRateHuman}}{{else}}0 B/s{{end}}</span> &nbsp;|&nbsp;
+          <span style="color: #008be5;">&#9650; {{if .System.NetworkIO.TxRateHuman}}{{.System.NetworkIO.TxRateHuman}}{{else}}0 B/s{{end}}</span>
+        </span>
+      </div>
       <!-- Hero Green Banner for Primary Interface -->
       <div class="omv-net-hero-bar">
         <div class="omv-net-hero-name">{{range $i, $nic := .System.Network}}{{if eq $i 0}}{{$nic.Name}}{{end}}{{else}}ens32{{end}}</div>
         <div class="omv-net-hero-ip">{{range $i, $nic := .System.Network}}{{if eq $i 0}}{{$nic.IP}}/24{{end}}{{else}}192.168.100.129/24{{end}}</div>
+      </div>
+
+      <!-- Live Network I/O Diagram -->
+      <div class="omv-rrd-chart" style="margin: 0.6rem 0 0.8rem 0; padding: 0.5rem 0.6rem; background: rgba(0,0,0,0.3); border: 1px solid #262626; border-radius: 4px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem; font-size: 0.72rem;">
+          <span style="color: #94a3b8; font-weight: 600; letter-spacing: 0.02em;">Live Traffic (Throughput)</span>
+          <span class="text-dim" style="font-size: 0.68rem;">Peak: {{if .System.NetworkIO.MaxScale}}{{.System.NetworkIO.MaxScale}}{{else}}1.00 MiB/s{{end}}</span>
+        </div>
+        <div class="omv-rrd-svg-wrap" style="height: 85px; position: relative;">
+          <svg viewBox="0 0 320 90" preserveAspectRatio="none" style="width: 100%; height: 100%; overflow: visible;">
+            <!-- Grid Lines -->
+            <line x1="30" y1="14" x2="310" y2="14" stroke="#2a2a2a" stroke-width="1" stroke-dasharray="2 2" />
+            <line x1="30" y1="44" x2="310" y2="44" stroke="#2a2a2a" stroke-width="1" stroke-dasharray="2 2" />
+            <line x1="30" y1="74" x2="310" y2="74" stroke="#383838" stroke-width="1" />
+
+            <!-- Y-Axis Ticks -->
+            <text x="25" y="17" fill="#757575" font-size="7.5" text-anchor="end">{{if .System.NetworkIO.MaxScale}}{{.System.NetworkIO.MaxScale}}{{else}}1M{{end}}</text>
+            <text x="25" y="47" fill="#757575" font-size="7.5" text-anchor="end">{{if .System.NetworkIO.MidScale}}{{.System.NetworkIO.MidScale}}{{else}}500K{{end}}</text>
+            <text x="25" y="77" fill="#757575" font-size="7.5" text-anchor="end">0</text>
+
+            <!-- Inbound (RX) Shaded Area & Line (Green) -->
+            {{if .System.NetworkIO.RxAreaPoints}}
+              <polygon fill="rgba(16, 185, 129, 0.22)" points="{{.System.NetworkIO.RxAreaPoints}}" />
+              <polyline fill="none" stroke="#10b981" stroke-width="1.8" points="{{.System.NetworkIO.RxPoints}}" stroke-linejoin="round" />
+            {{end}}
+
+            <!-- Outbound (TX) Shaded Area & Line (Blue) -->
+            {{if .System.NetworkIO.TxAreaPoints}}
+              <polygon fill="rgba(0, 139, 229, 0.18)" points="{{.System.NetworkIO.TxAreaPoints}}" />
+              <polyline fill="none" stroke="#008be5" stroke-width="1.8" points="{{.System.NetworkIO.TxPoints}}" stroke-linejoin="round" />
+            {{end}}
+          </svg>
+        </div>
+        <div class="omv-rrd-legend" style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.35rem; font-size: 0.72rem;">
+          <div style="display: flex; gap: 0.85rem; align-items: center;">
+            <span class="omv-legend-item" style="display: inline-flex; align-items: center; gap: 4px;">
+              <span class="omv-legend-dot" style="background: #10b981; width: 8px; height: 8px; border-radius: 50%;"></span>
+              <span style="color: #94a3b8;">Inbound (Rx):</span>
+              <strong class="font-mono text-green">{{if .System.NetworkIO.RxRateHuman}}{{.System.NetworkIO.RxRateHuman}}{{else}}0 B/s{{end}}</strong>
+            </span>
+            <span class="omv-legend-item" style="display: inline-flex; align-items: center; gap: 4px;">
+              <span class="omv-legend-dot" style="background: #008be5; width: 8px; height: 8px; border-radius: 50%;"></span>
+              <span style="color: #94a3b8;">Outbound (Tx):</span>
+              <strong class="font-mono text-blue">{{if .System.NetworkIO.TxRateHuman}}{{.System.NetworkIO.TxRateHuman}}{{else}}0 B/s{{end}}</strong>
+            </span>
+          </div>
+          <span style="color: #64748b; font-size: 0.68rem; font-family: monospace;">-60s &rarr; now</span>
+        </div>
       </div>
 
       <table class="pf-table">

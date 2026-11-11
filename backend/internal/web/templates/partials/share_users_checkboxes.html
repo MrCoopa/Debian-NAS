@@ -1,0 +1,11 @@
+{{if eq (len .Users) 0}}
+  <span class="text-dim" style="font-size: 0.75rem;">No storage users configured. Create a user first.</span>
+{{else}}
+  {{range $u := .Users}}
+    <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.78rem; cursor: pointer;">
+      <input type="checkbox" name="valid_users" value="{{$u.Username}}" :checked="shareForm.users.includes('{{$u.Username}}')">
+      <strong class="font-mono text-blue">👤 {{$u.Username}}</strong>
+      <span class="text-dim">(nasusers)</span>
+    </label>
+  {{end}}
+{{end}}

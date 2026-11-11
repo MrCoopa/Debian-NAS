@@ -47,9 +47,13 @@
         },
         toasts: [],
 
-        openCreateShare(name, path) {
+        openCreateShare(name, path, proto) {
           this.isEditingShare = false;
-          this.shareForm = { name: name || '', origName: '', path: path || '', origPath: '', proto: 'smb', access: 'restricted', allowed_clients: '*', users: [] };
+          this.shareForm = { name: name || '', origName: '', path: path || '', origPath: '', proto: proto || 'smb', access: 'restricted', allowed_clients: '*', users: [] };
+          this.$nextTick(() => {
+            const cbs = document.querySelectorAll('#share-modal-users input[name=valid_users]');
+            cbs.forEach(cb => { cb.checked = false; });
+          });
           this.openShareModal = true;
         },
         openEditSmbShare(name, path, readOnly, guestOk, usersStr) {
@@ -74,6 +78,10 @@
             allowed_clients: '*',
             users: u
           };
+          this.$nextTick(() => {
+            const cbs = document.querySelectorAll('#share-modal-users input[name=valid_users]');
+            cbs.forEach(cb => { cb.checked = u.includes(cb.value); });
+          });
           this.openShareModal = true;
         },
         openEditNfsShare(path, readOnly, allowedClients) {
@@ -302,7 +310,8 @@
               <h1>Network File Shares (SMB &amp; NFS)</h1>
             </div>
             <div class="page-actions" style="display: flex; gap: 0.5rem;">
-              <button class="btn btn-primary btn-sm" @click="openCreateShare('', '')">+ Add Network Share</button>
+              <button class="btn btn-primary btn-sm" @click="openCreateShare('', '', 'smb')">+ Add SMB Share</button>
+              <button class="btn btn-secondary btn-sm" @click="openCreateShare('', '', 'nfs')">+ Add NFS Export</button>
             </div>
           </div>
 
