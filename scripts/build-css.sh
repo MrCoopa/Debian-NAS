@@ -37,3 +37,4 @@ cp -f "$ROOT_DIR/backend/internal/web/static/tailwind.css" "$ROOT_DIR/backend/st
 cp -f "$ROOT_DIR/backend/internal/web/static/input.css" "$ROOT_DIR/backend/static/input.css"
 
 echo "[✔] Tailwind CSS erfolgreich kompiliert und synchronisiert!"
+

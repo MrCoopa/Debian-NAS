@@ -1,4 +1,4 @@
-﻿param(
+param(
     [switch]$Watch
 )
 
@@ -30,3 +30,4 @@ if ($Watch) {
     Copy-Item $inputCss $inputTarget -Force
     Write-Host "[✔] Tailwind CSS erfolgreich kompiliert und synchronisiert!"
 }
+
