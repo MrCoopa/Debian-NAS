@@ -1,10 +1,18 @@
-.PHONY: all build build-linux deploy run-mock clean
+.PHONY: all build build-linux deploy run-mock clean css watch-css
 
 BINARY_NAME=nasd
 BACKEND_DIR=backend
 INSTALL_DIR=/opt/debian-nas
 
 all: build
+
+css:
+	@chmod +x scripts/build-css.sh 2>/dev/null || true
+	@./scripts/build-css.sh
+
+watch-css:
+	@chmod +x scripts/build-css.sh 2>/dev/null || true
+	@./scripts/build-css.sh --watch
 
 build:
 	@echo "Building Debian Linux binary into bin/$(BINARY_NAME)..."

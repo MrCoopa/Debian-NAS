@@ -1,5 +1,7 @@
 # Binaries
 bin/
+tools/
+tailwindcss-*
 backend/nasd.exe
 backend/nasd.exe~
 backend/nasd-linux-amd64
