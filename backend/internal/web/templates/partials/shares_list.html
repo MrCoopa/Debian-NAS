@@ -1,4 +1,5 @@
-<div id="shares-container" hx-get="/ui/partials/shares" hx-trigger="shareUpdate from:body" hx-ext="morph" hx-swap="morph">
+<div id="shares-container" hx-get="/ui/partials/shares" hx-trigger="shareUpdate from:body" hx-ext="morph"
+  hx-swap="morph">
   <div class="table-card">
     <div class="table-toolbar">
       <span class="toolbar-title">Active Network Exports (SMB &amp; NFS)</span>
@@ -20,64 +21,74 @@
       </thead>
       <tbody>
         {{if and (eq (len .SmbShares) 0) (eq (len .NfsExports) 0)}}
-          <tr><td colspan="7" class="text-dim" style="text-align: center; padding: 1.5rem;">No active network shares configured. Click "+ New Network Share".</td></tr>
+        <tr>
+          <td colspan="7" class="text-dim" style="text-align: center; padding: 1.5rem;">No active network shares
+            configured. Click "+ New Network Share".</td>
+        </tr>
         {{else}}
-          {{range $s := .SmbShares}}
-            <tr>
-              <td><span class="badge-status blue">SMB / CIFS</span></td>
-              <td><strong class="font-mono text-blue">{{$s.Name}}</strong></td>
-              <td><span class="font-mono text-dim">{{$s.Path}}</span></td>
-              <td>
-                <span class="badge-status {{if $s.ReadOnly}}slate{{else}}green{{end}}">
-                  {{if $s.ReadOnly}}Read-Only{{else}}Read / Write{{end}}
-                </span>
-              </td>
-              <td>
-                {{if $s.GuestOk}}
-                  <span class="badge-status green" style="font-size: 0.75rem;">🟢 Everyone (Guest / No Password)</span>
-                {{else if gt (len $s.ValidUsers) 0}}
-                  {{range $u := $s.ValidUsers}}
-                    <span class="badge font-mono" style="background: rgba(59,130,246,0.18); color: #93c5fd; border: 1px solid rgba(59,130,246,0.35); padding: 2px 7px; border-radius: 2px; margin: 1px 2px; display: inline-block; font-size: 0.75rem;">
-                      👤 {{$u}}
-                    </span>
-                  {{end}}
-                {{else}}
-                  <span class="badge-status blue" style="font-size: 0.75rem;">👥 All NAS Users (@nasusers)</span>
-                {{end}}
-              </td>
-              <td><span class="badge-status green">Active</span></td>
-              <td class="col-actions">
-                <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
-                  <button class="btn btn-secondary btn-sm" @click="openEditShare('{{$s.Name}}', '{{$s.Path}}', {{$s.ReadOnly}}, {{$s.GuestOk}}, '{{join $s.ValidUsers ","}}')">Edit</button>
-                  <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/smb?name={{$s.Name}}" hx-confirm="Delete SMB share '{{$s.Name}}'?" hx-target="#shares-container" hx-swap="morph">Delete</button>
-                </div>
-              </td>
-            </tr>
-          {{end}}
+        {{range $s := .SmbShares}}
+        <tr>
+          <td><span class="badge-status blue">SMB / CIFS</span></td>
+          <td><strong class="font-mono text-blue">{{$s.Name}}</strong></td>
+          <td><span class="font-mono text-dim">{{$s.Path}}</span></td>
+          <td>
+            <span class="badge-status {{if $s.ReadOnly}}slate{{else}}green{{end}}">
+              {{if $s.ReadOnly}}Read-Only{{else}}Read / Write{{end}}
+            </span>
+          </td>
+          <td>
+            {{if $s.GuestOk}}
+            <span class="badge-status green" style="font-size: 0.75rem;">🟢 Everyone (Guest / No Password)</span>
+            {{else if gt (len $s.ValidUsers) 0}}
+            {{range $u := $s.ValidUsers}}
+            <span class="badge font-mono"
+              style="background: rgba(59,130,246,0.18); color: #93c5fd; border: 1px solid rgba(59,130,246,0.35); padding: 2px 7px; border-radius: 2px; margin: 1px 2px; display: inline-block; font-size: 0.75rem;">
+              👤 {{$u}}
+            </span>
+            {{end}}
+            {{else}}
+            <span class="badge-status blue" style="font-size: 0.75rem;">👥 All NAS Users (@nasusers)</span>
+            {{end}}
+          </td>
+          <td><span class="badge-status green">Active</span></td>
+          <td class="col-actions">
+            <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
+              <button class="btn btn-secondary btn-sm"
+                @click="openEditShare('{{$s.Name}}', '{{$s.Path}}', {{$s.ReadOnly}}, {{$s.GuestOk}}, '{{join $s.ValidUsers ","}}')">Edit</button>
+              <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/smb?name={{$s.Name}}"
+                hx-confirm="Delete SMB share '{{$s.Name}}'?" hx-target="#shares-container"
+                hx-swap="morph">Delete</button>
+            </div>
+          </td>
+        </tr>
+        {{end}}
 
-          {{range $n := .NfsExports}}
-            <tr>
-              <td><span class="badge-status amber">NFSv4</span></td>
-              <td><strong class="font-mono">{{$n.Path}}</strong></td>
-              <td><span class="font-mono text-dim">{{$n.Path}}</span></td>
-              <td>
-                <span class="badge-status {{if $n.ReadOnly}}slate{{else}}green{{end}}">
-                  {{if $n.ReadOnly}}Read-Only{{else}}Read / Write{{end}}
-                </span>
-              </td>
-              <td>
-                <span class="badge font-mono" style="background: rgba(240,171,0,0.15); color: #f0ab00; border: 1px solid rgba(240,171,0,0.3); padding: 2px 6px; border-radius: 2px; font-size: 0.75rem;">
-                  🖥️ {{if $n.AllowedClients}}{{$n.AllowedClients}}{{else}}*{{end}}
-                </span>
-              </td>
-              <td><span class="badge-status green">Active</span></td>
-              <td class="col-actions">
-                <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
-                  <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/nfs?path={{$n.Path}}" hx-confirm="Remove NFS export '{{$n.Path}}'?" hx-target="#shares-container" hx-swap="morph">Delete</button>
-                </div>
-              </td>
-            </tr>
-          {{end}}
+        {{range $n := .NfsExports}}
+        <tr>
+          <td><span class="badge-status amber">NFSv4</span></td>
+          <td><strong class="font-mono">{{$n.Path}}</strong></td>
+          <td><span class="font-mono text-dim">{{$n.Path}}</span></td>
+          <td>
+            <span class="badge-status {{if $n.ReadOnly}}slate{{else}}green{{end}}">
+              {{if $n.ReadOnly}}Read-Only{{else}}Read / Write{{end}}
+            </span>
+          </td>
+          <td>
+            <span class="badge font-mono"
+              style="background: rgba(240,171,0,0.15); color: #f0ab00; border: 1px solid rgba(240,171,0,0.3); padding: 2px 6px; border-radius: 2px; font-size: 0.75rem;">
+              🖥️ {{if $n.AllowedClients}}{{$n.AllowedClients}}{{else}}*{{end}}
+            </span>
+          </td>
+          <td><span class="badge-status green">Active</span></td>
+          <td class="col-actions">
+            <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
+              <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/nfs?path={{$n.Path}}"
+                hx-confirm="Remove NFS export '{{$n.Path}}'?" hx-target="#shares-container"
+                hx-swap="morph">Delete</button>
+            </div>
+          </td>
+        </tr>
+        {{end}}
         {{end}}
       </tbody>
     </table>

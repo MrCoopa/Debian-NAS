@@ -156,7 +156,7 @@
         </button>
 
         <!-- 6. Users -->
-        <button class="omv-nav-item" @click="currentTab = 'shares'">
+        <button class="omv-nav-item" :class="{ 'active': currentTab === 'users' }" @click="currentTab = 'users'">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
           </svg>
@@ -188,7 +188,7 @@
           <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
         </span>
         <span class="omv-crumb-divider">|</span>
-        <span class="omv-crumb-title" x-text="currentTab === 'dashboard' ? 'Dashboard' : (currentTab === 'pools' ? 'Storage > ZFS Storage Pools' : (currentTab === 'disks' ? 'Storage > Physical Disks' : (currentTab === 'shares' ? 'Services > SMB & NFS' : (currentTab === 'protection' ? 'Diagnostics > Snapshots & Scrub' : (currentTab === 'network' ? 'Network' : 'System')))))">Dashboard</span>
+        <span class="omv-crumb-title" x-text="currentTab === 'dashboard' ? 'Dashboard' : (currentTab === 'pools' ? 'Storage > ZFS Storage Pools' : (currentTab === 'disks' ? 'Storage > Physical Disks' : (currentTab === 'shares' ? 'Services > SMB & NFS' : (currentTab === 'users' ? 'Users > Storage Users' : (currentTab === 'protection' ? 'Diagnostics > Snapshots & Scrub' : (currentTab === 'network' ? 'Network' : 'System'))))))">Dashboard</span>
       </div>
 
       <main class="omv-main-content">
@@ -204,6 +204,7 @@
               <h1>Native OpenZFS Storage Pools &amp; Datasets</h1>
             </div>
             <div class="page-actions" style="display: flex; gap: 0.5rem;">
+              <button class="btn btn-secondary btn-sm" @click="currentTab = 'disks'">Physical Disks &rarr;</button>
               <button class="btn btn-secondary btn-sm" @click="openImportModal = true">Import Pool</button>
               <button class="btn btn-primary btn-sm" @click="openCreatePoolModal = true">+ Create Pool</button>
             </div>
@@ -222,6 +223,9 @@
             <div class="page-title-group">
               <h1>Physical Disks &amp; S.M.A.R.T.</h1>
             </div>
+            <div class="page-actions">
+              <button class="btn btn-secondary btn-sm" @click="currentTab = 'pools'">&larr; ZFS Storage Pools</button>
+            </div>
           </div>
 
           {{template "partials/disks_table.html" .}}
@@ -234,16 +238,26 @@
               <h1>File Sharing Services (SMB &amp; NFS)</h1>
             </div>
             <div class="page-actions" style="display: flex; gap: 0.5rem;">
-              <button class="btn btn-secondary btn-sm" @click="openCreateUserModal = true">+ Add Storage User</button>
+              <button class="btn btn-secondary btn-sm" @click="currentTab = 'users'">Manage Users &rarr;</button>
               <button class="btn btn-primary btn-sm" @click="openCreateShare('', '')">+ Add Network Share</button>
             </div>
           </div>
 
           {{template "partials/shares_list.html" .}}
+        </section>
 
-          <div style="margin-top: 1.5rem;">
-            {{template "partials/users_list.html" .}}
+        <!-- TAB 5: USERS -->
+        <section class="tab-pane" :class="{ 'active': currentTab === 'users' }" x-show="currentTab === 'users'" x-cloak>
+          <div class="page-header">
+            <div class="page-title-group">
+              <h1>User Management &amp; Permissions</h1>
+            </div>
+            <div class="page-actions" style="display: flex; gap: 0.5rem;">
+              <button class="btn btn-primary btn-sm" @click="openCreateUserModal = true">+ Add Storage User</button>
+            </div>
           </div>
+
+          {{template "partials/users_list.html" .}}
         </section>
 
         <!-- TAB 5: DATA PROTECTION (SNAPSHOTS & SCRUB) -->
