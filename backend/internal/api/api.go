@@ -142,8 +142,10 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("GET /ui/partials/network", s.handleUIPartialNetwork)
 		mux.HandleFunc("GET /ui/partials/modals/create_share", s.handleUIPartialCreateShareModal)
 
+		mux.HandleFunc("POST /ui/actions/shares/save", s.handleUIActionSaveSmb)
 		mux.HandleFunc("POST /ui/actions/shares/smb", s.handleUIActionSaveSmb)
 		mux.HandleFunc("DELETE /ui/actions/shares/smb", s.handleUIActionDeleteSmb)
+		mux.HandleFunc("DELETE /ui/actions/shares/nfs", s.handleUIActionDeleteNfs)
 		mux.HandleFunc("POST /ui/actions/shares/users", s.handleUIActionCreateUser)
 		mux.HandleFunc("DELETE /ui/actions/shares/users", s.handleUIActionDeleteUser)
 
@@ -155,6 +157,11 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("POST /ui/actions/zfs/pools/vdev", s.handleUIActionAddVdev)
 		mux.HandleFunc("POST /ui/actions/zfs/pools/property", s.handleUIActionSetPoolProperty)
 		mux.HandleFunc("POST /ui/actions/zfs/pools/disk/action", s.handleUIActionDiskAction)
+		mux.HandleFunc("POST /ui/actions/zfs/pools/disk/replace", s.handleUIActionDiskAction)
+		mux.HandleFunc("POST /ui/actions/zfs/pools/disk/attach", s.handleUIActionDiskAction)
+		mux.HandleFunc("POST /ui/actions/zfs/pools/disk/detach", s.handleUIActionDiskAction)
+		mux.HandleFunc("POST /ui/actions/zfs/pools/disk/offline", s.handleUIActionDiskAction)
+		mux.HandleFunc("POST /ui/actions/zfs/pools/disk/online", s.handleUIActionDiskAction)
 		mux.HandleFunc("POST /ui/actions/zfs/scrub", s.handleUIActionScrub)
 
 		mux.HandleFunc("POST /ui/actions/zfs/datasets", s.handleUIActionCreateDataset)

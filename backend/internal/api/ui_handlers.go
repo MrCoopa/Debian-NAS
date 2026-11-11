@@ -271,6 +271,26 @@ func (s *Server) handleUIActionDeleteSmb(w http.ResponseWriter, r *http.Request)
 	s.handleUIPartialShares(w, r)
 }
 
+func (s *Server) handleUIActionDeleteNfs(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimSpace(r.URL.Query().Get("path"))
+	if path == "" {
+		_ = r.ParseForm()
+		path = strings.TrimSpace(r.FormValue("path"))
+	}
+	if path == "" {
+		s.setHXTrigger(w, "NFS export path is required", "error")
+		s.handleUIPartialShares(w, r)
+		return
+	}
+
+	if err := s.shares.DeleteNfs(path); err != nil {
+		s.setHXTrigger(w, "Error removing NFS export: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("NFS export '%s' removed", path), "success", "shareUpdate")
+	}
+	s.handleUIPartialShares(w, r)
+}
+
 func (s *Server) handleUIActionCreateUser(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	username := strings.TrimSpace(r.FormValue("username"))
@@ -480,9 +500,21 @@ func (s *Server) handleUIActionSetPoolProperty(w http.ResponseWriter, r *http.Re
 
 func (s *Server) handleUIActionDiskAction(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
-	actionType := r.FormValue("action_type")
+	actionType := strings.ToLower(strings.TrimSpace(r.FormValue("action_type")))
+	if actionType == "" {
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if len(parts) > 0 {
+			last := strings.ToLower(parts[len(parts)-1])
+			if last == "replace" || last == "attach" || last == "detach" || last == "offline" || last == "online" {
+				actionType = last
+			}
+		}
+	}
 	pool := strings.TrimSpace(r.FormValue("pool"))
 	targetDevice := strings.TrimSpace(r.FormValue("target_device"))
+	if targetDevice == "" {
+		targetDevice = strings.TrimSpace(r.FormValue("device"))
+	}
 	newDevice := strings.TrimSpace(r.FormValue("new_device"))
 
 	var err error

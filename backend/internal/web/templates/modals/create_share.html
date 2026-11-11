@@ -9,16 +9,20 @@
       <h3 x-text="isEditingShare ? ('Edit ' + (shareForm.proto === 'nfs' ? 'NFS Export: ' : 'SMB Share: ') + (shareForm.name || shareForm.path)) : 'Create Network File Share'"></h3>
       <button type="button" class="modal-close" @click="openShareModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/shares/save" hx-target="#shares-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openShareModal = false">
+    <form hx-post="/ui/actions/shares/save" hx-target="#shares-container" hx-swap="morph"
+          @share-update.window="openShareModal = false"
+          @htmx:after-request="if (event.detail.successful) openShareModal = false">
       <!-- Hidden tracking fields for edit and protocol submission -->
       <input type="hidden" name="orig_name" :value="shareForm.origName || ''">
       <input type="hidden" name="orig_path" :value="shareForm.origPath || ''">
-      <input type="hidden" name="proto" :value="shareForm.proto">
+      <template x-if="isEditingShare">
+        <input type="hidden" name="proto" :value="shareForm.proto">
+      </template>
 
       <!-- Share Name (Only required for SMB) -->
       <div class="form-group" x-show="shareForm.proto === 'smb'">
         <label>Share Name</label>
-        <input type="text" name="name" x-model="shareForm.name" :readonly="isEditingShare" placeholder="e.g. Media, Backups" :required="shareForm.proto === 'smb'">
+        <input type="text" name="name" x-model="shareForm.name" :readonly="isEditingShare" :disabled="shareForm.proto === 'nfs'" placeholder="e.g. Media, Backups" :required="shareForm.proto === 'smb'">
       </div>
       <template x-if="shareForm.proto === 'nfs'">
         <input type="hidden" name="name" :value="shareForm.name || shareForm.path">
