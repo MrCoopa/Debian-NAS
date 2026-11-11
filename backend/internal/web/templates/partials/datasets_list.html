@@ -17,6 +17,7 @@
           <th>Compression</th>
           <th>Recordsize</th>
           <th>Quota</th>
+          <th>Shares</th>
           <th>Read-Only</th>
           <th>Snapshots</th>
           <th class="col-actions">Actions</th>
@@ -24,8 +25,10 @@
       </thead>
       <tbody>
         {{if eq (len .Datasets) 0}}
-          <tr><td colspan="10" class="text-dim" style="text-align: center; padding: 1.5rem;">No datasets found. Create a storage pool first.</td></tr>
+          <tr><td colspan="11" class="text-dim" style="text-align: center; padding: 1.5rem;">No datasets found. Create a storage pool first.</td></tr>
         {{else}}
+          {{$smbShares := .SmbShares}}
+          {{$nfsExports := .NfsExports}}
           {{range $ds := .Datasets}}
             <tr>
               <td>
@@ -46,6 +49,30 @@
                   <span class="badge font-mono" style="background: rgba(240,171,0,0.15); color: #f0ab00; border: 1px solid rgba(240,171,0,0.3); padding: 2px 5px; border-radius: 3px; font-size: 0.72rem;">{{$ds.Quota}}</span>
                 {{else}}
                   <span class="text-dim">none</span>
+                {{end}}
+              </td>
+              <td>
+                {{$dsName := $ds.Name}}
+                {{$dsMount := $ds.Mountpoint}}
+                {{$hasShare := false}}
+                {{range $s := $smbShares}}
+                  {{if or (eq $s.Path $dsMount) (eq $s.Path (print "/" $dsName)) (eq $s.Name $dsName)}}
+                    <span class="badge font-mono" style="background: rgba(0, 139, 229, 0.2); color: #64b5f6; border: 1px solid rgba(0, 139, 229, 0.35); padding: 1px 6px; border-radius: 2px; font-size: 0.7rem; display: inline-block; margin: 1px;">
+                      📁 SMB: {{$s.Name}}
+                    </span>
+                    {{$hasShare = true}}
+                  {{end}}
+                {{end}}
+                {{range $n := $nfsExports}}
+                  {{if or (eq $n.Path $dsMount) (eq $n.Path (print "/" $dsName))}}
+                    <span class="badge font-mono" style="background: rgba(240, 171, 0, 0.15); color: #f0ab00; border: 1px solid rgba(240, 171, 0, 0.3); padding: 1px 6px; border-radius: 2px; font-size: 0.7rem; display: inline-block; margin: 1px;">
+                      🖥️ NFS
+                    </span>
+                    {{$hasShare = true}}
+                  {{end}}
+                {{end}}
+                {{if not $hasShare}}
+                  <span class="text-dim" style="font-size: 0.72rem;">--</span>
                 {{end}}
               </td>
               <td>
