@@ -139,6 +139,7 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("GET /ui/partials/users", s.handleUIPartialUsers)
 		mux.HandleFunc("GET /ui/partials/snapshots", s.handleUIPartialSnapshots)
 		mux.HandleFunc("GET /ui/partials/network", s.handleUIPartialNetwork)
+		mux.HandleFunc("GET /ui/partials/modals/create_share", s.handleUIPartialCreateShareModal)
 
 		mux.HandleFunc("POST /ui/actions/shares/smb", s.handleUIActionSaveSmb)
 		mux.HandleFunc("DELETE /ui/actions/shares/smb", s.handleUIActionDeleteSmb)
