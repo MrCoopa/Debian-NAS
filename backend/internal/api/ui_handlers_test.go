@@ -130,7 +130,7 @@ func TestUI_Actions(t *testing.T) {
 	if delRR.Code != http.StatusOK {
 		t.Fatalf("DELETE /ui/actions/shares/smb failed with status %d", delRR.Code)
 	}
-	if !strings.Contains(delRR.Header().Get("HX-Trigger"), "entfernt") {
+	if !strings.Contains(delRR.Header().Get("HX-Trigger"), "removed") {
 		t.Errorf("Expected delete confirmation toast, got: %s", delRR.Header().Get("HX-Trigger"))
 	}
 }

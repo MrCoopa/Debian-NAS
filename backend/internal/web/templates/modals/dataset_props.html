@@ -1,7 +1,7 @@
 <div class="modal-backdrop" x-show="openDatasetPropsModal" x-cloak>
   <div class="modal-box" @click.outside="openDatasetPropsModal = false">
     <div class="modal-header">
-      <h3>Dataset Eigenschaften: <span class="text-blue font-mono" x-text="datasetProps.name"></span></h3>
+      <h3>Dataset Properties: <span class="text-blue font-mono" x-text="datasetProps.name"></span></h3>
       <button type="button" class="modal-close" @click="openDatasetPropsModal = false">&times;</button>
     </div>
     <form hx-post="/ui/actions/zfs/datasets/property" hx-target="#datasets-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openDatasetPropsModal = false">
@@ -9,18 +9,18 @@
 
       <div class="form-row">
         <div class="form-group col-6">
-          <label>Kompression</label>
+          <label>Compression</label>
           <select name="compression" x-model="datasetProps.compression">
-            <option value="lz4">lz4 (Empfohlen)</option>
+            <option value="lz4">lz4 (Recommended)</option>
             <option value="zstd">zstd</option>
             <option value="gzip">gzip</option>
             <option value="off">off</option>
           </select>
         </div>
         <div class="form-group col-6" x-show="!datasetProps.isZvol">
-          <label>Recordsize</label>
+          <label>Record Size</label>
           <select name="recordsize" x-model="datasetProps.recordsize">
-            <option value="128K">128 KiB (Standard)</option>
+            <option value="128K">128 KiB (Default)</option>
             <option value="1M">1 MiB (Media)</option>
             <option value="64K">64 KiB</option>
             <option value="16K">16 KiB (DB/VM)</option>
@@ -31,31 +31,30 @@
 
       <div class="form-row">
         <div class="form-group col-6">
-          <label>Speicherplatz-Limit (Quota)</label>
-          <input type="text" name="quota" x-model="datasetProps.quota" placeholder="z.B. none oder 500G">
+          <label>Space Limit (Quota)</label>
+          <input type="text" name="quota" x-model="datasetProps.quota" placeholder="e.g. none or 500G">
         </div>
         <div class="form-group col-6">
-          <label>Schreibschutz (Read-Only)</label>
+          <label>Read-Only Mode</label>
           <select name="readonly" x-model="datasetProps.readonly">
-            <option value="off">off (Schreibzugriff erlaubt)</option>
-            <option value="on">on (Nur-Lese-Zugriff)</option>
+            <option value="off">off (Read/Write permitted)</option>
+            <option value="on">on (Read-Only enforced)</option>
           </select>
         </div>
       </div>
 
       <div class="form-group" x-show="!datasetProps.isZvol">
-        <label>Zugriffszeit-Aktualisierung (Atime)</label>
+        <label>Access Time Updates (Atime)</label>
         <select name="atime" x-model="datasetProps.atime">
-          <option value="off">off (Schreibzugriffe minimieren / Performance)</option>
+          <option value="off">off (Minimize disk writes / Higher performance)</option>
           <option value="on">on</option>
         </select>
       </div>
 
       <div class="modal-actions">
-        <button type="button" class="btn btn-secondary" @click="openDatasetPropsModal = false">Abbrechen</button>
-        <button type="submit" class="btn btn-primary">Eigenschaften anwenden</button>
+        <button type="button" class="btn btn-secondary" @click="openDatasetPropsModal = false">Cancel</button>
+        <button type="submit" class="btn btn-primary">Apply Properties</button>
       </div>
     </form>
   </div>
 </div>
-

@@ -1,12 +1,12 @@
 <div class="modal-backdrop" x-show="openCreateDatasetModal" x-cloak>
   <div class="modal-box" @click.outside="openCreateDatasetModal = false">
     <div class="modal-header">
-      <h3>Neues ZFS Dataset erstellen</h3>
+      <h3>Create New ZFS Dataset</h3>
       <button type="button" class="modal-close" @click="openCreateDatasetModal = false">&times;</button>
     </div>
     <form hx-post="/ui/actions/zfs/datasets" hx-target="#datasets-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openCreateDatasetModal = false">
       <div class="form-group">
-        <label>Übergeordneter Pool / Dataset</label>
+        <label>Parent Pool / Dataset</label>
         <select name="parent" required>
           {{range $p := .Pools}}
             <option value="{{$p.Name}}">{{$p.Name}} (Root Pool)</option>
@@ -20,28 +20,28 @@
       </div>
 
       <div class="form-group">
-        <label>Dataset Name (ohne Leerzeichen)</label>
-        <input type="text" name="name" required placeholder="z.B. media, backup, documents" pattern="[a-zA-Z0-9_\-\.]+">
-        <span class="text-dim" style="font-size: 0.72rem;">Wird unter &lt;Parent&gt;/&lt;Name&gt; eingehängt.</span>
+        <label>Dataset Name (No spaces)</label>
+        <input type="text" name="name" required placeholder="e.g. media, backup, documents" pattern="[a-zA-Z0-9_\-\.]+">
+        <span class="text-dim" style="font-size: 0.72rem;">Will be mounted at &lt;Parent&gt;/&lt;Name&gt;.</span>
       </div>
 
       <div class="form-row">
         <div class="form-group col-6">
-          <label>Kompression</label>
+          <label>Compression</label>
           <select name="compression">
-            <option value="lz4" selected>lz4 (Schnell &amp; empfohlen)</option>
-            <option value="zstd">zstd (Höhere Kompressionsrate)</option>
-            <option value="gzip">gzip (Archivierung)</option>
-            <option value="off">Deaktiviert (off)</option>
+            <option value="lz4" selected>lz4 (Fast &amp; Recommended)</option>
+            <option value="zstd">zstd (Higher Compression Ratio)</option>
+            <option value="gzip">gzip (Archival)</option>
+            <option value="off">Disabled (off)</option>
           </select>
         </div>
         <div class="form-group col-6">
-          <label>Recordsize</label>
+          <label>Record Size</label>
           <select name="recordsize">
-            <option value="128K" selected>128 KiB (Standard / Allround)</option>
-            <option value="1M">1 MiB (Große Medien / Videostreaming)</option>
+            <option value="128K" selected>128 KiB (Default / All-Round)</option>
+            <option value="1M">1 MiB (Large Media / Video Streaming)</option>
             <option value="64K">64 KiB</option>
-            <option value="16K">16 KiB (Datenbanken / VM Images)</option>
+            <option value="16K">16 KiB (Databases / VM Images)</option>
             <option value="4K">4 KiB</option>
           </select>
         </div>
@@ -49,23 +49,22 @@
 
       <div class="form-row">
         <div class="form-group col-6">
-          <label>Speicherplatz-Limit (Quota)</label>
-          <input type="text" name="quota" placeholder="z.B. 500G oder none" value="none">
+          <label>Space Limit (Quota)</label>
+          <input type="text" name="quota" placeholder="e.g. 500G or none" value="none">
         </div>
         <div class="form-group col-6">
-          <label>Zugriffszeit (Atime)</label>
+          <label>Access Time (Atime)</label>
           <select name="atime">
-            <option value="off" selected>off (HDD/SSD schont Schreibzugriffe)</option>
+            <option value="off" selected>off (Reduces write overhead)</option>
             <option value="on">on</option>
           </select>
         </div>
       </div>
 
       <div class="modal-actions">
-        <button type="button" class="btn btn-secondary" @click="openCreateDatasetModal = false">Abbrechen</button>
-        <button type="submit" class="btn btn-primary">Dataset erstellen</button>
+        <button type="button" class="btn btn-secondary" @click="openCreateDatasetModal = false">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Dataset</button>
       </div>
     </form>
   </div>
 </div>
-

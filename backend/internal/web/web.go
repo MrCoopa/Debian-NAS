@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
+	"strconv"
 	"strings"
 )
 
@@ -36,6 +37,11 @@ func toFloat64(v interface{}) float64 {
 		return float64(n)
 	case uint:
 		return float64(n)
+	case string:
+		if f, err := strconv.ParseFloat(strings.TrimSpace(n), 64); err == nil {
+			return f
+		}
+		return 0
 	default:
 		return 0
 	}

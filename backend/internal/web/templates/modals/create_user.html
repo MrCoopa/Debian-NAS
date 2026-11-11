@@ -7,20 +7,19 @@
     <form hx-post="/ui/actions/shares/users" hx-target="#users-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openCreateUserModal = false">
       <div class="form-group">
         <label>Linux Storage Username</label>
-        <input type="text" name="username" placeholder="e.g. backupuser, niklas" required pattern="^[a-z_][a-z0-9_-]{0,31}$">
+        <input type="text" name="username" placeholder="e.g. backupuser, admin" required pattern="^[a-z_][a-z0-9_-]{0,31}$">
         <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
-          Wird als lokaler Systembenutzer mit nologin-Shell und Gruppe 'nasusers' angelegt.
+          Created as a local system account with nologin shell and 'nasusers' group membership.
         </small>
       </div>
       <div class="form-group">
-        <label>Passwort (Samba &amp; Storage)</label>
+        <label>Password (Samba &amp; Storage)</label>
         <input type="password" name="password" placeholder="••••••••" required minlength="4">
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn btn-secondary" @click="openCreateUserModal = false">Abbrechen</button>
+        <button type="button" class="btn btn-secondary" @click="openCreateUserModal = false">Cancel</button>
         <button type="submit" class="btn btn-primary">Create User</button>
       </div>
     </form>
   </div>
 </div>
-

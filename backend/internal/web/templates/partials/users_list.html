@@ -12,13 +12,13 @@
           <th>Username</th>
           <th>Samba Auth</th>
           <th>Primary Group</th>
-          <th>Zugeordnete Freigaben</th>
+          <th>Assigned Shares</th>
           <th class="col-actions">Actions</th>
         </tr>
       </thead>
       <tbody>
         {{if eq (len .Users) 0}}
-          <tr><td colspan="5" class="text-dim" style="text-align: center; padding: 1.5rem;">Keine NAS-Benutzer vorhanden. Klicke auf "+ New Storage User".</td></tr>
+          <tr><td colspan="5" class="text-dim" style="text-align: center; padding: 1.5rem;">No storage users configured. Click "+ New Storage User".</td></tr>
         {{else}}
           {{$smbShares := .SmbShares}}
           {{range $u := .Users}}
@@ -26,14 +26,14 @@
               <td>
                 <strong class="font-mono text-blue">👤 {{$u.Username}}</strong>
               </td>
-              <td><span class="badge-status green">Aktiv</span></td>
+              <td><span class="badge-status green">Active</span></td>
               <td><span class="font-mono text-dim">nasusers</span></td>
               <td>
                 {{$userFound := false}}
                 {{range $s := $smbShares}}
                   {{if not $s.GuestOk}}
                     {{if or (eq (len $s.ValidUsers) 0) (contains (join $s.ValidUsers " ") $u.Username)}}
-                      <span class="badge font-mono" style="background: rgba(16,185,129,0.15); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.3); padding: 2px 7px; border-radius: 4px; margin: 1px 3px; display: inline-block; font-size: 0.75rem;">
+                      <span class="badge font-mono" style="background: rgba(16,185,129,0.15); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.3); padding: 2px 7px; border-radius: 2px; margin: 1px 3px; display: inline-block; font-size: 0.75rem;">
                         📁 {{$s.Name}}
                       </span>
                       {{$userFound = true}}
@@ -41,11 +41,11 @@
                   {{end}}
                 {{end}}
                 {{if not $userFound}}
-                  <span class="text-dim" style="font-size: 0.75rem;">Keine privaten Freigaben zugeordnet</span>
+                  <span class="text-dim" style="font-size: 0.75rem;">No private shares assigned</span>
                 {{end}}
               </td>
               <td class="col-actions">
-                <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/users?username={{$u.Username}}" hx-confirm="Storage User '{{$u.Username}}' löschen?" hx-target="#users-container" hx-swap="morph">Delete</button>
+                <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/users?username={{$u.Username}}" hx-confirm="Delete storage user '{{$u.Username}}'?" hx-target="#users-container" hx-swap="morph">Delete</button>
               </td>
             </tr>
           {{end}}
@@ -54,4 +54,3 @@
     </table>
   </div>
 </div>
-

@@ -167,7 +167,7 @@ func (s *Server) handleUIPartialNetwork(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleUIActionSaveSmb(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		s.setHXTrigger(w, "Ungültiges Formular: "+err.Error(), "error")
+		s.setHXTrigger(w, "Invalid form: "+err.Error(), "error")
 		s.handleUIPartialShares(w, r)
 		return
 	}
@@ -183,7 +183,7 @@ func (s *Server) handleUIActionSaveSmb(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if name == "" || path == "" {
-		s.setHXTrigger(w, "Name und Pfad sind erforderlich", "error")
+		s.setHXTrigger(w, "Share name and path are required", "error")
 		s.handleUIPartialShares(w, r)
 		return
 	}
@@ -197,9 +197,9 @@ func (s *Server) handleUIActionSaveSmb(w http.ResponseWriter, r *http.Request) {
 			Enabled:        true,
 		}
 		if err := s.shares.SaveNfs(exp); err != nil {
-			s.setHXTrigger(w, "Fehler beim Erstellen der NFS-Freigabe: "+err.Error(), "error")
+			s.setHXTrigger(w, "Error creating NFS export: "+err.Error(), "error")
 		} else {
-			s.setHXTrigger(w, fmt.Sprintf("NFS Export '%s' erfolgreich gespeichert", path), "success", "shareUpdate")
+			s.setHXTrigger(w, fmt.Sprintf("NFS export '%s' successfully saved", path), "success", "shareUpdate")
 		}
 	} else {
 		users := r.Form["users"]
@@ -216,9 +216,9 @@ func (s *Server) handleUIActionSaveSmb(w http.ResponseWriter, r *http.Request) {
 			Enabled:    true,
 		}
 		if err := s.shares.SaveSmb(smb); err != nil {
-			s.setHXTrigger(w, "Fehler beim Speichern der SMB-Freigabe: "+err.Error(), "error")
+			s.setHXTrigger(w, "Error saving SMB share: "+err.Error(), "error")
 		} else {
-			s.setHXTrigger(w, fmt.Sprintf("SMB Freigabe '%s' erfolgreich bereitgestellt", name), "success", "shareUpdate", "userUpdate")
+			s.setHXTrigger(w, fmt.Sprintf("SMB share '%s' successfully configured", name), "success", "shareUpdate", "userUpdate")
 		}
 	}
 
@@ -232,15 +232,15 @@ func (s *Server) handleUIActionDeleteSmb(w http.ResponseWriter, r *http.Request)
 		name = strings.TrimSpace(r.FormValue("name"))
 	}
 	if name == "" {
-		s.setHXTrigger(w, "Freigabename fehlt", "error")
+		s.setHXTrigger(w, "Share name is required", "error")
 		s.handleUIPartialShares(w, r)
 		return
 	}
 
 	if err := s.shares.DeleteSmb(name); err != nil {
-		s.setHXTrigger(w, "Fehler beim Löschen: "+err.Error(), "error")
+		s.setHXTrigger(w, "Error deleting share: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("SMB Freigabe '%s' entfernt", name), "success", "shareUpdate", "userUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("SMB share '%s' removed", name), "success", "shareUpdate", "userUpdate")
 	}
 	s.handleUIPartialShares(w, r)
 }
@@ -251,15 +251,15 @@ func (s *Server) handleUIActionCreateUser(w http.ResponseWriter, r *http.Request
 	password := r.FormValue("password")
 
 	if username == "" || password == "" {
-		s.setHXTrigger(w, "Benutzername und Passwort sind erforderlich", "error")
+		s.setHXTrigger(w, "Username and password are required", "error")
 		s.handleUIPartialUsers(w, r)
 		return
 	}
 
 	if err := s.shares.CreateUser(username, password, "user"); err != nil {
-		s.setHXTrigger(w, "Fehler beim Erstellen des Benutzers: "+err.Error(), "error")
+		s.setHXTrigger(w, "Error creating user: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Benutzer '%s' für Samba & System angelegt", username), "success", "userUpdate", "shareUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Storage user '%s' created", username), "success", "userUpdate", "shareUpdate")
 	}
 	s.handleUIPartialUsers(w, r)
 }
@@ -271,15 +271,15 @@ func (s *Server) handleUIActionDeleteUser(w http.ResponseWriter, r *http.Request
 		username = strings.TrimSpace(r.FormValue("username"))
 	}
 	if username == "" {
-		s.setHXTrigger(w, "Benutzername fehlt", "error")
+		s.setHXTrigger(w, "Username is required", "error")
 		s.handleUIPartialUsers(w, r)
 		return
 	}
 
 	if err := s.shares.DeleteUser(username); err != nil {
-		s.setHXTrigger(w, "Fehler beim Löschen des Benutzers: "+err.Error(), "error")
+		s.setHXTrigger(w, "Error deleting user: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Benutzer '%s' gelöscht", username), "success", "userUpdate", "shareUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Storage user '%s' deleted", username), "success", "userUpdate", "shareUpdate")
 	}
 	s.handleUIPartialUsers(w, r)
 }
@@ -299,15 +299,15 @@ func (s *Server) handleUIActionCreatePool(w http.ResponseWriter, r *http.Request
 	}
 
 	if name == "" || len(disksList) == 0 {
-		s.setHXTrigger(w, "Pool-Name und mindestens eine Festplatte erforderlich", "error")
+		s.setHXTrigger(w, "Pool name and at least one disk are required", "error")
 		s.handleUIPartialPools(w, r)
 		return
 	}
 
 	if err := s.zfs.CreatePool(name, vdevType, disksList, ashift, compression); err != nil {
-		s.setHXTrigger(w, "Fehler bei Pool-Erstellung: "+err.Error(), "error")
+		s.setHXTrigger(w, "Error creating pool: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("ZFS Pool '%s' erfolgreich erstellt", name), "success", "poolUpdate", "datasetUpdate", "diskUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("ZFS pool '%s' successfully created", name), "success", "poolUpdate", "datasetUpdate", "diskUpdate")
 	}
 	s.handleUIPartialPools(w, r)
 }
@@ -319,15 +319,15 @@ func (s *Server) handleUIActionImportPool(w http.ResponseWriter, r *http.Request
 	force := r.FormValue("force") == "true"
 
 	if nameOrID == "" {
-		s.setHXTrigger(w, "Pool-Name oder ID erforderlich", "error")
+		s.setHXTrigger(w, "Pool name or ID is required", "error")
 		s.handleUIPartialPools(w, r)
 		return
 	}
 
 	if err := s.zfs.ImportPool(nameOrID, newName, force); err != nil {
-		s.setHXTrigger(w, "Fehler beim Pool-Import: "+err.Error(), "error")
+		s.setHXTrigger(w, "Error importing pool: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Pool '%s' erfolgreich importiert", nameOrID), "success", "poolUpdate", "datasetUpdate", "diskUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Pool '%s' successfully imported", nameOrID), "success", "poolUpdate", "datasetUpdate", "diskUpdate")
 	}
 	s.handleUIPartialPools(w, r)
 }
@@ -336,15 +336,15 @@ func (s *Server) handleUIActionExportPool(w http.ResponseWriter, r *http.Request
 	_ = r.ParseForm()
 	pool := strings.TrimSpace(r.FormValue("pool"))
 	if pool == "" {
-		s.setHXTrigger(w, "Pool-Name fehlt", "error")
+		s.setHXTrigger(w, "Pool name is required", "error")
 		s.handleUIPartialPools(w, r)
 		return
 	}
 
 	if err := s.zfs.ExportPool(pool); err != nil {
-		s.setHXTrigger(w, "Fehler beim Exportieren: "+err.Error(), "error")
+		s.setHXTrigger(w, "Error exporting pool: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Pool '%s' sicher exportiert", pool), "success", "poolUpdate", "datasetUpdate", "diskUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Pool '%s' safely exported", pool), "success", "poolUpdate", "datasetUpdate", "diskUpdate")
 	}
 	s.handleUIPartialPools(w, r)
 }
@@ -353,15 +353,15 @@ func (s *Server) handleUIActionClearPool(w http.ResponseWriter, r *http.Request)
 	_ = r.ParseForm()
 	pool := strings.TrimSpace(r.FormValue("pool"))
 	if pool == "" {
-		s.setHXTrigger(w, "Pool-Name fehlt", "error")
+		s.setHXTrigger(w, "Pool name is required", "error")
 		s.handleUIPartialPools(w, r)
 		return
 	}
 
 	if err := s.zfs.ClearPool(pool); err != nil {
-		s.setHXTrigger(w, "Fehler beim Zurücksetzen: "+err.Error(), "error")
+		s.setHXTrigger(w, "Error clearing pool errors: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Fehlerzähler für Pool '%s' gelöscht", pool), "success", "poolUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Error counters for pool '%s' cleared", pool), "success", "poolUpdate")
 	}
 	s.handleUIPartialPools(w, r)
 }
@@ -370,15 +370,15 @@ func (s *Server) handleUIActionTrimPool(w http.ResponseWriter, r *http.Request) 
 	_ = r.ParseForm()
 	pool := strings.TrimSpace(r.FormValue("pool"))
 	if pool == "" {
-		s.setHXTrigger(w, "Pool-Name fehlt", "error")
+		s.setHXTrigger(w, "Pool name is required", "error")
 		s.handleUIPartialPools(w, r)
 		return
 	}
 
 	if err := s.zfs.TrimPool(pool); err != nil {
-		s.setHXTrigger(w, "TRIM-Fehler: "+err.Error(), "error")
+		s.setHXTrigger(w, "TRIM error: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("SSD TRIM für Pool '%s' gestartet", pool), "success", "poolUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("SSD TRIM started for pool '%s'", pool), "success", "poolUpdate")
 	}
 	s.handleUIPartialPools(w, r)
 }
@@ -389,22 +389,22 @@ func (s *Server) handleUIActionScrub(w http.ResponseWriter, r *http.Request) {
 	action := r.FormValue("action")
 
 	if pool == "" {
-		s.setHXTrigger(w, "Pool-Name fehlt", "error")
+		s.setHXTrigger(w, "Pool name is required", "error")
 		s.handleUIPartialPools(w, r)
 		return
 	}
 
 	if action == "stop" {
 		if err := s.zfs.StopScrub(pool); err != nil {
-			s.setHXTrigger(w, "Scrub Stop Fehler: "+err.Error(), "error")
+			s.setHXTrigger(w, "Scrub stop error: "+err.Error(), "error")
 		} else {
-			s.setHXTrigger(w, fmt.Sprintf("Scrub für '%s' gestoppt", pool), "info", "poolUpdate")
+			s.setHXTrigger(w, fmt.Sprintf("Scrub stopped for pool '%s'", pool), "info", "poolUpdate")
 		}
 	} else {
 		if err := s.zfs.StartScrub(pool); err != nil {
-			s.setHXTrigger(w, "Scrub Start Fehler: "+err.Error(), "error")
+			s.setHXTrigger(w, "Scrub start error: "+err.Error(), "error")
 		} else {
-			s.setHXTrigger(w, fmt.Sprintf("ZFS Data Scrub für '%s' läuft", pool), "success", "poolUpdate")
+			s.setHXTrigger(w, fmt.Sprintf("ZFS data scrub started for pool '%s'", pool), "success", "poolUpdate")
 		}
 	}
 	s.handleUIPartialPools(w, r)
@@ -417,15 +417,15 @@ func (s *Server) handleUIActionAddVdev(w http.ResponseWriter, r *http.Request) {
 	disksList := r.Form["disks"]
 
 	if pool == "" || len(disksList) == 0 {
-		s.setHXTrigger(w, "Pool und mindestens eine Festplatte erforderlich", "error")
+		s.setHXTrigger(w, "Pool and at least one disk are required", "error")
 		s.handleUIPartialPools(w, r)
 		return
 	}
 
 	if err := s.zfs.AddVdev(pool, vdevType, disksList); err != nil {
-		s.setHXTrigger(w, "Fehler beim Hinzufügen des VDEVs: "+err.Error(), "error")
+		s.setHXTrigger(w, "Error adding VDEV: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("VDEV '%s' zu Pool '%s' hinzugefügt", vdevType, pool), "success", "poolUpdate", "diskUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("VDEV '%s' added to pool '%s'", vdevType, pool), "success", "poolUpdate", "diskUpdate")
 	}
 	s.handleUIPartialPools(w, r)
 }
@@ -437,7 +437,7 @@ func (s *Server) handleUIActionSetPoolProperty(w http.ResponseWriter, r *http.Re
 	autoexpand := r.FormValue("autoexpand")
 
 	if pool == "" {
-		s.setHXTrigger(w, "Pool-Name fehlt", "error")
+		s.setHXTrigger(w, "Pool name is required", "error")
 		s.handleUIPartialPools(w, r)
 		return
 	}
@@ -448,7 +448,7 @@ func (s *Server) handleUIActionSetPoolProperty(w http.ResponseWriter, r *http.Re
 	if autoexpand != "" {
 		_ = s.zfs.SetPoolProperty(pool, "autoexpand", autoexpand)
 	}
-	s.setHXTrigger(w, fmt.Sprintf("Eigenschaften für Pool '%s' aktualisiert", pool), "success", "poolUpdate")
+	s.setHXTrigger(w, fmt.Sprintf("Properties updated for pool '%s'", pool), "success", "poolUpdate")
 	s.handleUIPartialPools(w, r)
 }
 
@@ -472,13 +472,13 @@ func (s *Server) handleUIActionDiskAction(w http.ResponseWriter, r *http.Request
 	case "online":
 		err = s.zfs.OnlineDisk(pool, targetDevice)
 	default:
-		err = fmt.Errorf("unbekannte Disk-Aktion: %s", actionType)
+		err = fmt.Errorf("unknown disk action: %s", actionType)
 	}
 
 	if err != nil {
-		s.setHXTrigger(w, "Aktionsfehler: "+err.Error(), "error")
+		s.setHXTrigger(w, "Action error: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Aktion '%s' erfolgreich durchgeführt", actionType), "success", "poolUpdate", "diskUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Action '%s' completed successfully", actionType), "success", "poolUpdate", "diskUpdate")
 	}
 	s.handleUIPartialPools(w, r)
 }
@@ -493,14 +493,14 @@ func (s *Server) handleUIActionCreateDataset(w http.ResponseWriter, r *http.Requ
 	atime := r.FormValue("atime")
 
 	if parent == "" || name == "" {
-		s.setHXTrigger(w, "Parent und Dataset-Name sind erforderlich", "error")
+		s.setHXTrigger(w, "Parent and dataset name are required", "error")
 		s.handleUIPartialDatasets(w, r)
 		return
 	}
 
 	fullName := parent + "/" + name
 	if err := s.zfs.CreateDataset(fullName, compression, recordsize); err != nil {
-		s.setHXTrigger(w, "Fehler beim Erstellen des Datasets: "+err.Error(), "error")
+		s.setHXTrigger(w, "Error creating dataset: "+err.Error(), "error")
 	} else {
 		if atime != "" && atime != "off" {
 			_ = s.zfs.SetDatasetProperty(fullName, "atime", atime)
@@ -508,7 +508,7 @@ func (s *Server) handleUIActionCreateDataset(w http.ResponseWriter, r *http.Requ
 		if quota != "" && quota != "none" {
 			_ = s.zfs.SetDatasetProperty(fullName, "quota", quota)
 		}
-		s.setHXTrigger(w, fmt.Sprintf("Dataset '%s' erstellt", fullName), "success", "datasetUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Dataset '%s' created", fullName), "success", "datasetUpdate")
 	}
 	s.handleUIPartialDatasets(w, r)
 }
@@ -523,7 +523,7 @@ func (s *Server) handleUIActionSetDatasetProperty(w http.ResponseWriter, r *http
 	atime := r.FormValue("atime")
 
 	if dataset == "" {
-		s.setHXTrigger(w, "Dataset Name fehlt", "error")
+		s.setHXTrigger(w, "Dataset name is required", "error")
 		s.handleUIPartialDatasets(w, r)
 		return
 	}
@@ -544,7 +544,7 @@ func (s *Server) handleUIActionSetDatasetProperty(w http.ResponseWriter, r *http
 		_ = s.zfs.SetDatasetProperty(dataset, "atime", atime)
 	}
 
-	s.setHXTrigger(w, fmt.Sprintf("Eigenschaften für '%s' aktualisiert", dataset), "success", "datasetUpdate")
+	s.setHXTrigger(w, fmt.Sprintf("Properties updated for '%s'", dataset), "success", "datasetUpdate")
 	s.handleUIPartialDatasets(w, r)
 }
 
@@ -558,7 +558,7 @@ func (s *Server) handleUIActionCreateZvol(w http.ResponseWriter, r *http.Request
 	sparse := r.FormValue("sparse") == "true"
 
 	if parent == "" || name == "" || sizeVal == 0 {
-		s.setHXTrigger(w, "Parent, Name und Größe erforderlich", "error")
+		s.setHXTrigger(w, "Parent, name, and size are required", "error")
 		s.handleUIPartialDatasets(w, r)
 		return
 	}
@@ -573,9 +573,9 @@ func (s *Server) handleUIActionCreateZvol(w http.ResponseWriter, r *http.Request
 
 	fullName := parent + "/" + name
 	if err := s.zfs.CreateZvol(fullName, totalBytes, volblocksize, sparse); err != nil {
-		s.setHXTrigger(w, "Fehler beim Erstellen des Zvols: "+err.Error(), "error")
+		s.setHXTrigger(w, "Error creating zvol: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Zvol Block-Device '%s' erstellt", fullName), "success", "datasetUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Zvol block device '%s' created", fullName), "success", "datasetUpdate")
 	}
 	s.handleUIPartialDatasets(w, r)
 }
@@ -586,15 +586,15 @@ func (s *Server) handleUIActionCreateSnapshot(w http.ResponseWriter, r *http.Req
 	snapName := strings.TrimSpace(r.FormValue("snapshot_name"))
 
 	if dataset == "" || snapName == "" {
-		s.setHXTrigger(w, "Dataset und Snapshot Name sind erforderlich", "error")
+		s.setHXTrigger(w, "Dataset and snapshot name are required", "error")
 		s.handleUIPartialSnapshots(w, r)
 		return
 	}
 
 	if err := s.zfs.CreateSnapshot(dataset, snapName); err != nil {
-		s.setHXTrigger(w, "Fehler bei Snapshot-Erstellung: "+err.Error(), "error")
+		s.setHXTrigger(w, "Error creating snapshot: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Snapshot '%s@%s' erfolgreich angelegt", dataset, snapName), "success", "snapshotUpdate", "datasetUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Snapshot '%s@%s' created", dataset, snapName), "success", "snapshotUpdate", "datasetUpdate")
 	}
 	s.handleUIPartialSnapshots(w, r)
 }
@@ -603,15 +603,15 @@ func (s *Server) handleUIActionRollbackSnapshot(w http.ResponseWriter, r *http.R
 	_ = r.ParseForm()
 	snapshot := strings.TrimSpace(r.FormValue("snapshot"))
 	if snapshot == "" {
-		s.setHXTrigger(w, "Snapshot Name fehlt", "error")
+		s.setHXTrigger(w, "Snapshot name is required", "error")
 		s.handleUIPartialSnapshots(w, r)
 		return
 	}
 
 	if err := s.zfs.RollbackSnapshot(snapshot); err != nil {
-		s.setHXTrigger(w, "Rollback fehlgeschlagen: "+err.Error(), "error")
+		s.setHXTrigger(w, "Rollback failed: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Dataset erfolgreich auf '%s' zurückgesetzt", snapshot), "success", "snapshotUpdate", "datasetUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Dataset rolled back to '%s'", snapshot), "success", "snapshotUpdate", "datasetUpdate")
 	}
 	s.handleUIPartialSnapshots(w, r)
 }
@@ -622,15 +622,15 @@ func (s *Server) handleUIActionCloneSnapshot(w http.ResponseWriter, r *http.Requ
 	targetDataset := strings.TrimSpace(r.FormValue("target_dataset"))
 
 	if snapshot == "" || targetDataset == "" {
-		s.setHXTrigger(w, "Snapshot und Ziel-Dataset erforderlich", "error")
+		s.setHXTrigger(w, "Snapshot and target dataset are required", "error")
 		s.handleUIPartialDatasets(w, r)
 		return
 	}
 
 	if err := s.zfs.CloneSnapshot(snapshot, targetDataset); err != nil {
-		s.setHXTrigger(w, "Klon-Fehler: "+err.Error(), "error")
+		s.setHXTrigger(w, "Clone error: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Snapshot nach '%s' geklont", targetDataset), "success", "datasetUpdate", "snapshotUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Snapshot cloned to '%s'", targetDataset), "success", "datasetUpdate", "snapshotUpdate")
 	}
 	s.handleUIPartialDatasets(w, r)
 }
@@ -642,15 +642,15 @@ func (s *Server) handleUIActionDestroySnapshot(w http.ResponseWriter, r *http.Re
 		name = strings.TrimSpace(r.FormValue("name"))
 	}
 	if name == "" {
-		s.setHXTrigger(w, "Snapshot Name fehlt", "error")
+		s.setHXTrigger(w, "Snapshot name is required", "error")
 		s.handleUIPartialSnapshots(w, r)
 		return
 	}
 
 	if err := s.zfs.DestroySnapshot(name); err != nil {
-		s.setHXTrigger(w, "Löschfehler: "+err.Error(), "error")
+		s.setHXTrigger(w, "Destroy error: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Snapshot '%s' gelöscht", name), "success", "snapshotUpdate", "datasetUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Snapshot '%s' destroyed", name), "success", "snapshotUpdate", "datasetUpdate")
 	}
 	s.handleUIPartialSnapshots(w, r)
 }
@@ -662,7 +662,7 @@ func (s *Server) handleUIActionDangerDestroy(w http.ResponseWriter, r *http.Requ
 	deleteShares := r.FormValue("delete_shares") == "true"
 
 	if name == "" {
-		s.setHXTrigger(w, "Zielname erforderlich", "error")
+		s.setHXTrigger(w, "Target name is required", "error")
 		s.handleUIPartialPools(w, r)
 		return
 	}
@@ -679,9 +679,9 @@ func (s *Server) handleUIActionDangerDestroy(w http.ResponseWriter, r *http.Requ
 			}
 		}
 		if err := s.zfs.DestroyPool(name); err != nil {
-			s.setHXTrigger(w, "Fehler beim Zerstören des Pools: "+err.Error(), "error")
+			s.setHXTrigger(w, "Error destroying pool: "+err.Error(), "error")
 		} else {
-			s.setHXTrigger(w, fmt.Sprintf("ZFS Pool '%s' unwiderruflich zerstört", name), "success", "poolUpdate", "datasetUpdate", "shareUpdate", "diskUpdate")
+			s.setHXTrigger(w, fmt.Sprintf("ZFS pool '%s' permanently destroyed", name), "success", "poolUpdate", "datasetUpdate", "shareUpdate", "diskUpdate")
 		}
 	} else {
 		// Dataset destruction
@@ -695,9 +695,9 @@ func (s *Server) handleUIActionDangerDestroy(w http.ResponseWriter, r *http.Requ
 			}
 		}
 		if err := s.zfs.DestroyDataset(name); err != nil {
-			s.setHXTrigger(w, "Fehler beim Löschen des Datasets: "+err.Error(), "error")
+			s.setHXTrigger(w, "Error destroying dataset: "+err.Error(), "error")
 		} else {
-			s.setHXTrigger(w, fmt.Sprintf("Dataset '%s' gelöscht", name), "success", "datasetUpdate", "shareUpdate")
+			s.setHXTrigger(w, fmt.Sprintf("Dataset '%s' destroyed", name), "success", "datasetUpdate", "shareUpdate")
 		}
 	}
 	s.handleUIPartialPools(w, r)
@@ -709,16 +709,16 @@ func (s *Server) handleUIActionSetSpindown(w http.ResponseWriter, r *http.Reques
 	path := strings.TrimSpace(r.FormValue("path"))
 	mins, _ := strconv.Atoi(r.FormValue("timeout_minutes"))
 	if path == "" {
-		s.setHXTrigger(w, "Gerätepfad fehlt", "error")
+		s.setHXTrigger(w, "Device path is required", "error")
 		s.handleUIPartialDisks(w, r)
 		return
 	}
 
 	seconds := mins * 60
 	if err := s.disks.SetSpindown(path, seconds); err != nil {
-		s.setHXTrigger(w, "Fehler beim Setzen des Spindown: "+err.Error(), "error")
+		s.setHXTrigger(w, "Error setting spindown timeout: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Spindown für %s auf %d Min konfiguriert", path, mins), "success", "diskUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Spindown for %s configured to %d minutes", path, mins), "success", "diskUpdate")
 	}
 	s.handleUIPartialDisks(w, r)
 }
@@ -727,15 +727,15 @@ func (s *Server) handleUIActionForceStandby(w http.ResponseWriter, r *http.Reque
 	_ = r.ParseForm()
 	path := strings.TrimSpace(r.FormValue("path"))
 	if path == "" {
-		s.setHXTrigger(w, "Gerätepfad fehlt", "error")
+		s.setHXTrigger(w, "Device path is required", "error")
 		s.handleUIPartialDisks(w, r)
 		return
 	}
 
 	if err := s.disks.ForceStandby(path); err != nil {
-		s.setHXTrigger(w, "Standby-Fehler: "+err.Error(), "error")
+		s.setHXTrigger(w, "Standby error: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("HDD %s in Standby versetzt", path), "success", "diskUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Drive %s placed in standby mode", path), "success", "diskUpdate")
 	}
 	s.handleUIPartialDisks(w, r)
 }
@@ -744,20 +744,20 @@ func (s *Server) handleUIActionToggleLocate(w http.ResponseWriter, r *http.Reque
 	_ = r.ParseForm()
 	path := strings.TrimSpace(r.FormValue("path"))
 	if path == "" {
-		s.setHXTrigger(w, "Gerätepfad fehlt", "error")
+		s.setHXTrigger(w, "Device path is required", "error")
 		s.handleUIPartialDisks(w, r)
 		return
 	}
 
 	newState, err := s.disks.ToggleLocate(path)
 	if err != nil {
-		s.setHXTrigger(w, "LED-Fehler: "+err.Error(), "error")
+		s.setHXTrigger(w, "LED toggle error: "+err.Error(), "error")
 	} else {
-		stateStr := "deaktiviert"
+		stateStr := "disabled"
 		if newState {
-			stateStr = "blinkend aktiv"
+			stateStr = "blinking active"
 		}
-		s.setHXTrigger(w, fmt.Sprintf("Locate LED für %s: %s", path, stateStr), "info", "diskUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Locate LED for %s: %s", path, stateStr), "info", "diskUpdate")
 	}
 	s.handleUIPartialDisks(w, r)
 }
@@ -770,15 +770,15 @@ func (s *Server) handleUIActionTriggerSmartTest(w http.ResponseWriter, r *http.R
 		testType = "short"
 	}
 	if path == "" {
-		s.setHXTrigger(w, "Gerätepfad fehlt", "error")
+		s.setHXTrigger(w, "Device path is required", "error")
 		s.handleUIPartialDisks(w, r)
 		return
 	}
 
 	if err := s.disks.TriggerSmartTest(path, testType); err != nil {
-		s.setHXTrigger(w, "SMART-Fehler: "+err.Error(), "error")
+		s.setHXTrigger(w, "SMART error: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("SMART %s Selbsttest für %s gestartet", testType, path), "success", "diskUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("SMART %s self-test started for %s", testType, path), "success", "diskUpdate")
 	}
 	s.handleUIPartialDisks(w, r)
 }
@@ -789,15 +789,15 @@ func (s *Server) handleUIActionWipeDisk(w http.ResponseWriter, r *http.Request) 
 	confirm := r.FormValue("confirm_wipe")
 
 	if path == "" || confirm != "true" {
-		s.setHXTrigger(w, "Bestätigung zum Löschen der Disk erforderlich", "error")
+		s.setHXTrigger(w, "Confirmation required to wipe disk", "error")
 		s.handleUIPartialDisks(w, r)
 		return
 	}
 
 	if err := s.disks.WipeDisk(path, "quick"); err != nil {
-		s.setHXTrigger(w, "Wipe-Fehler: "+err.Error(), "error")
+		s.setHXTrigger(w, "Wipe error: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Disk %s erfolgreich initialisiert (Signaturen gelöscht)", path), "success", "diskUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Disk %s wiped and initialized successfully", path), "success", "diskUpdate")
 	}
 	s.handleUIPartialDisks(w, r)
 }

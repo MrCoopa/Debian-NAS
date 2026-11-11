@@ -11,7 +11,7 @@
       </div>
       <div class="form-group">
         <label>Target Filesystem Path</label>
-        <input type="text" name="path" x-model="shareForm.path" placeholder="e.g. /Hallo or /Hallo/test" list="share-path-suggestions" required>
+        <input type="text" name="path" x-model="shareForm.path" placeholder="e.g. /pool1/media or /mnt/data" list="share-path-suggestions" required>
         <datalist id="share-path-suggestions">
           {{range $p := .Pools}}
             <option value="/{{$p.Name}}">
@@ -21,7 +21,7 @@
           {{end}}
         </datalist>
         <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
-          Wähle ein ZFS Dataset / Pool-Mountpoint oder gib einen absoluten Pfad an.
+          Select a ZFS dataset / pool mountpoint or specify an absolute path.
         </small>
       </div>
       <div class="form-group">
@@ -37,7 +37,7 @@
         <label>Allowed NFS Clients (IP, Subnet or Host)</label>
         <input type="text" name="allowed_clients" x-model="shareForm.allowed_clients" placeholder="e.g. 192.168.1.0/24 or *">
         <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
-          Schränke den Zugriff auf bestimmte Client-IPs/Subnetze ein, oder nutze * für vollen LAN-Zugriff.
+          Restrict access to specific client IPs/subnets, or use * for full LAN access.
         </small>
       </div>
 
@@ -45,18 +45,18 @@
       <div class="form-group">
         <label>Access Control</label>
         <select name="access" x-model="shareForm.access">
-          <option value="restricted">Restricted (Nur berechtigte NAS-Benutzer mit Login)</option>
-          <option value="guest">Public / Guest Access (Öffentlich für jeden ohne Passwort)</option>
-          <option value="readonly">Read-Only (Schreibgeschützt)</option>
+          <option value="restricted">Restricted (Authorized NAS users with login only)</option>
+          <option value="guest">Public / Guest Access (No password required)</option>
+          <option value="readonly">Read-Only (Write-protected)</option>
         </select>
       </div>
 
       <!-- Storage User Checkboxes (Only for SMB and not Guest) -->
       <div class="form-group" x-show="shareForm.proto === 'smb' && shareForm.access !== 'guest'">
-        <label>Zugeordnete Benutzer (Storage Users)</label>
+        <label>Assigned Users (Storage Users)</label>
         <div style="background: rgba(15,23,42,0.6); border: 1px solid var(--pf-border-color); border-radius: 4px; padding: 0.6rem; max-height: 130px; overflow-y: auto;">
           {{if eq (len .Users) 0}}
-            <span class="text-dim" style="font-size: 0.75rem;">Keine NAS-Benutzer vorhanden. Lege zuerst einen Benutzer an.</span>
+            <span class="text-dim" style="font-size: 0.75rem;">No storage users configured. Create a user first.</span>
           {{else}}
             {{range $u := .Users}}
               <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.78rem; cursor: pointer;">
@@ -68,15 +68,14 @@
           {{end}}
         </div>
         <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
-          Wähle die Benutzer aus, die Zugriff haben sollen. Wenn kein Benutzer angehakt ist, haben alle NAS-Benutzer (@nasusers) Zugriff.
+          Select the users who should have access. If no users are selected, all NAS users (@nasusers) will have access.
         </small>
       </div>
 
       <div class="modal-actions">
-        <button type="button" class="btn btn-secondary" @click="openShareModal = false">Abbrechen</button>
+        <button type="button" class="btn btn-secondary" @click="openShareModal = false">Cancel</button>
         <button type="submit" class="btn btn-primary" x-text="isEditingShare ? 'Save Changes' : 'Create Share'"></button>
       </div>
     </form>
   </div>
 </div>
-

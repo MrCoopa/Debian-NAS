@@ -24,7 +24,7 @@
       </thead>
       <tbody>
         {{if eq (len .Datasets) 0}}
-          <tr><td colspan="10" class="text-dim" style="text-align: center; padding: 1.5rem;">Keine Datasets vorhanden. Erstelle zuerst einen Storage Pool.</td></tr>
+          <tr><td colspan="10" class="text-dim" style="text-align: center; padding: 1.5rem;">No datasets found. Create a storage pool first.</td></tr>
         {{else}}
           {{range $ds := .Datasets}}
             <tr>

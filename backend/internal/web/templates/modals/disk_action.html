@@ -15,7 +15,7 @@
       <div class="form-group">
         <label>Select New Replacement / Mirror Disk</label>
         <select name="new_device" required>
-          <option value="">-- Freie Festplatte auswählen --</option>
+          <option value="">-- Select an available disk --</option>
           {{range $d := .Disks}}
             {{if and (not $d.ZfsPool) (not $d.IsSystemDisk)}}
               <option value="{{if $d.ByIDPath}}{{$d.ByIDPath}}{{else}}{{$d.Path}}{{end}}">
@@ -25,15 +25,14 @@
           {{end}}
         </select>
         <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
-          Die neue Festplatte muss mindestens so groß sein wie die bisherige Festplatte.
+          The replacement disk capacity must be greater than or equal to the existing disk.
         </small>
       </div>
 
       <div class="modal-actions">
-        <button type="button" class="btn btn-secondary" @click="openDiskActionModal = false">Abbrechen</button>
+        <button type="button" class="btn btn-secondary" @click="openDiskActionModal = false">Cancel</button>
         <button type="submit" class="btn btn-primary" x-text="diskAction.type === 'replace' ? 'Start Resilver & Replace' : 'Attach as Mirror'"></button>
       </div>
     </form>
   </div>
 </div>
-

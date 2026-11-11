@@ -1,234 +1,334 @@
-<div class="fn-dashboard-grid" id="system-metrics-container" hx-get="/ui/partials/system" hx-trigger="every 4s" hx-ext="morph" hx-swap="morph">
+<div class="omv-dashboard-grid" id="system-metrics-container" hx-get="/ui/partials/system" hx-trigger="every 4s" hx-ext="morph" hx-swap="morph">
 
   <!-- =========================================================================
-       CARD 1: SYSTEM INFORMATION (FreeNAS Signature Two-Tone Split Card)
+       COLUMN 1: CPU RRD, CPU UTILIZATION DONUT, FILE SYSTEMS
        ========================================================================= -->
-  <div class="fn-card fn-card-horizontal">
-    <!-- Left Section: Deep Blue (#005b96) with Shark Watermark & Branding -->
-    <div class="fn-split-col fn-card-blue fn-sysinfo-hero">
-      <div class="fn-shark-watermark" aria-hidden="true">
-        <svg viewBox="0 0 100 80" fill="currentColor">
-          <path d="M88.5 38.2c-4.1-2.2-9.2-2.7-14.4-1.5 3.7-5.4 5.6-12 5.1-18.8-.3-3.5-1.4-6.9-3.1-9.9-1.2-1.9-3.6-2.5-5.3-1.4-1.7 1.2-2.3 3.6-1.3 5.4 1.3 2.1 2 4.6 2.2 7.1.5 5.3-1.4 10.6-4.8 14.6-4.6-2.6-10-4.2-15.9-4.4-8.9-.3-17.9 2.3-25 7.4-5.5 3.9-9.9 9.2-12.6 15.5-1.5 3.4-3.7 6.3-6.6 8.4-2.1 1.6-4.6 2.7-7.2 3.4-1.7.5-2.7 2.2-2.2 4 .5 1.7 2.2 2.7 4 2.2 3.7-1 7.2-2.6 10.2-4.9 3.2-2.3 5.7-5.4 7.4-9 2.1-4.8 5.4-8.8 9.6-11.8 5.7-4.1 12.8-6.1 20-5.9 4.4.1 8.5 1.2 12.2 3.1-7 6.4-10.9 15.4-10.7 24.8.2 9.4 4.5 18.2 11.7 24.3 1.7 1.4 4.1 1.2 5.4-.5 1.4-1.7 1.2-4.1-.5-5.4-5.9-5-9.3-12.1-9.5-19.8-.2-7.7 2.9-15 8.6-20.3 2.4 1.6 5 3 8 4-1.3 4-1.4 8.2-.2 12.3 1.2 4 3.6 7.5 6.9 9.9 1.7 1.3 4.1 1 5.3-.7 1.3-1.7 1-4.1-.7-5.3-2.3-1.7-4-4.2-4.9-7-.8-2.8-.8-5.8.2-8.6 3.9-.7 7.5-2.1 10.7-4.3 1.7-1.2 2.2-3.5 1.1-5.2-1.2-1.7-3.5-2.2-5.2-1z"/>
-        </svg>
-      </div>
+  <div class="omv-column">
 
-      <div class="fn-sysinfo-top">
-        <div class="fn-card-brand-row">
-          <svg class="fn-card-shark-icon" viewBox="0 0 100 80" fill="currentColor">
-            <path d="M88.5 38.2c-4.1-2.2-9.2-2.7-14.4-1.5 3.7-5.4 5.6-12 5.1-18.8-.3-3.5-1.4-6.9-3.1-9.9-1.2-1.9-3.6-2.5-5.3-1.4-1.7 1.2-2.3 3.6-1.3 5.4 1.3 2.1 2 4.6 2.2 7.1.5 5.3-1.4 10.6-4.8 14.6-4.6-2.6-10-4.2-15.9-4.4-8.9-.3-17.9 2.3-25 7.4-5.5 3.9-9.9 9.2-12.6 15.5-1.5 3.4-3.7 6.3-6.6 8.4-2.1 1.6-4.6 2.7-7.2 3.4-1.7.5-2.7 2.2-2.2 4 .5 1.7 2.2 2.7 4 2.2 3.7-1 7.2-2.6 10.2-4.9 3.2-2.3 5.7-5.4 7.4-9 2.1-4.8 5.4-8.8 9.6-11.8 5.7-4.1 12.8-6.1 20-5.9 4.4.1 8.5 1.2 12.2 3.1-7 6.4-10.9 15.4-10.7 24.8.2 9.4 4.5 18.2 11.7 24.3 1.7 1.4 4.1 1.2 5.4-.5 1.4-1.7 1.2-4.1-.5-5.4-5.9-5-9.3-12.1-9.5-19.8-.2-7.7 2.9-15 8.6-20.3 2.4 1.6 5 3 8 4-1.3 4-1.4 8.2-.2 12.3 1.2 4 3.6 7.5 6.9 9.9 1.7 1.3 4.1 1 5.3-.7 1.3-1.7 1-4.1-.7-5.3-2.3-1.7-4-4.2-4.9-7-.8-2.8-.8-5.8.2-8.6 3.9-.7 7.5-2.1 10.7-4.3 1.7-1.2 2.2-3.5 1.1-5.2-1.2-1.7-3.5-2.2-5.2-1z"/>
-          </svg>
-          <span class="fn-card-brand-title">FreeNAS</span>
-        </div>
-        <div class="fn-card-brand-sub">System Information</div>
-      </div>
+    <!-- 1. CPU RRD-Style Chart -->
+    <div class="omv-card">
+      <div class="omv-card-title">CPU</div>
+      <div class="omv-rrd-chart">
+        <div class="omv-rrd-title">CPU usage - by hour</div>
+        <div class="omv-rrd-svg-wrap">
+          <svg viewBox="0 0 320 90" preserveAspectRatio="none" style="width: 100%; height: 100%; overflow: visible;">
+            <!-- Grid Lines -->
+            <line x1="30" y1="10" x2="310" y2="10" stroke="#333333" stroke-width="1" stroke-dasharray="2 2" />
+            <line x1="30" y1="35" x2="310" y2="35" stroke="#333333" stroke-width="1" stroke-dasharray="2 2" />
+            <line x1="30" y1="60" x2="310" y2="60" stroke="#333333" stroke-width="1" stroke-dasharray="2 2" />
+            <line x1="30" y1="80" x2="310" y2="80" stroke="#444444" stroke-width="1" />
 
-      <div class="fn-hero-bottom-btn">
-        <button class="fn-action-btn" @click="currentTab = 'system'">CHECK FOR UPDATES</button>
-      </div>
-    </div>
+            <!-- Y-Axis Ticks -->
+            <text x="24" y="14" fill="#757575" font-size="8" text-anchor="end">100</text>
+            <text x="24" y="39" fill="#757575" font-size="8" text-anchor="end">60</text>
+            <text x="24" y="64" fill="#757575" font-size="8" text-anchor="end">20</text>
+            <text x="24" y="83" fill="#757575" font-size="8" text-anchor="end">0</text>
 
-    <!-- Right Section: Dark Slate Specs List -->
-    <div class="fn-split-col fn-card-dark fn-sysinfo-specs">
-      <div class="fn-spec-row">
-        <span class="fn-spec-label">OS Version:</span>
-        <span class="fn-spec-value">{{if .System.OS}}{{.System.OS}}{{else}}Debian 13 (Trixie){{end}}</span>
-        <span class="fn-spec-sub">(Build Date: OpenZFS {{.ZfsVersion}})</span>
-      </div>
-
-      <div class="fn-spec-row">
-        <span class="fn-spec-label">Processor:</span>
-        <span class="fn-spec-value">{{if .System.CPU.Model}}{{.System.CPU.Model}}{{else}}AMD64 Enterprise Processor{{end}} ({{if .System.CPU.Cores}}{{.System.CPU.Cores}}{{else}}4{{end}} cores)</span>
-      </div>
-
-      <div class="fn-spec-row">
-        <span class="fn-spec-label">Memory:</span>
-        <span class="fn-spec-value">{{formatBytes .System.Memory.TotalBytes}}</span>
-      </div>
-
-      <div class="fn-spec-row">
-        <span class="fn-spec-label">HostName:</span>
-        <span class="fn-spec-value font-mono">{{if .System.Hostname}}{{.System.Hostname}}{{else}}testnas.local{{end}}</span>
-      </div>
-
-      <div class="fn-spec-row">
-        <span class="fn-spec-label">Uptime:</span>
-        <span class="fn-spec-value">{{if .System.Uptime}}{{.System.Uptime}}{{else}}3:03PM up 17 days, 23:40, 0 users{{end}}</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- =========================================================================
-       CARD 2: NETWORK INFO (Bandwidth Sparkline Top + Blue Info Bottom)
-       ========================================================================= -->
-  <div class="fn-card fn-card-vertical">
-    <!-- Top Section: Dark Slate Bandwidth Graph -->
-    <div class="fn-split-row fn-card-dark fn-bandwidth-graph-area">
-      <div class="fn-graph-top-bar">
-        <span class="fn-graph-label">BANDWIDTH</span>
-        <span class="fn-graph-rates font-mono">
-          <span style="color: #4fc3f7;">&#8593; {{formatRate .System.DiskIO.ReadMBS}}</span>
-          <span style="color: #81c784; margin-left: 0.5rem;">&#8595; {{formatRate .System.DiskIO.WriteMBS}}</span>
-        </span>
-      </div>
-
-      <!-- Realtime Dark High-Tech Bandwidth Graph -->
-      <div class="fn-graph-svg-wrap">
-        <svg viewBox="0 0 400 110" preserveAspectRatio="none" class="fn-graph-svg">
-          <!-- Subtle Horizontal Grid Lines -->
-          <line x1="0" y1="20" x2="400" y2="20" stroke="#253243" stroke-width="1" stroke-dasharray="2 2" />
-          <line x1="0" y1="50" x2="400" y2="50" stroke="#253243" stroke-width="1" stroke-dasharray="2 2" />
-          <line x1="0" y1="80" x2="400" y2="80" stroke="#253243" stroke-width="1" stroke-dasharray="2 2" />
-
-          <!-- Bandwidth Curves -->
-          <polyline fill="none" stroke="#0091ea" stroke-width="2" points="0,95 40,94 80,95 120,93 160,94 200,92 240,93 280,94 320,90 350,25 370,18 390,20 400,22" />
-          <polyline fill="none" stroke="#26a69a" stroke-width="1.5" stroke-dasharray="4 2" points="0,98 50,97 100,98 150,96 200,97 250,96 300,97 340,95 360,60 380,45 400,50" />
-        </svg>
-      </div>
-    </div>
-
-    <!-- Bottom Section: Deep Blue (#005b96) Network Info -->
-    <div class="fn-split-row fn-card-blue fn-widget-bottom-bar">
-      <div class="fn-widget-meta">
-        <div class="fn-widget-title">Network Info</div>
-        <div class="fn-widget-subtitle">Primary NIC: {{range $i, $nic := .System.Network}}{{if eq $i 0}}{{$nic.Name}} ({{$nic.IP}}){{end}}{{else}}eth0 (192.168.1.100){{end}}</div>
-      </div>
-      <button class="fn-action-btn" @click="currentTab = 'network'">EDIT INTERFACES</button>
-    </div>
-  </div>
-
-  <!-- =========================================================================
-       CARD 3: STORAGE POOL (Vibrant Green Left + Disks in Use Right)
-       ========================================================================= -->
-  <div class="fn-card fn-card-horizontal">
-    {{$hasPool := and .Pools (gt (len .Pools) 0)}}
-    {{$primaryPool := index .Pools 0}}
-    <!-- Left Section: Vibrant Green (#2e7d32) Available Capacity & Status -->
-    <div class="fn-split-col fn-card-green fn-pool-hero">
-      <div class="fn-pool-status-top">
-        <div class="fn-healthy-badge">
-          <span>{{if $hasPool}}{{$primaryPool.Health}}{{else}}HEALTHY{{end}}</span>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+            <!-- CPU Multi-layer Polylines / Areas -->
+            <polygon fill="rgba(0, 139, 229, 0.25)" points="30,80 60,78 90,75 120,77 150,70 180,76 210,74 240,78 270,72 300,75 310,74 310,80 30,80" />
+            <polyline fill="none" stroke="#008be5" stroke-width="1.5" points="30,78 60,76 90,72 120,75 150,68 180,74 210,72 240,76 270,70 300,73 310,72" />
+            <polyline fill="none" stroke="#d81b60" stroke-width="1" points="30,80 60,79 90,78 120,79 150,77 180,78 210,78 240,79 270,77 300,78 310,78" />
           </svg>
         </div>
-      </div>
-
-      <div class="fn-pool-center">
-        <div class="fn-cap-huge">
-          {{if $hasPool}}{{formatBytes $primaryPool.FreeBytes}}{{else}}459.33 GiB{{end}}
+        <div class="omv-rrd-legend">
+          <span class="omv-legend-item"><span class="omv-legend-dot" style="background: #e53935;"></span>Steal</span>
+          <span class="omv-legend-item"><span class="omv-legend-dot" style="background: #d81b60;"></span>System</span>
+          <span class="omv-legend-item"><span class="omv-legend-dot" style="background: #8e24aa;"></span>Wait-IO</span>
+          <span class="omv-legend-item"><span class="omv-legend-dot" style="background: #3949ab;"></span>Nice</span>
+          <span class="omv-legend-item"><span class="omv-legend-dot" style="background: #008be5;"></span>User</span>
+          <span class="omv-legend-item"><span class="omv-legend-dot" style="background: #00acc1;"></span>Soft-IRQ</span>
+          <span class="omv-legend-item"><span class="omv-legend-dot" style="background: #00897b;"></span>IRQ</span>
+          <span class="omv-legend-item"><span class="omv-legend-dot" style="background: #ffffff; border: 1px solid #757575;"></span>Idle</span>
         </div>
-        <div class="fn-cap-sub">Available</div>
-      </div>
-
-      <div class="fn-pool-bottom-row">
-        <div class="fn-pool-name-box">
-          <div class="fn-pool-name-text">{{if $hasPool}}{{$primaryPool.Name}}{{else}}pool1{{end}}</div>
-          <div class="fn-pool-type-text">ZFS Pool</div>
+        <div class="omv-rrd-footer">
+          Last update: {{if .System.Uptime}}{{.System.Uptime}}{{else}}live telemetry{{end}}
         </div>
-        <button class="fn-action-btn" @click="currentTab = 'pools'">REPORTS</button>
       </div>
     </div>
 
-    <!-- Right Section: Dark Slate Disks in Use & Temperature Gauge -->
-    <div class="fn-split-col fn-card-dark fn-disks-in-use-area">
-      <div class="fn-disks-header">Disks in Use</div>
-
-      <!-- Drive Grid Box -->
-      <div class="fn-disks-grid-box">
-        {{range $i, $d := .Disks}}
-          <div class="fn-disk-unit" title="{{$d.Device}} ({{$d.Model}}) - {{$d.State}}">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" class="{{if eq $d.State "active"}}text-green{{else if eq $d.State "standby"}}text-blue{{else}}text-muted{{end}}">
-              <path d="M4 2h16c1.1 0 2 .9 2 2v16c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2zm0 4v3h16V6H4zm0 5v3h16v-3H4zm0 5v3h16v-3H4zM6 7h2v1H6V7zm0 5h2v1H6v-1zm0 5h2v1H6v-1z"/>
-            </svg>
-            <span class="fn-disk-label font-mono">{{$d.Device}}</span>
+    <!-- 2. CPU Utilization Donut Gauge -->
+    <div class="omv-card">
+      <div class="omv-card-title">CPU Utilization</div>
+      <div class="omv-donut-widget-body">
+        <div class="omv-donut-gauge-wrap">
+          <svg class="omv-donut-svg" viewBox="0 0 100 100">
+            <!-- Background Track -->
+            <circle cx="50" cy="50" r="40" stroke="#333333" stroke-width="10" fill="none" />
+            <!-- Active Cyan Arc -->
+            <circle cx="50" cy="50" r="40" stroke="#008be5" stroke-width="10" fill="none"
+                    stroke-dasharray="251.32"
+                    stroke-dashoffset="{{sub 251.32 (mul 2.5132 .System.CPU.UsagePercent)}}"
+                    stroke-linecap="round" />
+          </svg>
+          <div class="omv-donut-center-text">
+            {{formatPercent .System.CPU.UsagePercent}}%
           </div>
+        </div>
+        <div class="omv-donut-stats">
+          <div class="omv-donut-stat-row">
+            <span class="omv-stat-sub">Processor</span>
+            <span class="omv-stat-num">{{if .System.CPU.Model}}{{.System.CPU.Model}}{{else}}Host CPU{{end}}</span>
+          </div>
+          <div class="omv-donut-stat-row">
+            <span class="omv-stat-sub">Cores / Threads</span>
+            <span class="omv-stat-num font-mono">{{if .System.CPU.Cores}}{{.System.CPU.Cores}} Cores / {{.System.CPU.Threads}} Threads{{else}}4 Cores{{end}}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. File Systems (Native ZFS Storage) -->
+    <div class="omv-card">
+      <div class="omv-card-title">File Systems (OpenZFS Native)</div>
+      <table class="pf-table">
+        <thead>
+          <tr>
+            <th>Device ^</th>
+            <th>Available</th>
+            <th>Used</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $p := .Pools}}
+            <tr>
+              <td>
+                <strong class="font-mono text-blue">{{$p.Name}}</strong>
+                <span class="badge-status {{if eq $p.Health "ONLINE"}}green{{else}}amber{{end}}" style="font-size: 0.65rem; margin-left: 0.3rem;">{{$p.Health}}</span>
+              </td>
+              <td class="font-mono text-white">{{formatBytes $p.FreeBytes}}</td>
+              <td class="font-mono text-dim">{{formatBytes $p.Allocated}}</td>
+            </tr>
+          {{end}}
+          {{range $ds := .Datasets}}
+            {{if eq $ds.Type "filesystem"}}
+              <tr>
+                <td>
+                  <span class="font-mono" style="color: #e0e0e0; font-size: 0.75rem;">{{$ds.Name}}</span>
+                </td>
+                <td class="font-mono text-white">{{formatBytes $ds.AvailBytes}}</td>
+                <td class="font-mono text-dim">{{formatBytes $ds.UsedBytes}}</td>
+              </tr>
+            {{end}}
+          {{else}}
+            {{if eq (len .Pools) 0}}
+              <tr><td colspan="3" class="text-dim" style="text-align: center; padding: 1rem;">No ZFS storage pools configured.</td></tr>
+            {{end}}
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- =========================================================================
+       COLUMN 2: LOAD AVERAGE, MEMORY DONUT, SERVICES, SYSTEM TIME
+       ========================================================================= -->
+  <div class="omv-column">
+
+    <!-- 1. Load Average Concentric Rings -->
+    <div class="omv-card">
+      <div class="omv-card-title">Load Average</div>
+      {{$l1 := 0.1}}{{$l5 := 0.1}}{{$l15 := 0.1}}
+      {{if .System.CPU.LoadAvg}}
+        {{if ge (len .System.CPU.LoadAvg) 1}}{{$l1 = index .System.CPU.LoadAvg 0}}{{end}}
+        {{if ge (len .System.CPU.LoadAvg) 2}}{{$l5 = index .System.CPU.LoadAvg 1}}{{end}}
+        {{if ge (len .System.CPU.LoadAvg) 3}}{{$l15 = index .System.CPU.LoadAvg 2}}{{end}}
+      {{end}}
+      <div class="omv-loadavg-body">
+        <div class="omv-concentric-wrap">
+          <svg viewBox="0 0 100 100" style="width: 100%; height: 100%; transform: rotate(-90deg);">
+            <!-- Outer Ring (1 min) -->
+            <circle cx="50" cy="50" r="42" stroke="#333333" stroke-width="7" fill="none" />
+            <circle cx="50" cy="50" r="42" stroke="#e91e63" stroke-width="7" fill="none"
+                    stroke-dasharray="263.89"
+                    stroke-dashoffset="{{sub 263.89 (mul 26.389 $l1)}}"
+                    stroke-linecap="round" />
+
+            <!-- Middle Ring (5 min) -->
+            <circle cx="50" cy="50" r="32" stroke="#333333" stroke-width="7" fill="none" />
+            <circle cx="50" cy="50" r="32" stroke="#00e5ff" stroke-width="7" fill="none"
+                    stroke-dasharray="201.06"
+                    stroke-dashoffset="{{sub 201.06 (mul 20.106 $l5)}}"
+                    stroke-linecap="round" />
+
+            <!-- Inner Ring (15 min) -->
+            <circle cx="50" cy="50" r="22" stroke="#333333" stroke-width="7" fill="none" />
+            <circle cx="50" cy="50" r="22" stroke="#ffd600" stroke-width="7" fill="none"
+                    stroke-dasharray="138.23"
+                    stroke-dashoffset="{{sub 138.23 (mul 13.823 $l15)}}"
+                    stroke-linecap="round" />
+          </svg>
+        </div>
+
+        <div class="omv-load-bars-list">
+          <div class="omv-load-item" style="border-left-color: #e91e63;">
+            <span class="omv-load-val">{{$l1}}</span>
+            <span class="omv-load-lbl">1 min</span>
+          </div>
+          <div class="omv-load-item" style="border-left-color: #00e5ff;">
+            <span class="omv-load-val">{{$l5}}</span>
+            <span class="omv-load-lbl">5 min</span>
+          </div>
+          <div class="omv-load-item" style="border-left-color: #ffd600;">
+            <span class="omv-load-val">{{$l15}}</span>
+            <span class="omv-load-lbl">15 min</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Memory Donut Gauge (Used vs Free vs ARC) -->
+    <div class="omv-card">
+      <div class="omv-card-title">Memory</div>
+      <div class="omv-donut-widget-body">
+        <div class="omv-donut-gauge-wrap">
+          <svg class="omv-donut-svg" viewBox="0 0 100 100">
+            <!-- Free Memory (Green Arc) -->
+            <circle cx="50" cy="50" r="40" stroke="#00e676" stroke-width="10" fill="none" />
+            <!-- Used Memory (Red/Coral Arc) -->
+            <circle cx="50" cy="50" r="40" stroke="#ef5350" stroke-width="10" fill="none"
+                    stroke-dasharray="251.32"
+                    stroke-dashoffset="{{sub 251.32 (mul 2.5132 .System.Memory.UsedPercent)}}" />
+          </svg>
+        </div>
+
+        <div class="omv-donut-stats">
+          <div class="omv-donut-stat-row">
+            <span class="omv-stat-num">{{formatBytes .System.Memory.TotalBytes}}</span>
+            <span class="omv-stat-sub">Total</span>
+          </div>
+          <div style="display: flex; gap: 1rem; margin-top: 0.2rem;">
+            <div class="omv-donut-stat-row">
+              <span class="omv-stat-num font-mono" style="color: #ef5350;">{{formatBytes .System.Memory.UsedBytes}}</span>
+              <span class="omv-stat-sub font-mono">{{formatPercent .System.Memory.UsedPercent}}% Used</span>
+            </div>
+            <div class="omv-donut-stat-row">
+              <span class="omv-stat-num font-mono" style="color: #00e676;">{{formatBytes .System.Memory.FreeBytes}}</span>
+              <span class="omv-stat-sub font-mono">{{formatPercent (sub 100 .System.Memory.UsedPercent)}}% Free</span>
+            </div>
+          </div>
+          <div class="omv-donut-stat-row" style="margin-top: 0.25rem;">
+            <span class="omv-stat-sub">ZFS ARC Cache: <strong class="text-blue font-mono">{{formatBytes .System.Memory.ZfsArcBytes}}</strong></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Services Active Status -->
+    <div class="omv-card">
+      <div class="omv-card-title">Services</div>
+      <div class="omv-services-list">
+        <div class="omv-service-pill">SSH</div>
+        <div class="omv-service-pill" style="margin-top: 6px;">SMB / CIFS</div>
+        <div class="omv-service-pill" style="margin-top: 6px;">OpenZFS Native Storage Engine</div>
+      </div>
+    </div>
+
+    <!-- 4. System Time Info Tile -->
+    <div class="omv-card omv-info-tile">
+      <svg class="omv-tile-icon" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
+      </svg>
+      <div class="omv-tile-meta">
+        <span class="omv-tile-title">System time</span>
+        <span class="omv-tile-val font-mono">{{if .System.OS}}{{.System.OS}}{{else}}Debian 13 (Trixie){{end}} &bull; Kernel {{if .System.Kernel}}{{.System.Kernel}}{{else}}Linux 6.12.0{{end}}</span>
+      </div>
+    </div>
+
+    <!-- 5. Updates Available Tile -->
+    <div class="omv-card omv-info-tile">
+      <svg class="omv-tile-icon" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+      </svg>
+      <div class="omv-tile-meta">
+        <span class="omv-tile-title">Updates available</span>
+        <span class="omv-tile-val">No (System up to date)</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- =========================================================================
+       COLUMN 3: UPTIME, NETWORK INTERFACES, S.M.A.R.T.
+       ========================================================================= -->
+  <div class="omv-column">
+
+    <!-- 1. Uptime Tile -->
+    <div class="omv-card omv-info-tile">
+      <svg class="omv-tile-icon" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7z"/>
+      </svg>
+      <div class="omv-tile-meta">
+        <span class="omv-tile-title">Uptime</span>
+        <span class="omv-tile-val font-mono">{{if .System.UptimeSec}}{{formatUptime .System.UptimeSec}}{{else}}{{.System.Uptime}}{{end}}</span>
+      </div>
+    </div>
+
+    <!-- 2. Network Interfaces Card -->
+    <div class="omv-card">
+      <div class="omv-card-title">Network Interfaces</div>
+      <!-- Hero Green Banner for Primary Interface -->
+      <div class="omv-net-hero-bar">
+        <div class="omv-net-hero-name">{{range $i, $nic := .System.Network}}{{if eq $i 0}}{{$nic.Name}}{{end}}{{else}}ens32{{end}}</div>
+        <div class="omv-net-hero-ip">{{range $i, $nic := .System.Network}}{{if eq $i 0}}{{$nic.IP}}/24{{end}}{{else}}192.168.100.129/24{{end}}</div>
+      </div>
+
+      <table class="pf-table">
+        <thead>
+          <tr>
+            <th>Device &updownarrow;</th>
+            <th>Address &updownarrow;</th>
+            <th>Gateway &updownarrow;</th>
+            <th>MTU &updownarrow;</th>
+            <th>Link &updownarrow;</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $iface := .System.Network}}
+            <tr>
+              <td><strong class="font-mono text-blue">{{$iface.Name}}</strong></td>
+              <td class="font-mono" style="font-size: 0.72rem;">{{$iface.IP}}</td>
+              <td class="font-mono text-dim" style="font-size: 0.72rem;">-</td>
+              <td class="font-mono" style="font-size: 0.72rem;">{{if $iface.Speed}}{{$iface.Speed}}{{else}}1500{{end}}</td>
+              <td><span class="text-green" style="font-weight: 700;">&#10004;</span></td>
+            </tr>
+          {{else}}
+            <tr>
+              <td><strong class="font-mono text-blue">ens32</strong></td>
+              <td class="font-mono" style="font-size: 0.72rem;">192.168.100.129</td>
+              <td class="font-mono text-dim" style="font-size: 0.72rem;">192.168.100.2</td>
+              <td class="font-mono" style="font-size: 0.72rem;">1500</td>
+              <td><span class="text-green" style="font-weight: 700;">&#10004;</span></td>
+            </tr>
+            <tr>
+              <td><strong class="font-mono text-blue">lo</strong></td>
+              <td class="font-mono text-dim" style="font-size: 0.72rem;">127.0.0.1</td>
+              <td class="font-mono text-dim" style="font-size: 0.72rem;">-</td>
+              <td class="font-mono" style="font-size: 0.72rem;">65536</td>
+              <td><span class="text-green" style="font-weight: 700;">&#10004;</span></td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 3. S.M.A.R.T. Disks Card -->
+    <div class="omv-card">
+      <div class="omv-card-title">S.M.A.R.T.</div>
+      <div class="omv-smart-disks-grid">
+        {{range $d := .Disks}}
+          <button type="button" class="omv-smart-btn" @click="openDiskDrawer('{{$d.Device}}')">
+            {{$d.Device}}
+          </button>
         {{else}}
-          <div class="fn-disk-unit">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" class="text-green">
-              <path d="M4 2h16c1.1 0 2 .9 2 2v16c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2zm0 4v3h16V6H4zm0 5v3h16v-3H4zm0 5v3h16v-3H4zM6 7h2v1H6V7zm0 5h2v1H6v-1zm0 5h2v1H6v-1z"/>
-            </svg>
-            <span class="fn-disk-label font-mono">ada0</span>
-          </div>
+          <button type="button" class="omv-smart-btn">/dev/sda</button>
+          <button type="button" class="omv-smart-btn">/dev/sdb</button>
+          <button type="button" class="omv-smart-btn">/dev/sdc</button>
+          <button type="button" class="omv-smart-btn">/dev/sdd</button>
         {{end}}
       </div>
-
-      <!-- Active Disk Details & Exact FreeNAS Temperature Bar -->
-      {{$firstDisk := index .Disks 0}}
-      <div class="fn-disk-details-split">
-        <div class="fn-disk-meta-left">
-          <div class="fn-detail-line">
-            <span class="fn-det-lbl">Disk:</span>
-            <span class="fn-det-val font-mono">{{if .Disks}}{{$firstDisk.Device}} ({{formatBytes $firstDisk.SizeBytes}}){{else}}ada0 (465.76 GiB){{end}}</span>
-          </div>
-          <div class="fn-detail-line">
-            <span class="fn-det-lbl">Serial:</span>
-            <span class="fn-det-val font-mono">{{if .Disks}}{{if $firstDisk.Serial}}{{$firstDisk.Serial}}{{else}}WD-WCC4N5098721{{end}}{{else}}WD-WCC4N5098721{{end}}</span>
-          </div>
-          <div class="fn-detail-line">
-            <span class="fn-det-lbl">Description:</span>
-            <span class="fn-det-val">{{if .Disks}}{{if $firstDisk.Model}}{{$firstDisk.Model}}{{else}}WDC WD5000AAKX{{end}}{{else}}N/A{{end}}</span>
-          </div>
-        </div>
-
-        <div class="fn-disk-temp-right">
-          <div class="fn-temp-lbl">Temperature:</div>
-          <div class="fn-temp-num font-mono">
-            {{if and .Disks $firstDisk.TemperatureC}}{{$firstDisk.TemperatureC}}.0{{else}}36.0{{end}}
-          </div>
-          <!-- Exact Multi-Color FreeNAS Temperature Gauge (0 - 100 °C) -->
-          <div class="fn-gauge-wrap">
-            <div class="fn-gauge-tick-left">&deg;C<br>0</div>
-            <div class="fn-gauge-track">
-              <div class="fn-gauge-needle" style="left: {{if and .Disks $firstDisk.TemperatureC}}{{$firstDisk.TemperatureC}}{{else}}36{{end}}%;"></div>
-            </div>
-            <div class="fn-gauge-tick-right">100</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- =========================================================================
-       CARD 4: MEMORY USAGE (Graph Grid Top + Blue Info Bottom)
-       ========================================================================= -->
-  <div class="fn-card fn-card-vertical">
-    <!-- Top Section: Dark Slate Memory Timeline Grid Graph -->
-    <div class="fn-split-row fn-card-dark fn-memory-graph-area">
-      <div class="fn-grid-chart-container">
-        <!-- Y-Axis Scale Labels -->
-        <div class="fn-chart-y-axis font-mono">
-          <span>{{formatBytes .System.Memory.TotalBytes}}</span>
-          <span>{{formatBytes (div .System.Memory.TotalBytes 2)}}</span>
-          <span>0 B</span>
-        </div>
-
-        <!-- Grid Lines & SVG Polyline Chart -->
-        <div class="fn-chart-grid-plane">
-          <svg viewBox="0 0 350 90" preserveAspectRatio="none" class="fn-chart-svg">
-            <line x1="0" y1="15" x2="350" y2="15" stroke="#253243" stroke-width="1" />
-            <line x1="0" y1="45" x2="350" y2="45" stroke="#253243" stroke-width="1" />
-            <line x1="0" y1="75" x2="350" y2="75" stroke="#253243" stroke-width="1" />
-
-            <!-- Memory Usage Curve (Cyan/Light Blue) -->
-            <polyline fill="none" stroke="#29b6f6" stroke-width="2" points="0,48 50,47 100,48 150,47 200,48 250,47 300,48 320,46 340,78 350,82" />
-          </svg>
-        </div>
-      </div>
-
-      <div class="fn-chart-timestamps font-mono">
-        <span>16:33:40</span>
-        <span>17:03:30</span>
-      </div>
     </div>
 
-    <!-- Bottom Section: Deep Blue (#005b96) Memory Info -->
-    <div class="fn-split-row fn-card-blue fn-widget-bottom-bar">
-      <div class="fn-widget-meta">
-        <div class="fn-widget-title">Memory Usage</div>
-        <div class="fn-widget-subtitle">of {{formatBytes .System.Memory.TotalBytes}} total (ZFS ARC: {{formatBytes .System.Memory.ZfsArcBytes}})</div>
-      </div>
-      <button class="fn-action-btn" @click="currentTab = 'system'">REPORTS</button>
-    </div>
   </div>
 
 </div>

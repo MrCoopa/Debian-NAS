@@ -1,43 +1,40 @@
 /* ==============================================================================
-   DEBIAN STORAGE APPLIANCE - FREENAS 11.2 / 12.0 CLASSIC DESIGN SYSTEM
-   Authentic Enterprise Storage Management Console (Industrial & High-Density)
+   DEBIAN NAS - OPENMEDIAVAULT 6 / 7 DESIGN SYSTEM
+   Native Enterprise OpenZFS Storage Engine (No Plugin Required)
    ============================================================================== */
 
 :root {
-  /* FreeNAS 11.2 Core Theme Palette */
-  --fn-bg-topbar: #0f334c;         /* Classic Ocean Navy Masthead */
-  --fn-bg-sidebar: #161c24;        /* Dark Charcoal Slate Sidebar */
-  --fn-bg-subbar: #161c24;         /* Sub-navigation bar */
-  --fn-bg-canvas: #12181f;         /* Main Content Workspace Background */
-  --fn-bg-card: #1e2631;           /* Slate Navy Card Body */
-  --fn-bg-card-subtle: #171f2a;
-  --fn-bg-card-header: #19222c;
-  --fn-bg-input: #12181f;
-
-  /* Card Split Hero Colors */
-  --fn-card-blue: #005b96;         /* Signature Royal Blue */
-  --fn-card-blue-hover: #006eb5;
-  --fn-card-green: #2e7d32;        /* Signature Healthy Green */
-  --fn-card-green-hover: #388e3c;
-  --fn-card-amber: #b26a00;        /* Warning Orange/Amber */
-  --fn-card-red: #c62828;          /* Alert Red */
+  /* OpenMediaVault 6 / 7 Color Palette */
+  --omv-blue: #008be5;            /* Signature OMV Vibrant Blue */
+  --omv-blue-dark: #0077c5;
+  --omv-bg-canvas: #121212;        /* Dark Theme Canvas */
+  --omv-bg-sidebar: #181818;       /* Sidebar Charcoal */
+  --omv-bg-brand: #141414;         /* Sidebar Brand Header */
+  --omv-bg-subbar: #1c1c1c;        /* Breadcrumb Subbar */
+  --omv-bg-card: #242424;          /* OMV Dashboard Widget Cards */
+  --omv-bg-card-subtle: #1e1e1e;
+  --omv-bg-input: #181818;
 
   /* Borders & Dividers */
-  --fn-border-main: #263242;
-  --fn-border-subtle: #1c2633;
-  --fn-border-dark: #10151c;
-  --fn-border-light: rgba(255, 255, 255, 0.08);
+  --omv-border-card: #333333;
+  --omv-border-subtle: #292929;
+  --omv-border-divider: #424242;
 
-  /* Typography Colors */
-  --fn-text-primary: #ffffff;
-  --fn-text-secondary: #b0bec5;
-  --fn-text-muted: #78909c;
-  --fn-text-dim: #546e7a;
-  --fn-cyan-active: #29b6f6;       /* FreeNAS Active Nav Cyan */
+  /* Status Colors */
+  --omv-green: #00e676;           /* Active Services / Healthy Green */
+  --omv-green-dark: #00c853;
+  --omv-red: #ef5350;             /* Alert / Used RAM Red */
+  --omv-amber: #ffa726;           /* Warning Amber */
+  --omv-cyan: #00bcd4;            /* CPU Arc Cyan */
+  --omv-magenta: #e91e63;         /* Load Avg 1m */
+  --omv-yellow: #ffeb3b;          /* Load Avg 15m */
 
-  /* Typography Fonts */
-  --fn-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --fn-font-mono: "JetBrains Mono", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  /* Typography */
+  --omv-text-primary: #ffffff;
+  --omv-text-secondary: #b0b0b0;
+  --omv-text-muted: #757575;
+  --omv-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --omv-font-mono: "JetBrains Mono", Consolas, "Liberation Mono", Menlo, Courier, monospace;
 }
 
 * {
@@ -51,9 +48,9 @@
 }
 
 body {
-  font-family: var(--fn-font-sans);
-  background-color: var(--fn-bg-canvas);
-  color: var(--fn-text-primary);
+  font-family: var(--omv-font-sans);
+  background-color: var(--omv-bg-canvas);
+  color: var(--omv-text-primary);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -64,29 +61,29 @@ body {
 }
 
 /* ==============================================================================
-   1. FREENAS TOPBAR (MASTHEAD)
+   1. OMV TOPBAR & SPLIT BRAND HEADER
    ============================================================================== */
-.fn-topbar {
+.omv-topbar-wrapper {
   height: 48px;
-  background-color: var(--fn-bg-topbar);
-  border-bottom: 1px solid #092030;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 1.25rem;
   position: sticky;
   top: 0;
   z-index: 100;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
-.fn-topbar-left {
+.omv-brand-panel {
+  width: 220px;
+  height: 100%;
+  background-color: var(--omv-bg-brand);
+  border-right: 1px solid var(--omv-border-subtle);
   display: flex;
   align-items: center;
-  gap: 1.2rem;
+  padding: 0 1rem;
+  flex-shrink: 0;
 }
 
-.fn-brand-link {
+.omv-brand-link {
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -94,20 +91,39 @@ body {
   color: #ffffff;
 }
 
-.fn-brand-shark {
-  width: 28px;
+.omv-brand-logo-icon {
+  width: 22px;
   height: 22px;
   color: #ffffff;
 }
 
-.fn-brand-text {
-  font-size: 1.25rem;
-  font-weight: 700;
+.omv-brand-title {
+  font-size: 1.15rem;
+  font-weight: 400;
   letter-spacing: -0.02em;
   color: #ffffff;
 }
 
-.fn-topbar-btn {
+.omv-brand-title strong {
+  font-weight: 700;
+}
+
+.omv-topbar-blue {
+  flex: 1;
+  background-color: var(--omv-blue);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 1.25rem;
+}
+
+.omv-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.omv-hamburger-btn {
   background: transparent;
   border: none;
   color: #ffffff;
@@ -117,211 +133,185 @@ body {
   cursor: pointer;
   padding: 4px;
   border-radius: 2px;
-  transition: opacity 0.15s ease;
-  opacity: 0.85;
+  transition: background 0.15s ease;
 }
 
-.fn-topbar-btn:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.1);
+.omv-hamburger-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
 }
 
-.fn-topbar-right {
+.omv-topbar-right {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
-.fn-copyright-text {
-  font-size: 0.72rem;
-  color: #8faac2;
-  letter-spacing: 0.02em;
+.omv-host-label {
+  font-size: 0.85rem;
+  color: #ffffff;
+  font-weight: 500;
 }
 
-.fn-utility-icons {
+.omv-topbar-divider {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.85rem;
+}
+
+.omv-topbar-icons {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.65rem;
 }
 
-.fn-icon-btn {
+.omv-icon-btn {
   background: transparent;
   border: none;
   color: #ffffff;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   border-radius: 2px;
   position: relative;
-  opacity: 0.88;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease;
 }
 
-.fn-icon-btn:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.12);
+.omv-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
-.fn-bell-badge {
+.omv-badge-dot {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 5px;
+  right: 5px;
   width: 6px;
   height: 6px;
-  background-color: #29b6f6;
+  background: #ffffff;
   border-radius: 50%;
 }
 
 /* ==============================================================================
-   2. FREENAS SIDEBAR & LAYOUT
+   2. OMV SIDEBAR & LAYOUT
    ============================================================================== */
-.app-layout {
+.omv-app-body {
   display: flex;
   flex: 1;
   min-height: calc(100vh - 48px);
 }
 
-.fn-sidebar {
+.omv-sidebar {
   width: 220px;
-  background-color: var(--fn-bg-sidebar);
-  border-right: 1px solid var(--fn-border-dark);
+  background-color: var(--omv-bg-sidebar);
+  border-right: 1px solid var(--omv-border-subtle);
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   flex-shrink: 0;
   z-index: 90;
 }
 
-.fn-sidebar-header {
-  padding: 1.25rem 1rem 1rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.6rem;
-  border-bottom: 1px solid var(--fn-border-subtle);
-}
-
-.fn-ix-emblem {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: radial-gradient(circle, #0288d1 0%, #01579b 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  font-weight: 800;
-  font-size: 1.2rem;
-  letter-spacing: -0.05em;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-}
-
-.fn-user-lock {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.75rem;
-  color: var(--fn-text-secondary);
-  font-weight: 500;
-}
-
-.fn-sidebar-nav {
+.omv-nav-list {
   display: flex;
   flex-direction: column;
   padding: 0.5rem 0;
-  overflow-y: auto;
-  flex: 1;
 }
 
-.fn-nav-row {
+.omv-nav-item {
   display: flex;
   align-items: center;
   width: 100%;
-  padding: 0.6rem 1.15rem;
+  padding: 0.65rem 1.15rem;
   background: transparent;
   border: none;
-  color: var(--fn-text-secondary);
-  font-size: 0.8rem;
-  font-weight: 500;
+  color: var(--omv-text-secondary);
+  font-size: 0.82rem;
+  font-weight: 400;
   cursor: pointer;
   text-align: left;
   transition: all 0.12s ease;
-  position: relative;
 }
 
-.fn-nav-row:hover {
-  background: #1e2632;
+.omv-nav-item:hover {
+  background: #222222;
   color: #ffffff;
 }
 
-.fn-nav-row.active {
-  background: #1c2531;
-  color: var(--fn-cyan-active);
+.omv-nav-item.active {
+  background: #252525;
+  color: #ffffff;
   font-weight: 600;
+  border-left: 3px solid var(--omv-blue);
 }
 
-.fn-nav-icon {
-  margin-right: 0.75rem;
+.omv-nav-icon {
+  margin-right: 0.85rem;
   flex-shrink: 0;
-  color: var(--fn-text-muted);
+  color: #9e9e9e;
 }
 
-.fn-nav-row.active .fn-nav-icon {
-  color: var(--fn-cyan-active);
+.omv-nav-item.active .omv-nav-icon {
+  color: var(--omv-blue);
 }
 
-.fn-nav-title {
+.omv-nav-title {
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.fn-nav-chevron {
-  font-size: 0.65rem;
-  color: var(--fn-text-muted);
-  margin-left: 0.4rem;
+.omv-nav-chevron {
+  font-size: 0.7rem;
+  color: #616161;
+  margin-left: 0.35rem;
 }
 
-.fn-sidebar-bottom-info {
-  border-top: 1px solid var(--fn-border-subtle);
+.omv-sidebar-footer {
   padding: 0.75rem 1.15rem;
+  border-top: 1px solid var(--omv-border-subtle);
   font-size: 0.7rem;
-  color: var(--fn-text-muted);
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+  color: var(--omv-text-muted);
 }
 
 /* ==============================================================================
-   3. SUB-NAVBAR & MAIN CONTAINER
+   3. BREADCRUMB SUBBAR & CONTENT AREA
    ============================================================================== */
-.app-main-wrap {
+.omv-content-wrapper {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background-color: var(--fn-bg-canvas);
+  background-color: var(--omv-bg-canvas);
   overflow-x: hidden;
 }
 
-.fn-subbar {
+.omv-breadcrumb {
   height: 38px;
-  background-color: var(--fn-bg-subbar);
-  border-bottom: 1px solid var(--fn-border-dark);
+  background-color: var(--omv-bg-subbar);
+  border-bottom: 1px solid var(--omv-border-subtle);
   display: flex;
   align-items: center;
-  padding: 0 1.5rem;
-  font-size: 0.85rem;
-  font-weight: 500;
+  gap: 0.5rem;
+  padding: 0 1.25rem;
+  font-size: 0.82rem;
   color: #e0e0e0;
 }
 
-.app-main {
+.omv-home-icon {
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+}
+
+.omv-crumb-divider {
+  color: #616161;
+}
+
+.omv-main-content {
   flex: 1;
-  padding: 1.25rem 1.5rem;
-  max-width: 1700px;
+  padding: 1.25rem;
+  max-width: 1750px;
   width: 100%;
 }
 
@@ -339,14 +329,13 @@ body {
   align-items: center;
   margin-bottom: 1rem;
   padding-bottom: 0.65rem;
-  border-bottom: 1px solid var(--fn-border-main);
+  border-bottom: 1px solid var(--omv-border-card);
 }
 
 .page-title-group h1 {
   font-size: 1.15rem;
   font-weight: 600;
   color: #ffffff;
-  letter-spacing: -0.01em;
 }
 
 .page-actions {
@@ -356,484 +345,304 @@ body {
 }
 
 /* ==============================================================================
-   4. FREENAS TWO-TONE SPLIT CARDS (DASHBOARD WIDGETS)
+   4. OPENMEDIAVAULT 6 / 7 DASHBOARD GRID & WIDGET CARDS
    ============================================================================== */
-.fn-dashboard-grid {
+.omv-dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
-  margin-bottom: 1.5rem;
+  align-items: start;
 }
 
-@media (max-width: 1200px) {
-  .fn-dashboard-grid {
+@media (max-width: 1300px) {
+  .omv-dashboard-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 850px) {
+  .omv-dashboard-grid {
     grid-template-columns: 1fr;
   }
 }
 
-.fn-card {
-  background: var(--fn-bg-card);
-  border: 1px solid var(--fn-border-main);
+.omv-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.omv-card {
+  background: var(--omv-bg-card);
+  border: 1px solid var(--omv-border-card);
+  border-radius: 4px;
+  padding: 1rem 1.15rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.omv-card-title {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #ffffff;
+  margin-bottom: 0.85rem;
+}
+
+/* --- WIDGET: CPU RRD-STYLE CHART --- */
+.omv-rrd-chart {
+  background: #1e1e1e;
+  border: 1px solid #303030;
   border-radius: 2px;
-  overflow: hidden;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
-  min-height: 240px;
+  padding: 0.65rem;
 }
 
-.fn-card-horizontal {
-  display: flex;
-  flex-direction: row;
-}
-
-.fn-card-vertical {
-  display: flex;
-  flex-direction: column;
-}
-
-.fn-split-col {
-  display: flex;
-  flex-direction: column;
-}
-
-.fn-split-row {
-  display: flex;
-  flex-direction: column;
-}
-
-.fn-card-blue {
-  background-color: var(--fn-card-blue);
+.omv-rrd-title {
+  font-size: 0.72rem;
   color: #ffffff;
-}
-
-.fn-card-green {
-  background-color: var(--fn-card-green);
-  color: #ffffff;
-}
-
-.fn-card-dark {
-  background-color: var(--fn-bg-card);
-  color: var(--fn-text-secondary);
-}
-
-/* FreeNAS Action Button (Ghost / Flat Uppercase) */
-.fn-action-btn {
-  background: transparent;
-  border: none;
-  color: #ffffff;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  padding: 6px 12px;
-  cursor: pointer;
-  border-radius: 2px;
-  transition: all 0.15s ease;
-  font-family: inherit;
-}
-
-.fn-action-btn:hover {
-  background: rgba(255, 255, 255, 0.16);
-}
-
-/* --- CARD 1: SYSTEM INFORMATION --- */
-.fn-sysinfo-hero {
-  width: 38%;
-  padding: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  position: relative;
-  overflow: hidden;
-  background-color: var(--fn-card-blue);
-}
-
-.fn-shark-watermark {
-  position: absolute;
-  top: 10px;
-  right: -25px;
-  width: 170px;
-  height: 130px;
-  opacity: 0.18;
-  color: #000000;
-  pointer-events: none;
-}
-
-.fn-sysinfo-top {
-  position: relative;
-  z-index: 2;
-}
-
-.fn-card-brand-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.25rem;
-}
-
-.fn-card-shark-icon {
-  width: 24px;
-  height: 19px;
-  color: #ffffff;
-}
-
-.fn-card-brand-title {
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: #ffffff;
-}
-
-.fn-card-brand-sub {
-  font-size: 0.75rem;
-  color: #e0f2fe;
+  text-align: center;
+  margin-bottom: 0.4rem;
   font-weight: 500;
 }
 
-.fn-hero-bottom-btn {
-  position: relative;
-  z-index: 2;
+.omv-rrd-svg-wrap {
+  width: 100%;
+  height: 95px;
 }
 
-.fn-sysinfo-specs {
-  flex: 1;
-  padding: 1.25rem 1.5rem;
+.omv-rrd-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.65rem;
+  color: #b0b0b0;
+  margin-top: 0.5rem;
+}
+
+.omv-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.omv-legend-dot {
+  width: 7px;
+  height: 7px;
+  display: inline-block;
+}
+
+.omv-rrd-footer {
+  font-size: 0.62rem;
+  color: #757575;
+  text-align: center;
+  margin-top: 0.35rem;
+  font-family: var(--omv-font-mono);
+}
+
+/* --- WIDGET: DONUT GAUGES (CPU UTILIZATION & MEMORY) --- */
+.omv-donut-widget-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 0.5rem 0;
+}
+
+.omv-donut-gauge-wrap {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.omv-donut-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.omv-donut-center-text {
+  position: absolute;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #ffffff;
+  font-family: var(--omv-font-mono);
+}
+
+.omv-donut-stats {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 0.65rem;
-  background-color: var(--fn-bg-card);
+  gap: 0.4rem;
+  font-size: 0.75rem;
 }
 
-.fn-spec-row {
+.omv-donut-stat-row {
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
 }
 
-.fn-spec-label {
-  font-size: 0.72rem;
+.omv-stat-num {
   font-weight: 600;
-  color: var(--fn-text-muted);
-}
-
-.fn-spec-value {
-  font-size: 0.82rem;
   color: #ffffff;
-  font-weight: 500;
 }
 
-.fn-spec-sub {
-  font-size: 0.72rem;
-  color: var(--fn-text-dim);
-  font-family: var(--fn-font-mono);
+.omv-stat-sub {
+  color: var(--omv-text-secondary);
+  font-size: 0.7rem;
 }
 
-/* --- CARD 2: NETWORK INFO --- */
-.fn-bandwidth-graph-area {
-  flex: 1;
-  padding: 1rem 1.25rem 0.5rem;
-  background-color: var(--fn-bg-card);
+/* --- WIDGET: CONCENTRIC LOAD AVERAGE --- */
+.omv-loadavg-body {
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-}
-
-.fn-graph-top-bar {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.5rem;
-}
-
-.fn-graph-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--fn-text-muted);
-}
-
-.fn-graph-rates {
-  font-size: 0.72rem;
-}
-
-.fn-graph-svg-wrap {
-  width: 100%;
-  height: 90px;
-}
-
-.fn-graph-svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.fn-widget-bottom-bar {
-  padding: 0.85rem 1.25rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background-color: var(--fn-card-blue);
-}
-
-.fn-widget-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.fn-widget-title {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: #ffffff;
-}
-
-.fn-widget-subtitle {
-  font-size: 0.72rem;
-  color: #e0f2fe;
-}
-
-/* --- CARD 3: STORAGE POOL --- */
-.fn-pool-hero {
-  width: 40%;
-  padding: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  background-color: var(--fn-card-green);
-}
-
-.fn-pool-status-top {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.fn-healthy-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: #ffffff;
-}
-
-.fn-pool-center {
-  margin: 0.75rem 0;
-}
-
-.fn-cap-huge {
-  font-size: 1.9rem;
-  font-weight: 700;
-  color: #ffffff;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
-}
-
-.fn-cap-sub {
-  font-size: 0.8rem;
-  color: #e8f5e9;
-  font-weight: 500;
-}
-
-.fn-pool-bottom-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-}
-
-.fn-pool-name-box {
-  display: flex;
-  flex-direction: column;
-}
-
-.fn-pool-name-text {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: #ffffff;
-}
-
-.fn-pool-type-text {
-  font-size: 0.72rem;
-  color: #c8e6c9;
-}
-
-.fn-disks-in-use-area {
-  flex: 1;
-  padding: 1.25rem 1.5rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  background-color: var(--fn-bg-card);
-}
-
-.fn-disks-header {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--fn-text-secondary);
-  margin-bottom: 0.5rem;
-}
-
-.fn-disks-grid-box {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.75rem;
-}
-
-.fn-disk-unit {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15rem;
-  padding: 4px 6px;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid var(--fn-border-subtle);
-  border-radius: 2px;
-}
-
-.fn-disk-label {
-  font-size: 0.68rem;
-  color: var(--fn-text-secondary);
-}
-
-.fn-disk-details-split {
-  display: flex;
-  justify-content: space-between;
   gap: 1.25rem;
-  border-top: 1px solid var(--fn-border-subtle);
-  padding-top: 0.75rem;
 }
 
-.fn-disk-meta-left {
+.omv-concentric-wrap {
+  width: 110px;
+  height: 110px;
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.omv-load-bars-list {
+  display: flex;
+  gap: 0.85rem;
   font-size: 0.75rem;
 }
 
-.fn-detail-line {
+.omv-load-item {
+  border-left: 2px solid #ff4081;
+  padding-left: 0.4rem;
   display: flex;
+  flex-direction: column;
+}
+
+.omv-load-val {
+  font-weight: 700;
+  color: #ffffff;
+  font-family: var(--omv-font-mono);
+}
+
+.omv-load-lbl {
+  color: var(--omv-text-muted);
+  font-size: 0.68rem;
+}
+
+/* --- WIDGET: SERVICES (OMV FULL GREEN BARS) --- */
+.omv-services-list {
+  display: flex;
+  flex-direction: column;
   gap: 0.4rem;
 }
 
-.fn-det-lbl {
-  color: var(--fn-text-muted);
-  width: 70px;
-}
-
-.fn-det-val {
-  color: #ffffff;
-}
-
-.fn-disk-temp-right {
-  display: flex;
-  flex-direction: column;
-  width: 140px;
-}
-
-.fn-temp-lbl {
-  font-size: 0.72rem;
-  color: var(--fn-text-muted);
-}
-
-.fn-temp-num {
-  font-size: 1.35rem;
+.omv-service-pill {
+  width: 100%;
+  background: var(--omv-green);
+  color: #000000;
   font-weight: 700;
-  color: #ffffff;
-  line-height: 1.2;
+  font-size: 0.78rem;
+  text-align: center;
+  padding: 0.35rem 0.5rem;
+  border-radius: 2px;
+  letter-spacing: 0.02em;
 }
 
-.fn-gauge-wrap {
+/* --- WIDGET: SMALL TILE CARDS (UPTIME, TIME, UPDATES) --- */
+.omv-info-tile {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 4px;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
 }
 
-.fn-gauge-tick-left, .fn-gauge-tick-right {
-  font-size: 0.65rem;
-  color: var(--fn-text-muted);
-  line-height: 1;
+.omv-tile-icon {
+  width: 28px;
+  height: 28px;
+  color: #ffffff;
+  flex-shrink: 0;
 }
 
-.fn-gauge-track {
-  flex: 1;
-  height: 6px;
-  background: linear-gradient(to right, #0091ea 0%, #00e676 35%, #ffd600 65%, #ff1744 100%);
+.omv-tile-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.omv-tile-title {
+  font-size: 0.75rem;
+  color: var(--omv-text-muted);
+}
+
+.omv-tile-val {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+/* --- WIDGET: S.M.A.R.T. DISK PILLS --- */
+.omv-smart-disks-grid {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.omv-smart-btn {
+  background: #333333;
+  border: 1px solid #444444;
+  color: #ffffff;
+  padding: 0.35rem 0.75rem;
   border-radius: 2px;
-  position: relative;
+  font-size: 0.75rem;
+  font-family: var(--omv-font-mono);
+  cursor: pointer;
+  transition: all 0.12s ease;
 }
 
-.fn-gauge-needle {
-  position: absolute;
-  top: -3px;
-  width: 3px;
-  height: 12px;
-  background: #ffffff;
-  border: 1px solid #000000;
-  transform: translateX(-50%);
+.omv-smart-btn:hover {
+  background: #444444;
+  border-color: var(--omv-blue);
 }
 
-/* --- CARD 4: MEMORY USAGE --- */
-.fn-memory-graph-area {
-  flex: 1;
-  padding: 1rem 1.25rem 0.5rem;
-  background-color: var(--fn-bg-card);
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+/* --- WIDGET: NETWORK INTERFACES --- */
+.omv-net-hero-bar {
+  background: var(--omv-green);
+  color: #000000;
+  padding: 0.45rem 0.75rem;
+  border-radius: 2px;
+  margin-bottom: 0.75rem;
+  font-size: 0.75rem;
 }
 
-.fn-grid-chart-container {
-  display: flex;
-  gap: 0.75rem;
-  height: 90px;
+.omv-net-hero-name {
+  font-weight: 700;
+  font-family: var(--omv-font-mono);
 }
 
-.fn-chart-y-axis {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  font-size: 0.65rem;
-  color: var(--fn-text-muted);
-  text-align: right;
-  width: 45px;
-}
-
-.fn-chart-grid-plane {
-  flex: 1;
-  position: relative;
-}
-
-.fn-chart-svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.fn-chart-timestamps {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.68rem;
-  color: var(--fn-text-dim);
-  margin-top: 0.25rem;
+.omv-net-hero-ip {
+  font-family: var(--omv-font-mono);
 }
 
 /* ==============================================================================
-   5. TABLES & APPLIANCE CARDS
+   5. OMV TABLES & DATATABLES
    ============================================================================== */
 .table-card {
-  background: var(--fn-bg-card);
-  border: 1px solid var(--fn-border-main);
-  border-radius: 2px;
+  background: var(--omv-bg-card);
+  border: 1px solid var(--omv-border-card);
+  border-radius: 4px;
   overflow: hidden;
   margin-bottom: 1.25rem;
 }
 
 .table-toolbar {
   padding: 0.65rem 1rem;
-  background: var(--fn-bg-card-header);
-  border-bottom: 1px solid var(--fn-border-main);
+  background: #1e1e1e;
+  border-bottom: 1px solid var(--omv-border-card);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -841,36 +650,32 @@ body {
 }
 
 .toolbar-title {
-  font-size: 0.8rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--fn-text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #ffffff;
 }
 
 .pf-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   text-align: left;
 }
 
 .pf-table th {
-  background: var(--fn-bg-card-header);
-  color: var(--fn-text-muted);
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 0.65rem 1rem;
-  border-bottom: 1px solid var(--fn-border-main);
+  background: #1e1e1e;
+  color: #b0b0b0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--omv-border-card);
   white-space: nowrap;
 }
 
 .pf-table td {
-  padding: 0.65rem 1rem;
-  border-bottom: 1px solid var(--fn-border-subtle);
-  color: var(--fn-text-primary);
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid #2e2e2e;
+  color: var(--omv-text-primary);
   vertical-align: middle;
 }
 
@@ -879,7 +684,7 @@ body {
 }
 
 .pf-table tr:hover td {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .col-actions {
@@ -887,12 +692,12 @@ body {
   white-space: nowrap;
 }
 
-/* Technical Buttons */
+/* Buttons */
 .btn {
-  padding: 0.38rem 0.75rem;
-  border-radius: 2px;
-  font-size: 0.78rem;
-  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 500;
   cursor: pointer;
   border: 1px solid transparent;
   display: inline-flex;
@@ -904,37 +709,36 @@ body {
 }
 
 .btn-primary {
-  background-color: var(--fn-card-blue);
-  border-color: var(--fn-card-blue);
+  background-color: var(--omv-blue);
+  border-color: var(--omv-blue);
   color: #ffffff;
 }
 
 .btn-primary:hover {
-  background-color: var(--fn-card-blue-hover);
-  border-color: var(--fn-card-blue-hover);
+  background-color: var(--omv-blue-dark);
+  border-color: var(--omv-blue-dark);
 }
 
 .btn-secondary {
-  background-color: var(--fn-bg-card-subtle);
-  border: 1px solid var(--fn-border-main);
-  color: var(--fn-text-primary);
-}
-
-.btn-secondary:hover {
-  background-color: #243040;
-  border-color: var(--fn-cyan-active);
+  background-color: #333333;
+  border: 1px solid #484848;
   color: #ffffff;
 }
 
+.btn-secondary:hover {
+  background-color: #444444;
+  border-color: var(--omv-blue);
+}
+
 .btn-danger {
-  background-color: rgba(198, 40, 40, 0.15);
-  border: 1px solid rgba(198, 40, 40, 0.4);
-  color: #ef9a9a;
+  background-color: rgba(239, 83, 80, 0.15);
+  border: 1px solid rgba(239, 83, 80, 0.4);
+  color: #ff8a80;
 }
 
 .btn-danger:hover {
-  background-color: var(--fn-card-red);
-  border-color: var(--fn-card-red);
+  background-color: #ef5350;
+  border-color: #ef5350;
   color: #ffffff;
 }
 
@@ -949,60 +753,59 @@ body {
   align-items: center;
   gap: 0.3rem;
   font-size: 0.68rem;
-  font-weight: 700;
+  font-weight: 600;
   padding: 2px 6px;
   border-radius: 2px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .badge-status.green {
-  background: rgba(46, 125, 50, 0.2);
-  border: 1px solid rgba(46, 125, 50, 0.5);
-  color: #81c784;
+  background: rgba(0, 230, 118, 0.15);
+  border: 1px solid rgba(0, 230, 118, 0.4);
+  color: var(--omv-green);
 }
 
 .badge-status.blue {
-  background: rgba(0, 91, 150, 0.25);
-  border: 1px solid rgba(0, 91, 150, 0.5);
-  color: #64b5f6;
+  background: rgba(0, 139, 229, 0.18);
+  border: 1px solid rgba(0, 139, 229, 0.4);
+  color: #40c4ff;
 }
 
 .badge-status.amber {
-  background: rgba(178, 106, 0, 0.2);
-  border: 1px solid rgba(178, 106, 0, 0.5);
-  color: #ffb74d;
+  background: rgba(255, 167, 38, 0.15);
+  border: 1px solid rgba(255, 167, 38, 0.4);
+  color: var(--omv-amber);
 }
 
 .badge-status.red {
-  background: rgba(198, 40, 40, 0.2);
-  border: 1px solid rgba(198, 40, 40, 0.5);
-  color: #e57373;
+  background: rgba(239, 83, 80, 0.15);
+  border: 1px solid rgba(239, 83, 80, 0.4);
+  color: var(--omv-red);
 }
 
 .badge-status.slate {
-  background: rgba(120, 144, 156, 0.15);
-  border: 1px solid rgba(120, 144, 156, 0.3);
-  color: #b0bec5;
+  background: #333333;
+  border: 1px solid #444444;
+  color: #b0b0b0;
 }
 
 .font-mono {
-  font-family: var(--fn-font-mono);
+  font-family: var(--omv-font-mono);
 }
 
-.text-dim { color: var(--fn-text-muted); }
-.text-blue { color: #64b5f6; }
-.text-green { color: #81c784; }
-.text-amber { color: #ffb74d; }
-.text-red { color: #e57373; }
-.text-muted { color: var(--fn-text-dim); }
+.text-dim { color: var(--omv-text-muted); }
+.text-blue { color: #40c4ff; }
+.text-green { color: var(--omv-green); }
+.text-amber { color: var(--omv-amber); }
+.text-red { color: var(--omv-red); }
+.text-muted { color: var(--omv-text-muted); }
 .text-white { color: #ffffff; }
 
-/* Modals & Drawers */
-.modal-overlay {
+/* Modals & Dialogs */
+.modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
@@ -1011,10 +814,10 @@ body {
   padding: 1rem;
 }
 
-.modal-dialog {
-  background: var(--fn-bg-card);
-  border: 1px solid var(--fn-border-main);
-  border-radius: 2px;
+.modal-box {
+  background: var(--omv-bg-card);
+  border: 1px solid var(--omv-border-card);
+  border-radius: 4px;
   width: 100%;
   max-width: 580px;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
@@ -1025,39 +828,35 @@ body {
 
 .modal-header {
   padding: 0.85rem 1.25rem;
-  background: var(--fn-bg-card-header);
-  border-bottom: 1px solid var(--fn-border-main);
+  background: #1e1e1e;
+  border-bottom: 1px solid var(--omv-border-card);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.modal-title {
+.modal-header h3 {
   font-size: 0.95rem;
-  font-weight: 700;
+  font-weight: 600;
   color: #ffffff;
 }
 
 .modal-close {
   background: transparent;
   border: none;
-  color: var(--fn-text-muted);
+  color: var(--omv-text-muted);
   font-size: 1.25rem;
   cursor: pointer;
 }
 
-.modal-body {
-  padding: 1.25rem;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+.modal-close:hover {
+  color: #ffffff;
 }
 
-.modal-footer {
+.modal-actions {
   padding: 0.85rem 1.25rem;
-  background: var(--fn-bg-card-header);
-  border-top: 1px solid var(--fn-border-main);
+  background: #1e1e1e;
+  border-top: 1px solid var(--omv-border-card);
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
@@ -1067,27 +866,40 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  margin-bottom: 0.85rem;
 }
 
-.form-label {
+.form-row {
+  display: flex;
+  gap: 0.85rem;
+}
+
+.col-6 {
+  flex: 1;
+}
+
+.form-group label {
   font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--fn-text-secondary);
+  font-weight: 500;
+  color: var(--omv-text-secondary);
 }
 
-.form-input, .form-select {
-  background: var(--fn-bg-input);
-  border: 1px solid var(--fn-border-main);
+.form-group input[type="text"],
+.form-group input[type="password"],
+.form-group input[type="number"],
+.form-group select {
+  background: var(--omv-bg-input);
+  border: 1px solid var(--omv-border-card);
   color: #ffffff;
   padding: 0.45rem 0.65rem;
-  border-radius: 2px;
+  border-radius: 3px;
   font-family: inherit;
   font-size: 0.8rem;
   outline: none;
 }
 
-.form-input:focus, .form-select:focus {
-  border-color: var(--fn-cyan-active);
+.form-group input:focus, .form-group select:focus {
+  border-color: var(--omv-blue);
 }
 
 /* Toast Container */
@@ -1102,25 +914,20 @@ body {
 }
 
 .toast {
-  background: #1e2631;
-  border: 1px solid #29b6f6;
-  border-left: 4px solid #29b6f6;
+  background: #242424;
+  border: 1px solid var(--omv-blue);
+  border-left: 4px solid var(--omv-blue);
   color: #ffffff;
   padding: 0.65rem 1rem;
-  border-radius: 2px;
+  border-radius: 3px;
   font-size: 0.8rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
 .toast.success {
-  border-left-color: #2e7d32;
+  border-left-color: var(--omv-green);
 }
 
 .toast.error {
-  border-left-color: #c62828;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  border-left-color: var(--omv-red);
 }

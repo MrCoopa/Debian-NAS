@@ -2,7 +2,7 @@
   <div class="modal-box" @click.outside="openDangerConfirmModal = false" style="border-top: 4px solid var(--pf-red);">
     <div class="modal-header">
       <h3 style="color: var(--pf-red);">
-        <span>⚠️ Unwiderrufliche Zerstörung bestätigen: </span>
+        <span>⚠️ Confirm Irrevocable Destruction: </span>
         <span class="font-mono text-red" x-text="dangerConfirm.targetName"></span>
       </h3>
       <button type="button" class="modal-close" @click="openDangerConfirmModal = false">&times;</button>
@@ -12,30 +12,29 @@
       <input type="hidden" name="name" :value="dangerConfirm.targetName">
 
       <p style="font-size: 0.85rem; color: var(--pf-text-secondary); margin-bottom: 1rem;">
-        Diese Aktion löscht <strong x-text="dangerConfirm.type === 'pool' ? 'den gesamten ZFS Pool' : 'das ZFS Dataset'"></strong> und <strong>alle darin enthaltenen Dateien, Verzeichnisse und Snapshots unwiederbringlich</strong>.
+        This action irrevocably destroys <strong x-text="dangerConfirm.type === 'pool' ? 'the entire ZFS storage pool' : 'the ZFS dataset'"></strong> and <strong>all contained files, directories, and snapshots</strong>.
       </p>
 
       <div class="form-group">
         <label>
-          Tippe zur Bestätigung den genauen Namen ein: <strong class="text-red font-mono" x-text="dangerConfirm.targetName"></strong>
+          Type the exact name to confirm: <strong class="text-red font-mono" x-text="dangerConfirm.targetName"></strong>
         </label>
-        <input type="text" x-model="dangerConfirm.inputName" placeholder="Exakter Name zur Freigabe" class="font-mono" autocomplete="off">
+        <input type="text" x-model="dangerConfirm.inputName" placeholder="Type exact target name" class="font-mono" autocomplete="off">
       </div>
 
       <div class="form-group">
         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.82rem;">
           <input type="checkbox" name="delete_shares" value="true" checked>
-          <span>Automatisch alle zugehörigen SMB- und NFS-Freigaben entfernen</span>
+          <span>Automatically remove all associated SMB and NFS shares</span>
         </label>
       </div>
 
       <div class="modal-actions">
-        <button type="button" class="btn btn-secondary" @click="openDangerConfirmModal = false">Abbrechen</button>
+        <button type="button" class="btn btn-secondary" @click="openDangerConfirmModal = false">Cancel</button>
         <button type="submit" class="btn btn-danger" :disabled="dangerConfirm.inputName !== dangerConfirm.targetName">
-          Endgültig zerstören
+          Permanently Destroy
         </button>
       </div>
     </form>
   </div>
 </div>
-

@@ -27,7 +27,7 @@
       </button>
       <button class="btn btn-danger btn-sm"
               :disabled="activeDisk.is_system_disk || Boolean(activeDisk.zfs_pool)"
-              @click="if (confirm('ACHTUNG: Festplatte ' + activeDisk.name + ' vollständig löschen (Wipe ZFS labels & GPT)?')) { htmx.ajax('POST', '/ui/actions/disks/wipe', { values: { device: activeDisk.path } }); }">
+              @click="if (confirm('WARNING: Completely wipe disk ' + activeDisk.name + ' (Wipe ZFS labels & GPT)?')) { htmx.ajax('POST', '/ui/actions/disks/wipe', { values: { device: activeDisk.path } }); }">
         Wipe Disk
       </button>
       <button class="modal-close" style="margin-left: 0.5rem;" @click="drawerOpen = false">&times;</button>

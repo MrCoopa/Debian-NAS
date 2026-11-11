@@ -9,12 +9,12 @@
       <div class="form-group">
         <label>VDEV Role / Type</label>
         <select name="vdev_type">
-          <option value="mirror">Data Mirror (Zusätzliche Kapazität mit Redundanz)</option>
-          <option value="stripe">Data Stripe (Kapazitätserweiterung)</option>
-          <option value="cache">Cache (L2ARC SSD Lesecache)</option>
-          <option value="log">Log (SLOG / ZIL SSD Schreibbeschleunigung)</option>
-          <option value="special">Special (Schnelle SSDs für Metadaten &amp; kleine Dateien)</option>
-          <option value="spare">Hot Spare (Automatischer Ersatz bei Plattenausfall)</option>
+          <option value="mirror">Data Mirror (Additional capacity with redundancy)</option>
+          <option value="stripe">Data Stripe (Capacity extension)</option>
+          <option value="cache">Cache (L2ARC SSD read cache)</option>
+          <option value="log">Log (SLOG / ZIL SSD write acceleration)</option>
+          <option value="special">Special (Fast SSDs for metadata &amp; small files)</option>
+          <option value="spare">Hot Spare (Automated replacement on disk failure)</option>
         </select>
       </div>
       <div class="form-group">
@@ -32,10 +32,9 @@
         </div>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn btn-secondary" @click="openAddVdevModal = false">Abbrechen</button>
+        <button type="button" class="btn btn-secondary" @click="openAddVdevModal = false">Cancel</button>
         <button type="submit" class="btn btn-primary">Add VDEV</button>
       </div>
     </form>
   </div>
 </div>
-

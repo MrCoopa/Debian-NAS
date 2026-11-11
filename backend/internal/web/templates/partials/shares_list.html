@@ -13,14 +13,14 @@
           <th>Share Name</th>
           <th>Target Dataset / Path</th>
           <th>Access / Permissions</th>
-          <th>Zugeordnete Benutzer / Hosts</th>
+          <th>Assigned Users / Hosts</th>
           <th>Status</th>
           <th class="col-actions">Actions</th>
         </tr>
       </thead>
       <tbody>
         {{if and (eq (len .SmbShares) 0) (eq (len .NfsExports) 0)}}
-          <tr><td colspan="7" class="text-dim" style="text-align: center; padding: 1.5rem;">Keine aktiven Netzwerk-Freigaben vorhanden. Klicke auf "+ New Network Share".</td></tr>
+          <tr><td colspan="7" class="text-dim" style="text-align: center; padding: 1.5rem;">No active network shares configured. Click "+ New Network Share".</td></tr>
         {{else}}
           {{range $s := .SmbShares}}
             <tr>
@@ -34,22 +34,22 @@
               </td>
               <td>
                 {{if $s.GuestOk}}
-                  <span class="badge-status green" style="font-size: 0.75rem;">🟢 Jeder (Gast / Ohne Passwort)</span>
+                  <span class="badge-status green" style="font-size: 0.75rem;">🟢 Everyone (Guest / No Password)</span>
                 {{else if gt (len $s.ValidUsers) 0}}
                   {{range $u := $s.ValidUsers}}
-                    <span class="badge font-mono" style="background: rgba(59,130,246,0.18); color: #93c5fd; border: 1px solid rgba(59,130,246,0.35); padding: 2px 7px; border-radius: 4px; margin: 1px 2px; display: inline-block; font-size: 0.75rem;">
+                    <span class="badge font-mono" style="background: rgba(59,130,246,0.18); color: #93c5fd; border: 1px solid rgba(59,130,246,0.35); padding: 2px 7px; border-radius: 2px; margin: 1px 2px; display: inline-block; font-size: 0.75rem;">
                       👤 {{$u}}
                     </span>
                   {{end}}
                 {{else}}
-                  <span class="badge-status blue" style="font-size: 0.75rem;">👥 Alle NAS-Benutzer (@nasusers)</span>
+                  <span class="badge-status blue" style="font-size: 0.75rem;">👥 All NAS Users (@nasusers)</span>
                 {{end}}
               </td>
-              <td><span class="badge-status green">Aktiv</span></td>
+              <td><span class="badge-status green">Active</span></td>
               <td class="col-actions">
                 <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
                   <button class="btn btn-secondary btn-sm" @click="openEditShare('{{$s.Name}}', '{{$s.Path}}', {{$s.ReadOnly}}, {{$s.GuestOk}}, '{{join $s.ValidUsers ","}}')">Edit</button>
-                  <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/smb?name={{$s.Name}}" hx-confirm="SMB-Freigabe '{{$s.Name}}' löschen?" hx-target="#shares-container" hx-swap="morph">Delete</button>
+                  <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/smb?name={{$s.Name}}" hx-confirm="Delete SMB share '{{$s.Name}}'?" hx-target="#shares-container" hx-swap="morph">Delete</button>
                 </div>
               </td>
             </tr>
@@ -66,14 +66,14 @@
                 </span>
               </td>
               <td>
-                <span class="badge font-mono" style="background: rgba(240,171,0,0.15); color: #f0ab00; border: 1px solid rgba(240,171,0,0.3); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">
+                <span class="badge font-mono" style="background: rgba(240,171,0,0.15); color: #f0ab00; border: 1px solid rgba(240,171,0,0.3); padding: 2px 6px; border-radius: 2px; font-size: 0.75rem;">
                   🖥️ {{if $n.AllowedClients}}{{$n.AllowedClients}}{{else}}*{{end}}
                 </span>
               </td>
-              <td><span class="badge-status green">Aktiv</span></td>
+              <td><span class="badge-status green">Active</span></td>
               <td class="col-actions">
                 <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
-                  <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/nfs?path={{$n.Path}}" hx-confirm="NFS-Export '{{$n.Path}}' aufheben?" hx-target="#shares-container" hx-swap="morph">Delete</button>
+                  <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/nfs?path={{$n.Path}}" hx-confirm="Remove NFS export '{{$n.Path}}'?" hx-target="#shares-container" hx-swap="morph">Delete</button>
                 </div>
               </td>
             </tr>
@@ -83,4 +83,3 @@
     </table>
   </div>
 </div>
-
