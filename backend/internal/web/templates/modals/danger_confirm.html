@@ -19,7 +19,7 @@
         <label>
           Type the exact name to confirm: <strong class="text-red font-mono" x-text="dangerConfirm.targetName"></strong>
         </label>
-        <input type="text" x-model="dangerConfirm.inputName" placeholder="Type exact target name" class="font-mono" autocomplete="off">
+        <input type="text" x-model="dangerConfirm.inputName" :placeholder="'Type ' + (dangerConfirm.targetName || '')" class="font-mono" autocomplete="off">
       </div>
 
       <div class="form-group">
@@ -31,7 +31,7 @@
 
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" @click="openDangerConfirmModal = false">Cancel</button>
-        <button type="submit" class="btn btn-danger" :disabled="dangerConfirm.inputName !== dangerConfirm.targetName">
+        <button type="submit" class="btn btn-danger" :disabled="(dangerConfirm.inputName || '').trim() !== (dangerConfirm.targetName || '')">
           Permanently Destroy
         </button>
       </div>

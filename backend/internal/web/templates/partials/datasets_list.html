@@ -2,7 +2,7 @@
      x-data="{
        search: '',
        collapsed: {},
-       selected: 'DATA',
+       selected: '{{if gt (len .Datasets) 0}}{{(index .Datasets 0).Name}}{{end}}',
        toggle(name) {
          this.collapsed[name] = !this.collapsed[name];
        },
@@ -196,21 +196,11 @@
       margin-bottom: 2px;
     }
     .tn-row-actions {
-      position: absolute;
-      right: 0.75rem;
-      top: 50%;
-      transform: translateY(-50%);
-      display: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
       gap: 0.35rem;
-      background: rgba(24, 24, 24, 0.95);
-      border: 1px solid #333333;
-      padding: 3px 6px;
-      border-radius: 4px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
-      z-index: 5;
-    }
-    .tn-tree-row:hover .tn-row-actions {
-      display: flex;
+      flex-wrap: wrap;
     }
   </style>
 
@@ -230,17 +220,18 @@
       <table class="tn-tree-table">
         <thead>
           <tr>
-            <th style="width: 44%;">Dataset</th>
-            <th style="width: 14%;">Used</th>
-            <th style="width: 14%;">Available</th>
-            <th style="width: 14%;">Encryption</th>
-            <th style="width: 14%; text-align: center;">Usage</th>
+            <th style="width: 28%;">Dataset</th>
+            <th style="width: 9%;">Used</th>
+            <th style="width: 10%;">Available</th>
+            <th style="width: 11%;">Encryption</th>
+            <th style="width: 8%; text-align: center;">Usage</th>
+            <th style="width: 34%; text-align: right;">Actions</th>
           </tr>
         </thead>
         <tbody>
           {{if eq (len .Datasets) 0}}
             <tr>
-              <td colspan="5" class="text-dim" style="text-align: center; padding: 2rem;">
+              <td colspan="6" class="text-dim" style="text-align: center; padding: 2rem;">
                 No ZFS datasets found. Create a storage pool first.
               </td>
             </tr>
@@ -257,7 +248,7 @@
               <tr class="tn-tree-row"
                   x-show="isVisible('{{$ds.Name}}')"
                   @click="selected = '{{$ds.Name}}'"
-                  :class="{ 'selected': selected === '{{$ds.Name}}' }"
+                  :class="{ 'is-selected': selected === '{{$ds.Name}}' }"
                   :style="selected === '{{$ds.Name}}' ? 'border-left: 3px solid #008be5;' : 'border-left: 3px solid transparent;'">
                 
                 <!-- Dataset Column with Hierarchical Indentation, Expand/Collapse & Icons -->
@@ -351,8 +342,10 @@
                       <span style="color: transparent; font-size: 0.7rem;">--</span>
                     {{end}}
                   </div>
+                </td>
 
-                  <!-- Quick Action Buttons on Hover -->
+                <!-- Always-visible Row Actions Column -->
+                <td style="text-align: right;">
                   <div class="tn-row-actions">
                     {{if eq $ds.Type "filesystem"}}
                       <button class="btn btn-secondary btn-sm" @click.stop="openCreateDataset('{{$ds.Name}}')">+ Dataset</button>

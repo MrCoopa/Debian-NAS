@@ -1300,6 +1300,11 @@ func (m *Manager) DestroyDataset(name string) error {
 
 	out, err := runCommand(defaultZfsTimeout, "zfs", "destroy", "-r", name)
 	if err != nil {
+		// Force-unmount in case smbd or an active directory handle left the dataset busy.
+		_, _ = runCommand(fastZfsTimeout, "zfs", "unmount", "-f", name)
+		out, err = runCommand(defaultZfsTimeout, "zfs", "destroy", "-r", "-f", name)
+	}
+	if err != nil {
 		return fmt.Errorf("zfs destroy failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil

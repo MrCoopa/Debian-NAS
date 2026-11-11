@@ -504,6 +504,67 @@ func TestUI_StandbySafeSmartBadgeIsGreen(t *testing.T) {
 	}
 }
 
+func TestUI_DatasetRowActionsAndDestroyLifecycle(t *testing.T) {
+	srv := createTestServer(t)
+	handler := srv.Routes()
+
+	// 1. Create a child dataset under DATA
+	createDSForm := url.Values{
+		"parent":      {"DATA"},
+		"name":        {"Any12"},
+		"compression": {"lz4"},
+		"recordsize":  {"128K"},
+	}
+	createReq := httptest.NewRequest("POST", "/ui/actions/zfs/datasets", strings.NewReader(createDSForm.Encode()))
+	createReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	createRR := httptest.NewRecorder()
+	handler.ServeHTTP(createRR, createReq)
+	if createRR.Code != http.StatusOK || !strings.Contains(createRR.Body.String(), "Any12") {
+		t.Fatalf("dataset create failed: %s", createRR.Header().Get("HX-Trigger"))
+	}
+
+	// 2. Datasets partial must render an always-visible Actions column containing Destroy for DATA/Any12
+	dsReq := httptest.NewRequest("GET", "/ui/partials/datasets", nil)
+	dsRR := httptest.NewRecorder()
+	handler.ServeHTTP(dsRR, dsReq)
+	dsBody := dsRR.Body.String()
+	if !strings.Contains(dsBody, `>Actions</th>`) {
+		t.Fatalf("expected explicit Actions column in datasets table")
+	}
+	if strings.Contains(dsBody, "display: none;\n      gap: 0.35rem;") {
+		t.Fatalf("expected row actions to be always visible rather than hover-hidden")
+	}
+	if !strings.Contains(dsBody, `openDangerConfirm('dataset', 'DATA/Any12')`) {
+		t.Fatalf("expected Destroy action for child dataset DATA/Any12, got: %s", dsBody)
+	}
+
+	// 3. Destroy dataset via danger confirm endpoint
+	destroyForm := url.Values{
+		"type":          {"dataset"},
+		"name":          {"DATA/Any12"},
+		"delete_shares": {"true"},
+	}
+	destroyReq := httptest.NewRequest("POST", "/ui/actions/zfs/destroy", strings.NewReader(destroyForm.Encode()))
+	destroyReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	destroyRR := httptest.NewRecorder()
+	handler.ServeHTTP(destroyRR, destroyReq)
+	if destroyRR.Code != http.StatusOK {
+		t.Fatalf("destroy dataset returned status %d", destroyRR.Code)
+	}
+	hxTrig := destroyRR.Header().Get("HX-Trigger")
+	if !strings.Contains(hxTrig, "Dataset 'DATA/Any12' destroyed") || !strings.Contains(hxTrig, "datasetUpdate") {
+		t.Fatalf("expected dataset destroy success + datasetUpdate trigger, got: %s", hxTrig)
+	}
+
+	// 4. Datasets partial after destroy must no longer include DATA/Any12
+	afterReq := httptest.NewRequest("GET", "/ui/partials/datasets", nil)
+	afterRR := httptest.NewRecorder()
+	handler.ServeHTTP(afterRR, afterReq)
+	if strings.Contains(afterRR.Body.String(), "DATA/Any12") {
+		t.Fatalf("destroyed dataset DATA/Any12 still present in datasets partial")
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
