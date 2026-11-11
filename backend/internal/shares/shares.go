@@ -493,7 +493,10 @@ func (m *Manager) DeleteSmb(name string) error {
 		_ = os.Remove(confPath)
 	}
 
-	return m.syncSambaMasterConfig()
+	err := m.syncSambaMasterConfig()
+	// Forcibly disconnect active SMB clients holding files/directories open on this share.
+	_, _ = runCmdWithTimeout(5*time.Second, "smbcontrol", "smbd", "close-share", name)
+	return err
 }
 
 func (m *Manager) generateSmbConfig(s *SmbShare) string {

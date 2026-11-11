@@ -1300,8 +1300,8 @@ func (m *Manager) DestroyDataset(name string) error {
 
 	out, err := runCommand(defaultZfsTimeout, "zfs", "destroy", "-r", name)
 	if err != nil {
-		// Force-unmount in case smbd or an active directory handle left the dataset busy.
-		_, _ = runCommand(fastZfsTimeout, "zfs", "unmount", "-f", name)
+		// Force-unmount deepest-first and terminate busy /mnt/ handles (e.g., smbd) before retrying destroy.
+		m.releaseMountsForTarget(name, true)
 		out, err = runCommand(defaultZfsTimeout, "zfs", "destroy", "-r", "-f", name)
 	}
 	if err != nil {
@@ -1851,14 +1851,94 @@ func (m *Manager) DestroyPool(name string) error {
 		return nil
 	}
 
-	// Unmount filesystems first to prevent busy lockouts
-	_, _ = runCommand(fastZfsTimeout, "zfs", "unmount", "-f", name)
+	// Unmount filesystems deepest-first before pool destruction to avoid child mount busy errors.
+	m.releaseMountsForTarget(name, false)
 
 	out, err := runCommand(defaultZfsTimeout, "zpool", "destroy", "-f", name)
+	if err != nil {
+		// Terminate remaining processes holding /mnt/ handles and force kernel unmount before retrying.
+		m.releaseMountsForTarget(name, true)
+		out, err = runCommand(defaultZfsTimeout, "zpool", "destroy", "-f", name)
+	}
 	if err != nil {
 		return fmt.Errorf("zpool destroy failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+type zfsMountEntry struct {
+	name       string
+	mountpoint string
+	mounted    bool
+}
+
+// collectTargetMounts lists ZFS filesystems under target sorted deepest-mountpoint-first.
+func collectTargetMounts(target string) []zfsMountEntry {
+	out, err := runCommandOutput(fastZfsTimeout, "zfs", "list", "-H", "-t", "filesystem", "-r", "-o", "name,mountpoint,mounted", target)
+	if err != nil {
+		return nil
+	}
+	var mounts []zfsMountEntry
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Split(strings.TrimSpace(line), "\t")
+		if len(fields) < 3 {
+			continue
+		}
+		dsName := strings.TrimSpace(fields[0])
+		mp := strings.TrimRight(strings.TrimSpace(fields[1]), "/")
+		mounted := strings.TrimSpace(fields[2]) == "yes"
+		if !strings.HasPrefix(mp, "/") || mp == "" {
+			continue
+		}
+		mounts = append(mounts, zfsMountEntry{
+			name:       dsName,
+			mountpoint: mp,
+			mounted:    mounted,
+		})
+	}
+	sort.Slice(mounts, func(i, j int) bool {
+		if len(mounts[i].mountpoint) != len(mounts[j].mountpoint) {
+			return len(mounts[i].mountpoint) > len(mounts[j].mountpoint)
+		}
+		return mounts[i].mountpoint > mounts[j].mountpoint
+	})
+	return mounts
+}
+
+// releaseMountsForTarget unmounts target and any descendant ZFS filesystems deepest-first.
+// When forceKill is true, processes holding open handles inside /mnt/ mountpoints are killed
+// with fuser and umount -f / umount -lf fallbacks are attempted so pool/dataset removal succeeds.
+func (m *Manager) releaseMountsForTarget(target string, forceKill bool) {
+	mounts := collectTargetMounts(target)
+	if len(mounts) == 0 {
+		_, _ = runCommand(fastZfsTimeout, "zfs", "unmount", "-f", target)
+		return
+	}
+
+	fuserPath, fuserErr := exec.LookPath("fuser")
+	for _, entry := range mounts {
+		if entry.mounted {
+			if _, err := runCommand(fastZfsTimeout, "zfs", "unmount", "-f", entry.name); err == nil && !forceKill {
+				continue
+			}
+		} else if !forceKill {
+			continue
+		}
+
+		if !forceKill {
+			continue
+		}
+
+		// Strictly limit fuser -km to ZFS mountpoints under /mnt/ to never touch system paths.
+		if fuserErr == nil && fuserPath != "" && strings.HasPrefix(entry.mountpoint, "/mnt/") && len(entry.mountpoint) > len("/mnt/") {
+			_, _ = runCommand(fastZfsTimeout, fuserPath, "-km", entry.mountpoint)
+		}
+		if _, err := runCommand(fastZfsTimeout, "zfs", "unmount", "-f", entry.name); err != nil {
+			if _, umErr := runCommand(fastZfsTimeout, "umount", "-f", entry.mountpoint); umErr != nil {
+				_, _ = runCommand(fastZfsTimeout, "umount", "-lf", entry.mountpoint)
+			}
+		}
+	}
 }
 
 // ExportPool exports a storage pool safely
@@ -1895,6 +1975,14 @@ func (m *Manager) ExportPool(name string) error {
 	}
 
 	out, err := runCommand(defaultZfsTimeout, "zpool", "export", name)
+	if err != nil {
+		m.releaseMountsForTarget(name, false)
+		out, err = runCommand(defaultZfsTimeout, "zpool", "export", "-f", name)
+		if err != nil {
+			m.releaseMountsForTarget(name, true)
+			out, err = runCommand(defaultZfsTimeout, "zpool", "export", "-f", name)
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("zpool export failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}

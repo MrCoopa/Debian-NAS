@@ -565,6 +565,154 @@ func TestUI_DatasetRowActionsAndDestroyLifecycle(t *testing.T) {
 	}
 }
 
+func TestUI_DestroyPoolWithChildDatasetsAndShares(t *testing.T) {
+	srv := createTestServer(t)
+	handler := srv.Routes()
+
+	allDisks, err := srv.disks.ListDisks()
+	if err != nil {
+		t.Fatalf("disks.ListDisks failed: %v", err)
+	}
+	var freeDiskPath string
+	for _, d := range allDisks {
+		if !d.IsSystemDisk && d.ZfsPool == "" {
+			if d.ByIDPath != "" {
+				freeDiskPath = d.ByIDPath
+			} else {
+				freeDiskPath = d.Path
+			}
+			break
+		}
+	}
+	if freeDiskPath == "" {
+		t.Fatalf("expected at least 1 free mock disk")
+	}
+
+	// 1. Create pool "Any" and child dataset "Any/Any12"
+	createForm := url.Values{
+		"name":        {"Any"},
+		"vdev_type":   {"stripe"},
+		"disks":       {freeDiskPath},
+		"ashift":      {"12"},
+		"compression": {"zstd"},
+	}
+	createReq := httptest.NewRequest("POST", "/ui/actions/zfs/pools/create", strings.NewReader(createForm.Encode()))
+	createReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	createRR := httptest.NewRecorder()
+	handler.ServeHTTP(createRR, createReq)
+	if createRR.Code != http.StatusOK || !strings.Contains(createRR.Body.String(), "Any") {
+		t.Fatalf("pool 'Any' create failed: %s", createRR.Header().Get("HX-Trigger"))
+	}
+
+	dsForm := url.Values{
+		"parent":      {"Any"},
+		"name":        {"Any12"},
+		"compression": {"lz4"},
+		"recordsize":  {"128K"},
+	}
+	dsReq := httptest.NewRequest("POST", "/ui/actions/zfs/datasets", strings.NewReader(dsForm.Encode()))
+	dsReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	dsRR := httptest.NewRecorder()
+	handler.ServeHTTP(dsRR, dsReq)
+	if dsRR.Code != http.StatusOK || !strings.Contains(dsRR.Body.String(), "Any12") {
+		t.Fatalf("dataset 'Any/Any12' create failed: %s", dsRR.Header().Get("HX-Trigger"))
+	}
+
+	// 2. Attach SMB share on child dataset path and NFS export on pool path
+	if err := srv.shares.SaveSmb(&shares.SmbShare{
+		Name:    "any12share",
+		Path:    "/mnt/Any/Any12",
+		Enabled: true,
+	}); err != nil {
+		t.Fatalf("SaveSmb failed: %v", err)
+	}
+	if err := srv.shares.SaveNfs(&shares.NfsExport{
+		Path:           "/mnt/Any",
+		AllowedClients: "192.168.2.0/24",
+		Options:        "rw,sync,no_subtree_check",
+		Enabled:        true,
+	}); err != nil {
+		t.Fatalf("SaveNfs failed: %v", err)
+	}
+
+	// 3. Destroy pool "Any" with delete_shares=true
+	destroyForm := url.Values{
+		"type":          {"pool"},
+		"name":          {"Any"},
+		"delete_shares": {"true"},
+	}
+	destroyReq := httptest.NewRequest("POST", "/ui/actions/zfs/destroy", strings.NewReader(destroyForm.Encode()))
+	destroyReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	destroyRR := httptest.NewRecorder()
+	handler.ServeHTTP(destroyRR, destroyReq)
+	if destroyRR.Code != http.StatusOK {
+		t.Fatalf("destroy pool returned status %d", destroyRR.Code)
+	}
+	trig := destroyRR.Header().Get("HX-Trigger")
+	for _, expected := range []string{
+		"ZFS pool 'Any' permanently destroyed",
+		"poolUpdate",
+		"datasetUpdate",
+		"snapshotUpdate",
+		"shareUpdate",
+		"diskUpdate",
+	} {
+		if !strings.Contains(trig, expected) {
+			t.Fatalf("expected HX-Trigger to contain %q, got: %s", expected, trig)
+		}
+	}
+
+	// 4. Verify pool, child dataset, SMB share, and NFS export are all removed
+	pools, _ := srv.zfs.ListPools()
+	for _, p := range pools {
+		if p.Name == "Any" {
+			t.Fatalf("pool 'Any' still present after destroy")
+		}
+	}
+	datasets, _ := srv.zfs.ListDatasets()
+	for _, ds := range datasets {
+		if ds.Name == "Any" || strings.HasPrefix(ds.Name, "Any/") {
+			t.Fatalf("dataset %q still present after pool destroy", ds.Name)
+		}
+	}
+	smbList, _ := srv.shares.ListSmb()
+	for _, smb := range smbList {
+		if smb.Name == "any12share" {
+			t.Fatalf("SMB share 'any12share' still present after pool destroy")
+		}
+	}
+	nfsList, _ := srv.shares.ListNfs()
+	for _, nfs := range nfsList {
+		if nfs.Path == "/mnt/Any" {
+			t.Fatalf("NFS export '/mnt/Any' still present after pool destroy")
+		}
+	}
+
+	// 5. Verify destroying an invalid/failing pool triggers an error toast rather than false success
+	//    and that danger_confirm modal keeps errors visible inline via handleDangerDestroyResult.
+	errForm := url.Values{
+		"type": {"pool"},
+		"name": {"bad pool!"},
+	}
+	errReq := httptest.NewRequest("POST", "/ui/actions/zfs/destroy", strings.NewReader(errForm.Encode()))
+	errReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	errRR := httptest.NewRecorder()
+	handler.ServeHTTP(errRR, errReq)
+	errTrig := errRR.Header().Get("HX-Trigger")
+	if !strings.Contains(errTrig, `"type":"error"`) || !strings.Contains(errTrig, "Error destroying pool") {
+		t.Fatalf("expected error trigger for failing pool destroy, got: %s", errTrig)
+	}
+
+	var modalBuf strings.Builder
+	if err := srv.web.Render(&modalBuf, "modals/danger_confirm.html", &ViewData{}); err != nil {
+		t.Fatalf("Render danger_confirm.html failed: %v", err)
+	}
+	modalHTML := modalBuf.String()
+	if !strings.Contains(modalHTML, "handleDangerDestroyResult($event)") || !strings.Contains(modalHTML, "dangerConfirm.error") {
+		t.Fatalf("danger_confirm modal must wire handleDangerDestroyResult($event) and inline dangerConfirm.error")
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a

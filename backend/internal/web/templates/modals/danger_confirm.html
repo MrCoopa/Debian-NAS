@@ -7,9 +7,15 @@
       </h3>
       <button type="button" class="modal-close" @click="openDangerConfirmModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/zfs/destroy" hx-target="#pools-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openDangerConfirmModal = false">
+    <form hx-post="/ui/actions/zfs/destroy" hx-target="#pools-container" hx-swap="morph"
+          @htmx:before-request="dangerConfirm.error = ''"
+          @htmx:after-request="handleDangerDestroyResult($event)">
       <input type="hidden" name="type" :value="dangerConfirm.type">
       <input type="hidden" name="name" :value="dangerConfirm.targetName">
+
+      <div x-show="dangerConfirm.error" x-cloak
+           style="margin-bottom: 1rem; padding: 0.65rem 0.85rem; border-radius: 6px; border: 1px solid var(--pf-red); background: rgba(239, 68, 68, 0.12); color: #fecaca; font-size: 0.82rem; word-break: break-word;"
+           x-text="dangerConfirm.error"></div>
 
       <p style="font-size: 0.85rem; color: var(--pf-text-secondary); margin-bottom: 1rem;">
         This action irrevocably destroys <strong x-text="dangerConfirm.type === 'pool' ? 'the entire ZFS storage pool' : 'the ZFS dataset'"></strong> and <strong>all contained files, directories, and snapshots</strong>.

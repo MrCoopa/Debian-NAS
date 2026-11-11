@@ -896,20 +896,7 @@ func (s *Server) handleUIActionDangerDestroy(w http.ResponseWriter, r *http.Requ
 
 	if targetType == "pool" {
 		if deleteShares {
-			if smbList, err := s.shares.ListSmb(); err == nil {
-				for _, smb := range smbList {
-					if smb.Name == name || smb.Path == "/mnt/"+name || strings.HasPrefix(smb.Path, "/mnt/"+name+"/") || smb.Path == "/"+name || strings.HasPrefix(smb.Path, "/"+name+"/") {
-						_ = s.shares.DeleteSmb(smb.Name)
-					}
-				}
-			}
-			if nfsList, err := s.shares.ListNfs(); err == nil {
-				for _, nfs := range nfsList {
-					if nfs.Path == "/mnt/"+name || strings.HasPrefix(nfs.Path, "/mnt/"+name+"/") || nfs.Path == "/"+name || strings.HasPrefix(nfs.Path, "/"+name+"/") {
-						_ = s.shares.DeleteNfs(nfs.Path)
-					}
-				}
-			}
+			s.removeSharesForTarget(name)
 		}
 		if err := s.zfs.DestroyPool(name); err != nil {
 			s.setHXTrigger(w, "Error destroying pool: "+err.Error(), "error")
@@ -919,20 +906,7 @@ func (s *Server) handleUIActionDangerDestroy(w http.ResponseWriter, r *http.Requ
 	} else {
 		// Dataset destruction
 		if deleteShares {
-			if smbList, err := s.shares.ListSmb(); err == nil {
-				for _, smb := range smbList {
-					if smb.Name == name || smb.Path == "/mnt/"+name || strings.HasPrefix(smb.Path, "/mnt/"+name+"/") || smb.Path == "/"+name || strings.HasPrefix(smb.Path, "/"+name+"/") {
-						_ = s.shares.DeleteSmb(smb.Name)
-					}
-				}
-			}
-			if nfsList, err := s.shares.ListNfs(); err == nil {
-				for _, nfs := range nfsList {
-					if nfs.Path == "/mnt/"+name || strings.HasPrefix(nfs.Path, "/mnt/"+name+"/") || nfs.Path == "/"+name || strings.HasPrefix(nfs.Path, "/"+name+"/") {
-						_ = s.shares.DeleteNfs(nfs.Path)
-					}
-				}
-			}
+			s.removeSharesForTarget(name)
 		}
 		if err := s.zfs.DestroyDataset(name); err != nil {
 			s.setHXTrigger(w, "Error destroying dataset: "+err.Error(), "error")
@@ -941,6 +915,52 @@ func (s *Server) handleUIActionDangerDestroy(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	s.handleUIPartialPools(w, r)
+}
+
+func pathBelongsToTarget(sharePath, target string, mountpoints []string) bool {
+	sharePath = strings.TrimRight(strings.TrimSpace(sharePath), "/")
+	if sharePath == "" {
+		return false
+	}
+	if sharePath == "/mnt/"+target || strings.HasPrefix(sharePath, "/mnt/"+target+"/") || sharePath == "/"+target || strings.HasPrefix(sharePath, "/"+target+"/") {
+		return true
+	}
+	for _, mp := range mountpoints {
+		if sharePath == mp || strings.HasPrefix(sharePath, mp+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) removeSharesForTarget(target string) {
+	var mountpoints []string
+	if datasets, err := s.zfs.ListDatasets(); err == nil {
+		for _, ds := range datasets {
+			if ds.Name != target && !strings.HasPrefix(ds.Name, target+"/") {
+				continue
+			}
+			mp := strings.TrimRight(strings.TrimSpace(ds.Mountpoint), "/")
+			if strings.HasPrefix(mp, "/") && mp != "" {
+				mountpoints = append(mountpoints, mp)
+			}
+		}
+	}
+
+	if smbList, err := s.shares.ListSmb(); err == nil {
+		for _, smb := range smbList {
+			if smb.Name == target || pathBelongsToTarget(smb.Path, target, mountpoints) {
+				_ = s.shares.DeleteSmb(smb.Name)
+			}
+		}
+	}
+	if nfsList, err := s.shares.ListNfs(); err == nil {
+		for _, nfs := range nfsList {
+			if pathBelongsToTarget(nfs.Path, target, mountpoints) {
+				_ = s.shares.DeleteNfs(nfs.Path)
+			}
+		}
+	}
 }
 
 // Disks

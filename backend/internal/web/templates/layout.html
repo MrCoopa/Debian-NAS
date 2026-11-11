@@ -43,7 +43,7 @@
         cloneSnapSource: '',
         cloneSnapTarget: '',
         openDangerConfirmModal: false,
-        dangerConfirm: { type: 'pool', targetName: '', inputName: '' },
+        dangerConfirm: { type: 'pool', targetName: '', inputName: '', error: '' },
         openImportModal: false,
         openCloudSyncModal: false,
         isEditingCloudSync: false,
@@ -213,8 +213,35 @@
           this.openCloneSnapModal = true;
         },
         openDangerConfirm(type, name) {
-          this.dangerConfirm = { type: type, targetName: name, inputName: '' };
+          this.dangerConfirm = { type: type, targetName: name, inputName: '', error: '' };
           this.openDangerConfirmModal = true;
+        },
+        handleDangerDestroyResult(event) {
+          const detail = (event && event.detail) || {};
+          const xhr = detail.xhr;
+          let triggerErr = '';
+          if (xhr && typeof xhr.getResponseHeader === 'function') {
+            const raw = xhr.getResponseHeader('HX-Trigger');
+            if (raw) {
+              try {
+                const parsed = JSON.parse(raw);
+                if (parsed && parsed.showToast && parsed.showToast.type === 'error') {
+                  triggerErr = parsed.showToast.message || 'Destruction failed.';
+                }
+              } catch (_) {}
+            }
+          }
+          if (triggerErr) {
+            this.dangerConfirm.error = triggerErr;
+            return;
+          }
+          if (!detail.successful) {
+            const bodyText = xhr && xhr.responseText ? xhr.responseText.trim() : '';
+            this.dangerConfirm.error = bodyText || ('Request failed' + (xhr && xhr.status ? ' (HTTP ' + xhr.status + ')' : ''));
+            return;
+          }
+          this.dangerConfirm.error = '';
+          this.openDangerConfirmModal = false;
         },
         openDiskDrawer(disk) {
           this.activeDisk = disk;
@@ -223,9 +250,10 @@
         showToast(message, type) {
           const id = Date.now();
           this.toasts.push({ id, message, type: type || 'info' });
+          const durationMs = type === 'error' ? 9000 : 4500;
           setTimeout(() => {
             this.toasts = this.toasts.filter(t => t.id !== id);
-          }, 4500);
+          }, durationMs);
         }
       }" @show-toast.camel.window="showToast($event.detail.message, $event.detail.type)" @show-toast.window="showToast($event.detail.message, $event.detail.type)">
 
