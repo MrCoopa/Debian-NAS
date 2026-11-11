@@ -1,0 +1,64 @@
+<div class="modal-backdrop" x-show="openCreateZvolModal" x-cloak>
+  <div class="modal-box" @click.outside="openCreateZvolModal = false">
+    <div class="modal-header">
+      <h3>Neues Zvol (Block Device) erstellen</h3>
+      <button type="button" class="modal-close" @click="openCreateZvolModal = false">&times;</button>
+    </div>
+    <form hx-post="/ui/actions/zfs/zvols" hx-target="#datasets-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openCreateZvolModal = false">
+      <div class="form-group">
+        <label>Übergeordneter Pool / Dataset</label>
+        <select name="parent" required>
+          {{range $p := .Pools}}
+            <option value="{{$p.Name}}">{{$p.Name}} (Root Pool)</option>
+          {{end}}
+          {{range $ds := .Datasets}}
+            {{if eq $ds.Type "filesystem"}}
+              <option value="{{$ds.Name}}">{{$ds.Name}}</option>
+            {{end}}
+          {{end}}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Zvol Name</label>
+        <input type="text" name="name" required placeholder="z.B. vm-disk0, iscsi-lun1" pattern="[a-zA-Z0-9_\-\.]+">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group col-6">
+          <label>Größe</label>
+          <div style="display: flex; gap: 0.5rem;">
+            <input type="number" name="size_val" required min="1" value="20" style="flex: 1;">
+            <select name="size_unit" style="width: 80px;">
+              <option value="G" selected>GiB</option>
+              <option value="T">TiB</option>
+              <option value="M">MiB</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group col-6">
+          <label>Blockgröße (volblocksize)</label>
+          <select name="volblocksize">
+            <option value="16k" selected>16 KiB (Standard / VMs)</option>
+            <option value="8k">8 KiB (Datenbanken)</option>
+            <option value="32k">32 KiB</option>
+            <option value="64k">64 KiB</option>
+            <option value="128k">128 KiB (Streaming Blockdev)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" name="sparse" value="true" checked>
+          <span><strong>Sparse Volume (Thin Provisioning)</strong> &ndash; Belegt Speicherplatz erst bei tatsächlicher Schreibaktivität</span>
+        </label>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" @click="openCreateZvolModal = false">Abbrechen</button>
+        <button type="submit" class="btn btn-primary">Zvol erstellen</button>
+      </div>
+    </form>
+  </div>
+</div>

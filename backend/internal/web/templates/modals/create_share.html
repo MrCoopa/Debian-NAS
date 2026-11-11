@@ -1,0 +1,81 @@
+<div class="modal-backdrop" x-show="openShareModal" x-cloak>
+  <div class="modal-box" @click.outside="openShareModal = false">
+    <div class="modal-header">
+      <h3 x-text="isEditingShare ? ('Edit SMB Share: ' + shareForm.name) : 'Create Network File Share'"></h3>
+      <button type="button" class="modal-close" @click="openShareModal = false">&times;</button>
+    </div>
+    <form hx-post="/ui/actions/shares/save" hx-target="#shares-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openShareModal = false">
+      <div class="form-group">
+        <label>Share Name</label>
+        <input type="text" name="name" x-model="shareForm.name" :readonly="isEditingShare" placeholder="e.g. Media, Backups" required>
+      </div>
+      <div class="form-group">
+        <label>Target Filesystem Path</label>
+        <input type="text" name="path" x-model="shareForm.path" placeholder="e.g. /Hallo or /Hallo/test" list="share-path-suggestions" required>
+        <datalist id="share-path-suggestions">
+          {{range $p := .Pools}}
+            <option value="/{{$p.Name}}">
+          {{end}}
+          {{range $ds := .Datasets}}
+            <option value="{{$ds.Mountpoint}}">
+          {{end}}
+        </datalist>
+        <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
+          Wähle ein ZFS Dataset / Pool-Mountpoint oder gib einen absoluten Pfad an.
+        </small>
+      </div>
+      <div class="form-group">
+        <label>Protocol</label>
+        <select name="proto" x-model="shareForm.proto" :disabled="isEditingShare">
+          <option value="smb">SMB / CIFS (Windows &amp; Mac File Sharing)</option>
+          <option value="nfs">NFSv4 (Linux &amp; Proxmox Storage Mounts)</option>
+        </select>
+      </div>
+
+      <!-- NFS specific options -->
+      <div class="form-group" x-show="shareForm.proto === 'nfs'">
+        <label>Allowed NFS Clients (IP, Subnet or Host)</label>
+        <input type="text" name="allowed_clients" x-model="shareForm.allowed_clients" placeholder="e.g. 192.168.1.0/24 or *">
+        <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
+          Schränke den Zugriff auf bestimmte Client-IPs/Subnetze ein, oder nutze * für vollen LAN-Zugriff.
+        </small>
+      </div>
+
+      <!-- Access Control -->
+      <div class="form-group">
+        <label>Access Control</label>
+        <select name="access" x-model="shareForm.access">
+          <option value="restricted">Restricted (Nur berechtigte NAS-Benutzer mit Login)</option>
+          <option value="guest">Public / Guest Access (Öffentlich für jeden ohne Passwort)</option>
+          <option value="readonly">Read-Only (Schreibgeschützt)</option>
+        </select>
+      </div>
+
+      <!-- Storage User Checkboxes (Only for SMB and not Guest) -->
+      <div class="form-group" x-show="shareForm.proto === 'smb' && shareForm.access !== 'guest'">
+        <label>Zugeordnete Benutzer (Storage Users)</label>
+        <div style="background: rgba(15,23,42,0.6); border: 1px solid var(--pf-border-color); border-radius: 4px; padding: 0.6rem; max-height: 130px; overflow-y: auto;">
+          {{if eq (len .Users) 0}}
+            <span class="text-dim" style="font-size: 0.75rem;">Keine NAS-Benutzer vorhanden. Lege zuerst einen Benutzer an.</span>
+          {{else}}
+            {{range $u := .Users}}
+              <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.78rem; cursor: pointer;">
+                <input type="checkbox" name="valid_users" value="{{$u.Username}}" :checked="shareForm.users.includes('{{$u.Username}}')">
+                <strong class="font-mono text-blue">👤 {{$u.Username}}</strong>
+                <span class="text-dim">(nasusers)</span>
+              </label>
+            {{end}}
+          {{end}}
+        </div>
+        <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
+          Wähle die Benutzer aus, die Zugriff haben sollen. Wenn kein Benutzer angehakt ist, haben alle NAS-Benutzer (@nasusers) Zugriff.
+        </small>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" @click="openShareModal = false">Abbrechen</button>
+        <button type="submit" class="btn btn-primary" x-text="isEditingShare ? 'Save Changes' : 'Create Share'"></button>
+      </div>
+    </form>
+  </div>
+</div>

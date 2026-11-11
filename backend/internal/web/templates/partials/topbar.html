@@ -1,0 +1,34 @@
+<div class="topbar-meta-strip">
+  <div class="meta-item">
+    <span class="status-dot green"></span>
+    <span class="text-dim">Node:</span>
+    <strong>{{if .System.Hostname}}{{.System.Hostname}}{{else}}localhost{{end}}</strong>
+  </div>
+  <div class="meta-item">
+    <span class="text-dim">ZFS:</span>
+    <strong>{{if .ZfsVersion}}{{.ZfsVersion}}{{else}}OpenZFS Native{{end}}</strong>
+  </div>
+  <div class="meta-item">
+    <span class="text-dim">Raw Storage:</span>
+    <strong>{{formatBytes .TotalRawBytes}} ({{.TotalDisks}} Disks)</strong>
+  </div>
+  <div class="meta-item">
+    <span class="text-dim">Daemon:</span>
+    <strong class="text-green">{{formatPercent .System.DaemonRamMB}} MB RSS</strong>
+  </div>
+</div>
+
+<div class="topbar-right">
+  <div class="io-pill">
+    <span class="r">&#9650; <strong>{{formatRate .System.DiskIO.ReadMBS}}</strong></span>
+    <span class="w">&#9660; <strong>{{formatRate .System.DiskIO.WriteMBS}}</strong></span>
+  </div>
+  <div class="hdd-spindown-badge" title="Safe Non-Intrusive Spindown">
+    <span>{{.StandbyCount}} HDDs Sleeping (0W Standby)</span>
+  </div>
+  <button class="icon-btn" title="Refresh Telemetry" hx-get="/ui/partials/system" hx-target="#system-metrics-container" hx-swap="morph">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+    </svg>
+  </button>
+</div>

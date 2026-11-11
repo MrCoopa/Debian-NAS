@@ -1,0 +1,35 @@
+<div id="network-container" hx-get="/ui/partials/network" hx-trigger="every 5s" hx-ext="morph" hx-swap="morph">
+  <div class="table-card">
+    <div class="table-toolbar">
+      <span class="toolbar-title">Physical &amp; Virtual Network Interfaces</span>
+    </div>
+    <table class="pf-table">
+      <thead>
+        <tr>
+          <th>Interface</th>
+          <th>Type / Adapter</th>
+          <th>Link Speed</th>
+          <th>IPv4 Address</th>
+          <th>MAC Address</th>
+          <th>Rx Rate</th>
+          <th>Tx Rate</th>
+          <th>State</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $iface := .System.Network}}
+          <tr>
+            <td><strong class="font-mono text-blue">{{$iface.Name}}</strong></td>
+            <td><span class="badge-status slate font-mono" style="font-size: 0.72rem;">{{$iface.Type}}</span></td>
+            <td><span class="font-mono">{{$iface.Speed}}</span></td>
+            <td><strong class="font-mono">{{$iface.IP}}</strong></td>
+            <td><span class="font-mono text-dim" style="font-size: 0.75rem;">{{$iface.MAC}}</span></td>
+            <td class="font-mono text-blue">{{$iface.RxRate}}</td>
+            <td class="font-mono text-amber">{{$iface.TxRate}}</td>
+            <td><span class="badge-status {{if eq $iface.State "UP"}}green{{else}}slate{{end}}">{{$iface.State}}</span></td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>

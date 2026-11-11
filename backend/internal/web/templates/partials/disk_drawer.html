@@ -1,0 +1,71 @@
+<div class="drawer-card" x-show="drawerOpen" x-cloak style="margin-top: 1.5rem; background: var(--pf-bg-card); border: 1px solid var(--pf-border-color); border-radius: 4px; padding: 1.25rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--pf-border-color); padding-bottom: 0.75rem;">
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <h3 style="font-size: 1rem; font-weight: 600; margin: 0;">Drive Hardware Inspection: <span class="font-mono text-blue" x-text="activeDisk.name"></span></h3>
+      <template x-if="activeDisk.is_system_disk">
+        <span class="badge-status amber" style="font-size: 0.7rem;">OS Protected</span>
+      </template>
+    </div>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+      <button class="btn btn-secondary btn-sm"
+              :disabled="activeDisk.state === 'STANDBY'"
+              @click="htmx.ajax('POST', '/ui/actions/disks/smart-test', { values: { device: activeDisk.path, type: 'short' } })">
+        SMART Short Test
+      </button>
+      <button class="btn btn-secondary btn-sm"
+              :disabled="activeDisk.state === 'STANDBY'"
+              @click="htmx.ajax('POST', '/ui/actions/disks/smart-test', { values: { device: activeDisk.path, type: 'long' } })">
+        SMART Long Test
+      </button>
+      <button class="btn btn-secondary btn-sm"
+              @click="htmx.ajax('POST', '/ui/actions/disks/standby', { values: { device: activeDisk.path } })">
+        Force Standby (0W)
+      </button>
+      <button class="btn btn-secondary btn-sm"
+              @click="htmx.ajax('POST', '/ui/actions/disks/locate', { values: { device: activeDisk.path } })">
+        Toggle Locate LED
+      </button>
+      <button class="btn btn-danger btn-sm"
+              :disabled="activeDisk.is_system_disk || Boolean(activeDisk.zfs_pool)"
+              @click="if (confirm('ACHTUNG: Festplatte ' + activeDisk.name + ' vollständig löschen (Wipe ZFS labels & GPT)?')) { htmx.ajax('POST', '/ui/actions/disks/wipe', { values: { device: activeDisk.path } }); }">
+        Wipe Disk
+      </button>
+      <button class="modal-close" style="margin-left: 0.5rem;" @click="drawerOpen = false">&times;</button>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1.25rem; font-size: 0.8rem;">
+    <div>
+      <span class="text-dim" style="display: block; font-size: 0.72rem; margin-bottom: 0.2rem;">Device Path:</span>
+      <div class="font-mono" x-text="activeDisk.path"></div>
+    </div>
+    <div>
+      <span class="text-dim" style="display: block; font-size: 0.72rem; margin-bottom: 0.2rem;">By-ID Path:</span>
+      <div class="font-mono text-dim" style="font-size: 0.72rem; word-break: break-all;" x-text="activeDisk.by_id_path || '--'"></div>
+    </div>
+    <div>
+      <span class="text-dim" style="display: block; font-size: 0.72rem; margin-bottom: 0.2rem;">ZFS Pool / Role:</span>
+      <div class="font-mono" :class="activeDisk.zfs_pool ? 'text-blue' : 'text-dim'" x-text="activeDisk.zfs_pool ? (activeDisk.zfs_pool + ' (' + (activeDisk.vdev_type || 'member') + ')') : 'Unassigned'"></div>
+    </div>
+    <div>
+      <span class="text-dim" style="display: block; font-size: 0.72rem; margin-bottom: 0.2rem;">Power-On Hours:</span>
+      <div class="font-mono" x-text="activeDisk.power_on_hours > 0 ? (activeDisk.power_on_hours + ' h') : '--'"></div>
+    </div>
+    <div>
+      <span class="text-dim" style="display: block; font-size: 0.72rem; margin-bottom: 0.2rem;">Last SMART Test:</span>
+      <div class="font-mono" x-text="activeDisk.smart_last_test || activeDisk.smart_status || 'PASSED'"></div>
+    </div>
+    <div>
+      <span class="text-dim" style="display: block; font-size: 0.72rem; margin-bottom: 0.2rem;">Spindown Timeout:</span>
+      <select style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: var(--pf-bg-input); border: 1px solid var(--pf-border-color); color: var(--pf-text-primary); border-radius: 4px;"
+              x-model="activeDisk.spindown_seconds"
+              @change="htmx.ajax('POST', '/ui/actions/disks/spindown', { values: { device: activeDisk.path, seconds: activeDisk.spindown_seconds } })">
+        <option value="0">Disabled (Always On)</option>
+        <option value="300">5 Minutes</option>
+        <option value="900">15 Minutes (Default)</option>
+        <option value="1800">30 Minutes</option>
+        <option value="3600">1 Hour</option>
+      </select>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,51 @@
+<div class="modal-backdrop" x-show="openCreatePoolModal" x-cloak>
+  <div class="modal-box" @click.outside="openCreatePoolModal = false">
+    <div class="modal-header">
+      <h3>Create OpenZFS Storage Pool</h3>
+      <button type="button" class="modal-close" @click="openCreatePoolModal = false">&times;</button>
+    </div>
+    <form hx-post="/ui/actions/zfs/pools/create" hx-target="#pools-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openCreatePoolModal = false">
+      <div class="form-group">
+        <label>Pool Name</label>
+        <input type="text" name="name" placeholder="e.g. DATA, TANK, POOL-NVME" required pattern="^[A-Za-z][A-Za-z0-9_.-]{0,63}$">
+      </div>
+      <div class="form-group">
+        <label>VDEV Redundancy Layout</label>
+        <select name="vdev_type">
+          <option value="mirror">Mirror (2+ Disks - Hohe IOPS &amp; Redundanz)</option>
+          <option value="raidz1">RAID-Z1 (3+ Disks - 1 Paritätslaufwerk)</option>
+          <option value="raidz2">RAID-Z2 (4+ Disks - 2 Paritätslaufwerke - TrueNAS Standard)</option>
+          <option value="stripe">Single / Stripe (1+ Disks - Keine Redundanz)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Member Drives (Physische Festplatten)</label>
+        <div style="background: rgba(15,23,42,0.6); border: 1px solid var(--pf-border-color); border-radius: 4px; padding: 0.6rem; max-height: 150px; overflow-y: auto;">
+          {{range $d := .Disks}}
+            {{$inUse := or $d.ZfsPool $d.IsSystemDisk}}
+            <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.78rem; {{if $inUse}}opacity: 0.5; cursor: not-allowed;{{else}}cursor: pointer;{{end}}">
+              <input type="checkbox" name="disks" value="{{if $d.ByIDPath}}{{$d.ByIDPath}}{{else}}{{$d.Path}}{{end}}" {{if $inUse}}disabled{{end}}>
+              <strong class="font-mono text-blue">{{$d.Name}}</strong>
+              <span>{{$d.Model}}</span>
+              <span class="text-blue font-mono">({{formatBytes $d.SizeBytes}})</span>
+              {{if $d.IsSystemDisk}}
+                <span class="badge-status amber" style="font-size: 0.65rem;">OS Boot Protected</span>
+              {{else if $d.ZfsPool}}
+                <span class="badge-status blue" style="font-size: 0.65rem;">Pool: {{$d.ZfsPool}}</span>
+              {{else}}
+                <span class="badge-status green" style="font-size: 0.65rem;">Verfügbar</span>
+              {{end}}
+            </label>
+          {{end}}
+        </div>
+        <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
+          Das System verwendet automatisch persistente /dev/disk/by-id/ Pfade für maximale Stabilität.
+        </small>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" @click="openCreatePoolModal = false">Abbrechen</button>
+        <button type="submit" class="btn btn-primary">Create Storage Pool</button>
+      </div>
+    </form>
+  </div>
+</div>

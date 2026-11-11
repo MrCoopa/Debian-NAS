@@ -1,0 +1,803 @@
+package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"debian-nas/internal/disks"
+	"debian-nas/internal/shares"
+	"debian-nas/internal/system"
+	"debian-nas/internal/zfs"
+)
+
+// ViewData is passed to the root layout and all partials
+type ViewData struct {
+	System        *system.SystemStatus
+	Disks         []*disks.DiskInfo
+	Pools         []*zfs.Pool
+	Datasets      []*zfs.Dataset
+	SmbShares     []*shares.SmbShare
+	NfsExports    []*shares.NfsExport
+	Users         []shares.StorageUser
+	Snapshots     []*zfs.Snapshot
+	ZfsVersion    string
+	TotalDisks    int
+	TotalRawBytes uint64
+	StandbyCount  int
+	SpinningCount int
+}
+
+func (s *Server) buildViewData() *ViewData {
+	status := s.sys.GetStatus()
+	allDisks, _ := s.disks.ListDisks()
+	pools, _ := s.zfs.ListPools()
+	datasets, _ := s.zfs.ListDatasets()
+	snapshots, _ := s.zfs.ListSnapshots()
+	smbShares, _ := s.shares.ListSmb()
+	nfsExports, _ := s.shares.ListNfs()
+	users, _ := s.shares.ListUsers()
+
+	standbyCount := 0
+	spinningCount := 0
+	var totalRawBytes uint64
+	for _, d := range allDisks {
+		totalRawBytes += d.SizeBytes
+		if d.IsRotational {
+			if d.State == disks.StateStandby || d.State == disks.StateSleep {
+				standbyCount++
+			} else if d.State == disks.StateActive {
+				spinningCount++
+			}
+		}
+	}
+
+	zfsVer := "2.2.6-native"
+	if len(pools) > 0 {
+		zfsVer = "OpenZFS 2.2 Native"
+	}
+
+	return &ViewData{
+		System:        status,
+		Disks:         allDisks,
+		Pools:         pools,
+		Datasets:      datasets,
+		SmbShares:     smbShares,
+		NfsExports:    nfsExports,
+		Users:         users,
+		Snapshots:     snapshots,
+		ZfsVersion:    zfsVer,
+		TotalDisks:    len(allDisks),
+		TotalRawBytes: totalRawBytes,
+		StandbyCount:  standbyCount,
+		SpinningCount: spinningCount,
+	}
+}
+
+func (s *Server) setHXTrigger(w http.ResponseWriter, toastMsg, toastType string, extraTriggers ...string) {
+	tr := make(map[string]interface{})
+	if toastMsg != "" {
+		tr["showToast"] = map[string]string{
+			"message": toastMsg,
+			"type":    toastType,
+		}
+	}
+	for _, et := range extraTriggers {
+		tr[et] = true
+	}
+	if b, err := json.Marshal(tr); err == nil {
+		w.Header().Set("HX-Trigger", string(b))
+	}
+}
+
+// ==============================================================================
+// Page & Partial Handlers
+// ==============================================================================
+
+func (s *Server) handleUIRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		// Serve static files or 404
+		if s.staticFS != nil {
+			http.FileServer(http.FS(s.staticFS)).ServeHTTP(w, r)
+			return
+		}
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	if err := s.web.Render(w, "layout.html", s.buildViewData()); err != nil {
+		log.Printf("[UI] Template render error: %v", err)
+		http.Error(w, "UI Rendering Error: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleUIPartialSystem(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.web.Render(w, "partials/system_metrics.html", s.buildViewData())
+}
+
+func (s *Server) handleUIPartialTop(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.web.Render(w, "partials/topbar.html", s.buildViewData())
+}
+
+func (s *Server) handleUIPartialPools(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.web.Render(w, "partials/pools_list.html", s.buildViewData())
+}
+
+func (s *Server) handleUIPartialDisks(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.web.Render(w, "partials/disks_table.html", s.buildViewData())
+}
+
+func (s *Server) handleUIPartialDatasets(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.web.Render(w, "partials/datasets_list.html", s.buildViewData())
+}
+
+func (s *Server) handleUIPartialShares(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.web.Render(w, "partials/shares_list.html", s.buildViewData())
+}
+
+func (s *Server) handleUIPartialUsers(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.web.Render(w, "partials/users_list.html", s.buildViewData())
+}
+
+func (s *Server) handleUIPartialSnapshots(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.web.Render(w, "partials/snapshots_list.html", s.buildViewData())
+}
+
+func (s *Server) handleUIPartialNetwork(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.web.Render(w, "partials/network_list.html", s.buildViewData())
+}
+
+// ==============================================================================
+// UI Action Handlers (HTMX Form submissions & button triggers)
+// ==============================================================================
+
+func (s *Server) handleUIActionSaveSmb(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.setHXTrigger(w, "Ungültiges Formular: "+err.Error(), "error")
+		s.handleUIPartialShares(w, r)
+		return
+	}
+
+	proto := r.FormValue("proto")
+	name := strings.TrimSpace(r.FormValue("name"))
+	path := strings.TrimSpace(r.FormValue("path"))
+	comment := strings.TrimSpace(r.FormValue("comment"))
+	access := r.FormValue("access")
+	allowedClients := strings.TrimSpace(r.FormValue("allowed_clients"))
+	if allowedClients == "" {
+		allowedClients = "*"
+	}
+
+	if name == "" || path == "" {
+		s.setHXTrigger(w, "Name und Pfad sind erforderlich", "error")
+		s.handleUIPartialShares(w, r)
+		return
+	}
+
+	if proto == "nfs" {
+		exp := &shares.NfsExport{
+			Path:           path,
+			AllowedClients: allowedClients,
+			Options:        "rw,sync,no_subtree_check",
+			ReadOnly:       false,
+			Enabled:        true,
+		}
+		if err := s.shares.SaveNfs(exp); err != nil {
+			s.setHXTrigger(w, "Fehler beim Erstellen der NFS-Freigabe: "+err.Error(), "error")
+		} else {
+			s.setHXTrigger(w, fmt.Sprintf("NFS Export '%s' erfolgreich gespeichert", path), "success", "shareUpdate")
+		}
+	} else {
+		users := r.Form["users"]
+		readOnly := r.FormValue("read_only") == "true"
+		guestOk := (access == "guest")
+
+		smb := &shares.SmbShare{
+			Name:       name,
+			Path:       path,
+			Comment:    comment,
+			ValidUsers: users,
+			ReadOnly:   readOnly,
+			GuestOk:    guestOk,
+			Enabled:    true,
+		}
+		if err := s.shares.SaveSmb(smb); err != nil {
+			s.setHXTrigger(w, "Fehler beim Speichern der SMB-Freigabe: "+err.Error(), "error")
+		} else {
+			s.setHXTrigger(w, fmt.Sprintf("SMB Freigabe '%s' erfolgreich bereitgestellt", name), "success", "shareUpdate", "userUpdate")
+		}
+	}
+
+	s.handleUIPartialShares(w, r)
+}
+
+func (s *Server) handleUIActionDeleteSmb(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		_ = r.ParseForm()
+		name = strings.TrimSpace(r.FormValue("name"))
+	}
+	if name == "" {
+		s.setHXTrigger(w, "Freigabename fehlt", "error")
+		s.handleUIPartialShares(w, r)
+		return
+	}
+
+	if err := s.shares.DeleteSmb(name); err != nil {
+		s.setHXTrigger(w, "Fehler beim Löschen: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("SMB Freigabe '%s' entfernt", name), "success", "shareUpdate", "userUpdate")
+	}
+	s.handleUIPartialShares(w, r)
+}
+
+func (s *Server) handleUIActionCreateUser(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	username := strings.TrimSpace(r.FormValue("username"))
+	password := r.FormValue("password")
+
+	if username == "" || password == "" {
+		s.setHXTrigger(w, "Benutzername und Passwort sind erforderlich", "error")
+		s.handleUIPartialUsers(w, r)
+		return
+	}
+
+	if err := s.shares.CreateUser(username, password, "user"); err != nil {
+		s.setHXTrigger(w, "Fehler beim Erstellen des Benutzers: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Benutzer '%s' für Samba & System angelegt", username), "success", "userUpdate", "shareUpdate")
+	}
+	s.handleUIPartialUsers(w, r)
+}
+
+func (s *Server) handleUIActionDeleteUser(w http.ResponseWriter, r *http.Request) {
+	username := strings.TrimSpace(r.URL.Query().Get("username"))
+	if username == "" {
+		_ = r.ParseForm()
+		username = strings.TrimSpace(r.FormValue("username"))
+	}
+	if username == "" {
+		s.setHXTrigger(w, "Benutzername fehlt", "error")
+		s.handleUIPartialUsers(w, r)
+		return
+	}
+
+	if err := s.shares.DeleteUser(username); err != nil {
+		s.setHXTrigger(w, "Fehler beim Löschen des Benutzers: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Benutzer '%s' gelöscht", username), "success", "userUpdate", "shareUpdate")
+	}
+	s.handleUIPartialUsers(w, r)
+}
+
+func (s *Server) handleUIActionCreatePool(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	name := strings.TrimSpace(r.FormValue("name"))
+	vdevType := r.FormValue("vdev_type")
+	disksList := r.Form["disks"]
+	ashift, _ := strconv.Atoi(r.FormValue("ashift"))
+	if ashift == 0 {
+		ashift = 12
+	}
+	compression := r.FormValue("compression")
+	if compression == "" {
+		compression = "lz4"
+	}
+
+	if name == "" || len(disksList) == 0 {
+		s.setHXTrigger(w, "Pool-Name und mindestens eine Festplatte erforderlich", "error")
+		s.handleUIPartialPools(w, r)
+		return
+	}
+
+	if err := s.zfs.CreatePool(name, vdevType, disksList, ashift, compression); err != nil {
+		s.setHXTrigger(w, "Fehler bei Pool-Erstellung: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("ZFS Pool '%s' erfolgreich erstellt", name), "success", "poolUpdate", "datasetUpdate", "diskUpdate")
+	}
+	s.handleUIPartialPools(w, r)
+}
+
+func (s *Server) handleUIActionImportPool(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	nameOrID := strings.TrimSpace(r.FormValue("name_or_id"))
+	newName := strings.TrimSpace(r.FormValue("new_name"))
+	force := r.FormValue("force") == "true"
+
+	if nameOrID == "" {
+		s.setHXTrigger(w, "Pool-Name oder ID erforderlich", "error")
+		s.handleUIPartialPools(w, r)
+		return
+	}
+
+	if err := s.zfs.ImportPool(nameOrID, newName, force); err != nil {
+		s.setHXTrigger(w, "Fehler beim Pool-Import: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Pool '%s' erfolgreich importiert", nameOrID), "success", "poolUpdate", "datasetUpdate", "diskUpdate")
+	}
+	s.handleUIPartialPools(w, r)
+}
+
+func (s *Server) handleUIActionExportPool(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	pool := strings.TrimSpace(r.FormValue("pool"))
+	if pool == "" {
+		s.setHXTrigger(w, "Pool-Name fehlt", "error")
+		s.handleUIPartialPools(w, r)
+		return
+	}
+
+	if err := s.zfs.ExportPool(pool); err != nil {
+		s.setHXTrigger(w, "Fehler beim Exportieren: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Pool '%s' sicher exportiert", pool), "success", "poolUpdate", "datasetUpdate", "diskUpdate")
+	}
+	s.handleUIPartialPools(w, r)
+}
+
+func (s *Server) handleUIActionClearPool(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	pool := strings.TrimSpace(r.FormValue("pool"))
+	if pool == "" {
+		s.setHXTrigger(w, "Pool-Name fehlt", "error")
+		s.handleUIPartialPools(w, r)
+		return
+	}
+
+	if err := s.zfs.ClearPool(pool); err != nil {
+		s.setHXTrigger(w, "Fehler beim Zurücksetzen: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Fehlerzähler für Pool '%s' gelöscht", pool), "success", "poolUpdate")
+	}
+	s.handleUIPartialPools(w, r)
+}
+
+func (s *Server) handleUIActionTrimPool(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	pool := strings.TrimSpace(r.FormValue("pool"))
+	if pool == "" {
+		s.setHXTrigger(w, "Pool-Name fehlt", "error")
+		s.handleUIPartialPools(w, r)
+		return
+	}
+
+	if err := s.zfs.TrimPool(pool); err != nil {
+		s.setHXTrigger(w, "TRIM-Fehler: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("SSD TRIM für Pool '%s' gestartet", pool), "success", "poolUpdate")
+	}
+	s.handleUIPartialPools(w, r)
+}
+
+func (s *Server) handleUIActionScrub(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	pool := strings.TrimSpace(r.FormValue("pool"))
+	action := r.FormValue("action")
+
+	if pool == "" {
+		s.setHXTrigger(w, "Pool-Name fehlt", "error")
+		s.handleUIPartialPools(w, r)
+		return
+	}
+
+	if action == "stop" {
+		if err := s.zfs.StopScrub(pool); err != nil {
+			s.setHXTrigger(w, "Scrub Stop Fehler: "+err.Error(), "error")
+		} else {
+			s.setHXTrigger(w, fmt.Sprintf("Scrub für '%s' gestoppt", pool), "info", "poolUpdate")
+		}
+	} else {
+		if err := s.zfs.StartScrub(pool); err != nil {
+			s.setHXTrigger(w, "Scrub Start Fehler: "+err.Error(), "error")
+		} else {
+			s.setHXTrigger(w, fmt.Sprintf("ZFS Data Scrub für '%s' läuft", pool), "success", "poolUpdate")
+		}
+	}
+	s.handleUIPartialPools(w, r)
+}
+
+func (s *Server) handleUIActionAddVdev(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	pool := strings.TrimSpace(r.FormValue("pool"))
+	vdevType := r.FormValue("vdev_type")
+	disksList := r.Form["disks"]
+
+	if pool == "" || len(disksList) == 0 {
+		s.setHXTrigger(w, "Pool und mindestens eine Festplatte erforderlich", "error")
+		s.handleUIPartialPools(w, r)
+		return
+	}
+
+	if err := s.zfs.AddVdev(pool, vdevType, disksList); err != nil {
+		s.setHXTrigger(w, "Fehler beim Hinzufügen des VDEVs: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("VDEV '%s' zu Pool '%s' hinzugefügt", vdevType, pool), "success", "poolUpdate", "diskUpdate")
+	}
+	s.handleUIPartialPools(w, r)
+}
+
+func (s *Server) handleUIActionSetPoolProperty(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	pool := strings.TrimSpace(r.FormValue("pool"))
+	autotrim := r.FormValue("autotrim")
+	autoexpand := r.FormValue("autoexpand")
+
+	if pool == "" {
+		s.setHXTrigger(w, "Pool-Name fehlt", "error")
+		s.handleUIPartialPools(w, r)
+		return
+	}
+
+	if autotrim != "" {
+		_ = s.zfs.SetPoolProperty(pool, "autotrim", autotrim)
+	}
+	if autoexpand != "" {
+		_ = s.zfs.SetPoolProperty(pool, "autoexpand", autoexpand)
+	}
+	s.setHXTrigger(w, fmt.Sprintf("Eigenschaften für Pool '%s' aktualisiert", pool), "success", "poolUpdate")
+	s.handleUIPartialPools(w, r)
+}
+
+func (s *Server) handleUIActionDiskAction(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	actionType := r.FormValue("action_type")
+	pool := strings.TrimSpace(r.FormValue("pool"))
+	targetDevice := strings.TrimSpace(r.FormValue("target_device"))
+	newDevice := strings.TrimSpace(r.FormValue("new_device"))
+
+	var err error
+	switch actionType {
+	case "replace":
+		err = s.zfs.ReplaceDisk(pool, targetDevice, newDevice)
+	case "attach":
+		err = s.zfs.AttachDisk(pool, targetDevice, newDevice)
+	case "detach":
+		err = s.zfs.DetachDisk(pool, targetDevice)
+	case "offline":
+		err = s.zfs.OfflineDisk(pool, targetDevice)
+	case "online":
+		err = s.zfs.OnlineDisk(pool, targetDevice)
+	default:
+		err = fmt.Errorf("unbekannte Disk-Aktion: %s", actionType)
+	}
+
+	if err != nil {
+		s.setHXTrigger(w, "Aktionsfehler: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Aktion '%s' erfolgreich durchgeführt", actionType), "success", "poolUpdate", "diskUpdate")
+	}
+	s.handleUIPartialPools(w, r)
+}
+
+func (s *Server) handleUIActionCreateDataset(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	parent := strings.TrimSpace(r.FormValue("parent"))
+	name := strings.TrimSpace(r.FormValue("name"))
+	compression := r.FormValue("compression")
+	recordsize := r.FormValue("recordsize")
+	quota := strings.TrimSpace(r.FormValue("quota"))
+	atime := r.FormValue("atime")
+
+	if parent == "" || name == "" {
+		s.setHXTrigger(w, "Parent und Dataset-Name sind erforderlich", "error")
+		s.handleUIPartialDatasets(w, r)
+		return
+	}
+
+	fullName := parent + "/" + name
+	if err := s.zfs.CreateDataset(fullName, compression, recordsize); err != nil {
+		s.setHXTrigger(w, "Fehler beim Erstellen des Datasets: "+err.Error(), "error")
+	} else {
+		if atime != "" && atime != "off" {
+			_ = s.zfs.SetDatasetProperty(fullName, "atime", atime)
+		}
+		if quota != "" && quota != "none" {
+			_ = s.zfs.SetDatasetProperty(fullName, "quota", quota)
+		}
+		s.setHXTrigger(w, fmt.Sprintf("Dataset '%s' erstellt", fullName), "success", "datasetUpdate")
+	}
+	s.handleUIPartialDatasets(w, r)
+}
+
+func (s *Server) handleUIActionSetDatasetProperty(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	dataset := strings.TrimSpace(r.FormValue("dataset"))
+	compression := r.FormValue("compression")
+	recordsize := r.FormValue("recordsize")
+	quota := strings.TrimSpace(r.FormValue("quota"))
+	readonly := r.FormValue("readonly")
+	atime := r.FormValue("atime")
+
+	if dataset == "" {
+		s.setHXTrigger(w, "Dataset Name fehlt", "error")
+		s.handleUIPartialDatasets(w, r)
+		return
+	}
+
+	if compression != "" {
+		_ = s.zfs.SetDatasetProperty(dataset, "compression", compression)
+	}
+	if recordsize != "" {
+		_ = s.zfs.SetDatasetProperty(dataset, "recordsize", recordsize)
+	}
+	if quota != "" {
+		_ = s.zfs.SetDatasetProperty(dataset, "quota", quota)
+	}
+	if readonly != "" {
+		_ = s.zfs.SetDatasetProperty(dataset, "readonly", readonly)
+	}
+	if atime != "" {
+		_ = s.zfs.SetDatasetProperty(dataset, "atime", atime)
+	}
+
+	s.setHXTrigger(w, fmt.Sprintf("Eigenschaften für '%s' aktualisiert", dataset), "success", "datasetUpdate")
+	s.handleUIPartialDatasets(w, r)
+}
+
+func (s *Server) handleUIActionCreateZvol(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	parent := strings.TrimSpace(r.FormValue("parent"))
+	name := strings.TrimSpace(r.FormValue("name"))
+	sizeVal, _ := strconv.ParseUint(r.FormValue("size_val"), 10, 64)
+	sizeUnit := r.FormValue("size_unit")
+	volblocksize := r.FormValue("volblocksize")
+	sparse := r.FormValue("sparse") == "true"
+
+	if parent == "" || name == "" || sizeVal == 0 {
+		s.setHXTrigger(w, "Parent, Name und Größe erforderlich", "error")
+		s.handleUIPartialDatasets(w, r)
+		return
+	}
+
+	var multiplier uint64 = 1024 * 1024 * 1024 // GiB
+	if sizeUnit == "T" {
+		multiplier = 1024 * 1024 * 1024 * 1024
+	} else if sizeUnit == "M" {
+		multiplier = 1024 * 1024
+	}
+	totalBytes := sizeVal * multiplier
+
+	fullName := parent + "/" + name
+	if err := s.zfs.CreateZvol(fullName, totalBytes, volblocksize, sparse); err != nil {
+		s.setHXTrigger(w, "Fehler beim Erstellen des Zvols: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Zvol Block-Device '%s' erstellt", fullName), "success", "datasetUpdate")
+	}
+	s.handleUIPartialDatasets(w, r)
+}
+
+func (s *Server) handleUIActionCreateSnapshot(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	dataset := strings.TrimSpace(r.FormValue("dataset"))
+	snapName := strings.TrimSpace(r.FormValue("snapshot_name"))
+
+	if dataset == "" || snapName == "" {
+		s.setHXTrigger(w, "Dataset und Snapshot Name sind erforderlich", "error")
+		s.handleUIPartialSnapshots(w, r)
+		return
+	}
+
+	if err := s.zfs.CreateSnapshot(dataset, snapName); err != nil {
+		s.setHXTrigger(w, "Fehler bei Snapshot-Erstellung: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Snapshot '%s@%s' erfolgreich angelegt", dataset, snapName), "success", "snapshotUpdate", "datasetUpdate")
+	}
+	s.handleUIPartialSnapshots(w, r)
+}
+
+func (s *Server) handleUIActionRollbackSnapshot(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	snapshot := strings.TrimSpace(r.FormValue("snapshot"))
+	if snapshot == "" {
+		s.setHXTrigger(w, "Snapshot Name fehlt", "error")
+		s.handleUIPartialSnapshots(w, r)
+		return
+	}
+
+	if err := s.zfs.RollbackSnapshot(snapshot); err != nil {
+		s.setHXTrigger(w, "Rollback fehlgeschlagen: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Dataset erfolgreich auf '%s' zurückgesetzt", snapshot), "success", "snapshotUpdate", "datasetUpdate")
+	}
+	s.handleUIPartialSnapshots(w, r)
+}
+
+func (s *Server) handleUIActionCloneSnapshot(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	snapshot := strings.TrimSpace(r.FormValue("snapshot"))
+	targetDataset := strings.TrimSpace(r.FormValue("target_dataset"))
+
+	if snapshot == "" || targetDataset == "" {
+		s.setHXTrigger(w, "Snapshot und Ziel-Dataset erforderlich", "error")
+		s.handleUIPartialDatasets(w, r)
+		return
+	}
+
+	if err := s.zfs.CloneSnapshot(snapshot, targetDataset); err != nil {
+		s.setHXTrigger(w, "Klon-Fehler: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Snapshot nach '%s' geklont", targetDataset), "success", "datasetUpdate", "snapshotUpdate")
+	}
+	s.handleUIPartialDatasets(w, r)
+}
+
+func (s *Server) handleUIActionDestroySnapshot(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		_ = r.ParseForm()
+		name = strings.TrimSpace(r.FormValue("name"))
+	}
+	if name == "" {
+		s.setHXTrigger(w, "Snapshot Name fehlt", "error")
+		s.handleUIPartialSnapshots(w, r)
+		return
+	}
+
+	if err := s.zfs.DestroySnapshot(name); err != nil {
+		s.setHXTrigger(w, "Löschfehler: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Snapshot '%s' gelöscht", name), "success", "snapshotUpdate", "datasetUpdate")
+	}
+	s.handleUIPartialSnapshots(w, r)
+}
+
+func (s *Server) handleUIActionDangerDestroy(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	targetType := r.FormValue("type")
+	name := strings.TrimSpace(r.FormValue("name"))
+	deleteShares := r.FormValue("delete_shares") == "true"
+
+	if name == "" {
+		s.setHXTrigger(w, "Zielname erforderlich", "error")
+		s.handleUIPartialPools(w, r)
+		return
+	}
+
+	if targetType == "pool" {
+		if deleteShares {
+			// Clean up any SMB shares starting with /mnt/<name> or named <name>
+			if smbList, err := s.shares.ListSmb(); err == nil {
+				for _, smb := range smbList {
+					if smb.Name == name || strings.HasPrefix(smb.Path, "/mnt/"+name) || strings.HasPrefix(smb.Path, "/"+name) {
+						_ = s.shares.DeleteSmb(smb.Name)
+					}
+				}
+			}
+		}
+		if err := s.zfs.DestroyPool(name); err != nil {
+			s.setHXTrigger(w, "Fehler beim Zerstören des Pools: "+err.Error(), "error")
+		} else {
+			s.setHXTrigger(w, fmt.Sprintf("ZFS Pool '%s' unwiderruflich zerstört", name), "success", "poolUpdate", "datasetUpdate", "shareUpdate", "diskUpdate")
+		}
+	} else {
+		// Dataset destruction
+		if deleteShares {
+			if smbList, err := s.shares.ListSmb(); err == nil {
+				for _, smb := range smbList {
+					if strings.HasSuffix(smb.Path, name) || smb.Name == name {
+						_ = s.shares.DeleteSmb(smb.Name)
+					}
+				}
+			}
+		}
+		if err := s.zfs.DestroyDataset(name); err != nil {
+			s.setHXTrigger(w, "Fehler beim Löschen des Datasets: "+err.Error(), "error")
+		} else {
+			s.setHXTrigger(w, fmt.Sprintf("Dataset '%s' gelöscht", name), "success", "datasetUpdate", "shareUpdate")
+		}
+	}
+	s.handleUIPartialPools(w, r)
+}
+
+// Disks
+func (s *Server) handleUIActionSetSpindown(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	path := strings.TrimSpace(r.FormValue("path"))
+	mins, _ := strconv.Atoi(r.FormValue("timeout_minutes"))
+	if path == "" {
+		s.setHXTrigger(w, "Gerätepfad fehlt", "error")
+		s.handleUIPartialDisks(w, r)
+		return
+	}
+
+	seconds := mins * 60
+	if err := s.disks.SetSpindown(path, seconds); err != nil {
+		s.setHXTrigger(w, "Fehler beim Setzen des Spindown: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Spindown für %s auf %d Min konfiguriert", path, mins), "success", "diskUpdate")
+	}
+	s.handleUIPartialDisks(w, r)
+}
+
+func (s *Server) handleUIActionForceStandby(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	path := strings.TrimSpace(r.FormValue("path"))
+	if path == "" {
+		s.setHXTrigger(w, "Gerätepfad fehlt", "error")
+		s.handleUIPartialDisks(w, r)
+		return
+	}
+
+	if err := s.disks.ForceStandby(path); err != nil {
+		s.setHXTrigger(w, "Standby-Fehler: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("HDD %s in Standby versetzt", path), "success", "diskUpdate")
+	}
+	s.handleUIPartialDisks(w, r)
+}
+
+func (s *Server) handleUIActionToggleLocate(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	path := strings.TrimSpace(r.FormValue("path"))
+	if path == "" {
+		s.setHXTrigger(w, "Gerätepfad fehlt", "error")
+		s.handleUIPartialDisks(w, r)
+		return
+	}
+
+	newState, err := s.disks.ToggleLocate(path)
+	if err != nil {
+		s.setHXTrigger(w, "LED-Fehler: "+err.Error(), "error")
+	} else {
+		stateStr := "deaktiviert"
+		if newState {
+			stateStr = "blinkend aktiv"
+		}
+		s.setHXTrigger(w, fmt.Sprintf("Locate LED für %s: %s", path, stateStr), "info", "diskUpdate")
+	}
+	s.handleUIPartialDisks(w, r)
+}
+
+func (s *Server) handleUIActionTriggerSmartTest(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	path := strings.TrimSpace(r.FormValue("path"))
+	testType := r.FormValue("type")
+	if testType == "" {
+		testType = "short"
+	}
+	if path == "" {
+		s.setHXTrigger(w, "Gerätepfad fehlt", "error")
+		s.handleUIPartialDisks(w, r)
+		return
+	}
+
+	if err := s.disks.TriggerSmartTest(path, testType); err != nil {
+		s.setHXTrigger(w, "SMART-Fehler: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("SMART %s Selbsttest für %s gestartet", testType, path), "success", "diskUpdate")
+	}
+	s.handleUIPartialDisks(w, r)
+}
+
+func (s *Server) handleUIActionWipeDisk(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	path := strings.TrimSpace(r.FormValue("path"))
+	confirm := r.FormValue("confirm_wipe")
+
+	if path == "" || confirm != "true" {
+		s.setHXTrigger(w, "Bestätigung zum Löschen der Disk erforderlich", "error")
+		s.handleUIPartialDisks(w, r)
+		return
+	}
+
+	if err := s.disks.WipeDisk(path, "quick"); err != nil {
+		s.setHXTrigger(w, "Wipe-Fehler: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Disk %s erfolgreich initialisiert (Signaturen gelöscht)", path), "success", "diskUpdate")
+	}
+	s.handleUIPartialDisks(w, r)
+}

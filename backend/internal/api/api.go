@@ -17,6 +17,7 @@ import (
 	"debian-nas/internal/disks"
 	"debian-nas/internal/shares"
 	"debian-nas/internal/system"
+	"debian-nas/internal/web"
 	"debian-nas/internal/zfs"
 )
 
@@ -28,6 +29,7 @@ type Server struct {
 	shares    *shares.Manager
 	cloudsync *cloudsync.Manager
 	staticFS  fs.FS
+	web       *web.Engine
 	startTime time.Time
 }
 
@@ -40,6 +42,11 @@ func NewServer(
 	cm *cloudsync.Manager,
 	staticFS fs.FS,
 ) *Server {
+	webEngine, err := web.NewEngine()
+	if err != nil {
+		fmt.Printf("[WEB] Warning: could not initialize web template engine: %v\n", err)
+	}
+
 	return &Server{
 		cfg:       cfg,
 		sys:       sys,
@@ -48,6 +55,7 @@ func NewServer(
 		shares:    sm,
 		cloudsync: cm,
 		staticFS:  staticFS,
+		web:       webEngine,
 		startTime: time.Now(),
 	}
 }
@@ -120,15 +128,63 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/cloudsync/jobs", s.handleDeleteCloudJob)
 	mux.HandleFunc("POST /api/v1/cloudsync/trigger", s.handleTriggerCloudJob)
 
+	// 6. UI Endpoints (Go Templates + HTMX + Idiomorph)
+	if s.web != nil {
+		mux.HandleFunc("GET /ui/partials/system", s.handleUIPartialSystem)
+		mux.HandleFunc("GET /ui/partials/topbar", s.handleUIPartialTop)
+		mux.HandleFunc("GET /ui/partials/pools", s.handleUIPartialPools)
+		mux.HandleFunc("GET /ui/partials/disks", s.handleUIPartialDisks)
+		mux.HandleFunc("GET /ui/partials/datasets", s.handleUIPartialDatasets)
+		mux.HandleFunc("GET /ui/partials/shares", s.handleUIPartialShares)
+		mux.HandleFunc("GET /ui/partials/users", s.handleUIPartialUsers)
+		mux.HandleFunc("GET /ui/partials/snapshots", s.handleUIPartialSnapshots)
+		mux.HandleFunc("GET /ui/partials/network", s.handleUIPartialNetwork)
+
+		mux.HandleFunc("POST /ui/actions/shares/smb", s.handleUIActionSaveSmb)
+		mux.HandleFunc("DELETE /ui/actions/shares/smb", s.handleUIActionDeleteSmb)
+		mux.HandleFunc("POST /ui/actions/shares/users", s.handleUIActionCreateUser)
+		mux.HandleFunc("DELETE /ui/actions/shares/users", s.handleUIActionDeleteUser)
+
+		mux.HandleFunc("POST /ui/actions/zfs/pools/create", s.handleUIActionCreatePool)
+		mux.HandleFunc("POST /ui/actions/zfs/pools/import", s.handleUIActionImportPool)
+		mux.HandleFunc("POST /ui/actions/zfs/pools/export", s.handleUIActionExportPool)
+		mux.HandleFunc("POST /ui/actions/zfs/pools/clear", s.handleUIActionClearPool)
+		mux.HandleFunc("POST /ui/actions/zfs/pools/trim", s.handleUIActionTrimPool)
+		mux.HandleFunc("POST /ui/actions/zfs/pools/vdev", s.handleUIActionAddVdev)
+		mux.HandleFunc("POST /ui/actions/zfs/pools/property", s.handleUIActionSetPoolProperty)
+		mux.HandleFunc("POST /ui/actions/zfs/pools/disk/action", s.handleUIActionDiskAction)
+		mux.HandleFunc("POST /ui/actions/zfs/scrub", s.handleUIActionScrub)
+
+		mux.HandleFunc("POST /ui/actions/zfs/datasets", s.handleUIActionCreateDataset)
+		mux.HandleFunc("POST /ui/actions/zfs/datasets/property", s.handleUIActionSetDatasetProperty)
+		mux.HandleFunc("POST /ui/actions/zfs/zvols", s.handleUIActionCreateZvol)
+		mux.HandleFunc("POST /ui/actions/zfs/snapshots", s.handleUIActionCreateSnapshot)
+		mux.HandleFunc("POST /ui/actions/zfs/snapshots/rollback", s.handleUIActionRollbackSnapshot)
+		mux.HandleFunc("POST /ui/actions/zfs/snapshots/clone", s.handleUIActionCloneSnapshot)
+		mux.HandleFunc("DELETE /ui/actions/zfs/snapshots", s.handleUIActionDestroySnapshot)
+		mux.HandleFunc("POST /ui/actions/zfs/destroy", s.handleUIActionDangerDestroy)
+
+		mux.HandleFunc("POST /ui/actions/disks/spindown", s.handleUIActionSetSpindown)
+		mux.HandleFunc("POST /ui/actions/disks/standby", s.handleUIActionForceStandby)
+		mux.HandleFunc("POST /ui/actions/disks/locate", s.handleUIActionToggleLocate)
+		mux.HandleFunc("POST /ui/actions/disks/smart-test", s.handleUIActionTriggerSmartTest)
+		mux.HandleFunc("POST /ui/actions/disks/wipe", s.handleUIActionWipeDisk)
+	}
+
 	// Static UI assets embedded in binary (served with no-cache to guarantee live updates)
 	if s.staticFS != nil {
 		fileServer := http.FileServer(http.FS(s.staticFS))
-		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mux.Handle("GET /static/", http.StripPrefix("/static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-			w.Header().Set("Pragma", "no-cache")
-			w.Header().Set("Expires", "0")
 			fileServer.ServeHTTP(w, r)
-		}))
+		})))
+	}
+
+	if s.web != nil {
+		mux.HandleFunc("GET /{$}", s.handleUIRoot)
+	} else if s.staticFS != nil {
+		fileServer := http.FileServer(http.FS(s.staticFS))
+		mux.Handle("GET /{$}", fileServer)
 	}
 
 	return s.securityMiddleware(mux)

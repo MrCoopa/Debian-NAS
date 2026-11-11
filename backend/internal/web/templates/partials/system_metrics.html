@@ -1,0 +1,86 @@
+<div class="metrics-row" id="system-metrics-container" hx-get="/ui/partials/system" hx-trigger="every 3s" hx-ext="morph" hx-swap="morph">
+  <!-- CPU & Load Tile -->
+  <div class="stat-card">
+    <div class="stat-card-head">
+      <span class="stat-card-title">CPU Utilization</span>
+      <span class="badge-status slate">{{.System.CPU.TemperatureC}} &deg;C</span>
+    </div>
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 0.35rem;">
+      <div class="stat-card-value" style="margin: 0;">
+        <span>{{formatPercent .System.CPU.UsagePercent}}</span><span class="stat-card-unit">%</span>
+      </div>
+      <div class="text-dim" style="font-size: 0.75rem;">
+        {{.System.CPU.Cores}} Cores / {{.System.CPU.Threads}} Threads
+      </div>
+    </div>
+    <div class="meter-track">
+      <div class="meter-bar" style="width: {{if gt .System.CPU.UsagePercent 100.0}}100{{else if lt .System.CPU.UsagePercent 1.0}}1{{else}}{{formatPercent .System.CPU.UsagePercent}}{{end}}%;"></div>
+    </div>
+    <div class="stat-card-foot">
+      <span style="max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{if .System.CPU.Model}}{{.System.CPU.Model}}{{else}}Host CPU{{end}}</span>
+      <span>Load: <strong>{{if .System.CPU.LoadAvg}}{{index .System.CPU.LoadAvg 0}}{{else}}0.00{{end}}</strong></span>
+    </div>
+  </div>
+
+  <!-- Memory & ZFS ARC Tile -->
+  <div class="stat-card">
+    <div class="stat-card-head">
+      <span class="stat-card-title">Memory &amp; ZFS ARC</span>
+      <span class="badge-status blue">ARC {{formatBytes .System.Memory.ZfsArcBytes}}</span>
+    </div>
+    <div class="stat-card-value" style="margin-bottom: 0.35rem;">
+      <span>{{formatBytes .System.Memory.UsedBytes}}</span><span class="stat-card-unit">/ {{formatBytes .System.Memory.TotalBytes}}</span>
+    </div>
+    <div class="meter-track" style="height: 7px;">
+      <div class="meter-bar" style="width: {{formatPercent .System.Memory.ZfsArcPercent}}%; background: #0066cc;" title="ZFS ARC Cache"></div>
+      <div class="meter-bar slate" style="width: {{formatPercent (sub .System.Memory.UsedPercent .System.Memory.ZfsArcPercent)}}%;" title="OS &amp; Services"></div>
+    </div>
+    <div class="stat-card-foot" style="flex-direction: column; gap: 0.2rem; margin-top: 0.4rem;">
+      <div style="display: flex; justify-content: space-between;">
+        <span>ZFS ARC: <strong class="text-blue">{{formatBytes .System.Memory.ZfsArcBytes}} ({{formatPercent .System.Memory.ZfsArcPercent}}%)</strong></span>
+        <span>Free: <strong>{{formatBytes .System.Memory.FreeBytes}}</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Disk I/O Tile -->
+  <div class="stat-card">
+    <div class="stat-card-head">
+      <span class="stat-card-title">Disk I/O Throughput</span>
+      <span class="badge-status green">Direct IO</span>
+    </div>
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 0.35rem;">
+      <div class="stat-card-value" style="margin: 0;">
+        <span>{{formatPercent (add .System.DiskIO.ReadMBS .System.DiskIO.WriteMBS)}}</span><span class="stat-card-unit">MB/s</span>
+      </div>
+      <div class="text-dim" style="font-size: 0.75rem;">
+        {{add .System.DiskIO.ReadIOPS .System.DiskIO.WriteIOPS}} IOPS
+      </div>
+    </div>
+    <div class="meter-track">
+      <div class="meter-bar amber" style="width: {{if gt (add .System.DiskIO.ReadMBS .System.DiskIO.WriteMBS) 100.0}}100{{else if gt (add .System.DiskIO.ReadMBS .System.DiskIO.WriteMBS) 0.0}}25{{else}}0{{end}}%;"></div>
+    </div>
+    <div class="stat-card-foot">
+      <span>Read: <strong>{{formatPercent .System.DiskIO.ReadMBS}} MB/s</strong></span>
+      <span>Write: <strong>{{formatPercent .System.DiskIO.WriteMBS}} MB/s</strong></span>
+    </div>
+  </div>
+
+  <!-- Physical Storage Tile -->
+  <div class="stat-card">
+    <div class="stat-card-head">
+      <span class="stat-card-title">Physical Storage</span>
+      <span class="badge-status green">Healthy</span>
+    </div>
+    <div class="stat-card-value" style="margin-bottom: 0.35rem;">
+      <span>{{formatBytes .TotalRawBytes}}</span><span class="stat-card-unit">Raw</span>
+    </div>
+    <div class="meter-track">
+      <div class="meter-bar green" style="width: 100%;"></div>
+    </div>
+    <div class="stat-card-foot">
+      <span>Active: <strong>{{sub .TotalDisks .StandbyCount}} Drives</strong></span>
+      <span>Sleeping: <strong class="text-amber">{{.StandbyCount}} HDDs (0W)</strong></span>
+    </div>
+  </div>
+</div>

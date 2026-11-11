@@ -1,0 +1,33 @@
+<div class="modal-backdrop" x-show="openPoolPropsModal" x-cloak>
+  <div class="modal-box" @click.outside="openPoolPropsModal = false">
+    <div class="modal-header">
+      <h3>Pool-Eigenschaften: <span class="text-blue font-mono" x-text="poolProps.pool"></span></h3>
+      <button type="button" class="modal-close" @click="openPoolPropsModal = false">&times;</button>
+    </div>
+    <form hx-post="/ui/actions/zfs/pools/property" hx-target="#pools-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openPoolPropsModal = false">
+      <input type="hidden" name="pool" :value="poolProps.pool">
+
+      <div class="form-group">
+        <label>Automatisches TRIM (autotrim)</label>
+        <select name="autotrim" x-model="poolProps.autotrim">
+          <option value="on">on (Automatische Freigabe ungenutzter SSD-Blöcke im Hintergrund)</option>
+          <option value="off">off (Standard für HDDs oder manuelle TRIM-Verwaltung)</option>
+        </select>
+        <span class="text-dim" style="font-size: 0.72rem;">Für reine SSD/NVMe-Pools empfohlen.</span>
+      </div>
+
+      <div class="form-group">
+        <label>Automatische Vergrößerung (autoexpand)</label>
+        <select name="autoexpand" x-model="poolProps.autoexpand">
+          <option value="on">on (Kapazität wächst automatisch nach Austausch mit größeren Disks)</option>
+          <option value="off">off (Manuelle Vergrößerung erforderlich)</option>
+        </select>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" @click="openPoolPropsModal = false">Abbrechen</button>
+        <button type="submit" class="btn btn-primary">Eigenschaften speichern</button>
+      </div>
+    </form>
+  </div>
+</div>

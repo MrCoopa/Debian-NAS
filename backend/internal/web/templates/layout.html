@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debian Storage Appliance - Cockpit &amp; Enterprise ZFS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js"></script>
+  <script src="/static/idiomorph-ext.min.js"></script>
+  <script defer src="/static/alpine.min.js"></script>
+</head>
+<body hx-ext="morph"
+      x-data="{
+        currentTab: 'dashboard',
+        openShareModal: false,
+        isEditingShare: false,
+        shareForm: { name: '', path: '', proto: 'smb', access: 'restricted', allowed_clients: '*', users: [] },
+        openCreateUserModal: false,
+        openCreatePoolModal: false,
+        openAddVdevModal: false,
+        addVdevPool: '',
+        openDiskActionModal: false,
+        diskAction: { type: 'replace', pool: '', targetDevice: '' },
+        openCreateDatasetModal: false,
+        openCreateZvolModal: false,
+        openPoolPropsModal: false,
+        poolProps: { pool: '', autotrim: 'off', autoexpand: 'on' },
+        openDatasetPropsModal: false,
+        datasetProps: { name: '', compression: 'lz4', recordsize: '128K', quota: 'none', atime: 'off', readonly: 'off', isZvol: false },
+        openCreateSnapModal: false,
+        snapDataset: '',
+        openCloneSnapModal: false,
+        cloneSnapSource: '',
+        openDangerConfirmModal: false,
+        dangerConfirm: { type: 'pool', targetName: '', inputName: '' },
+        openImportModal: false,
+        drawerOpen: false,
+        activeDisk: {},
+        toasts: [],
+
+        openCreateShare(name, path) {
+          this.isEditingShare = false;
+          this.shareForm = { name: name || '', path: path || (name ? '/mnt/' + name : '/mnt/'), proto: 'smb', access: 'restricted', allowed_clients: '*', users: [] };
+          this.openShareModal = true;
+        },
+        openEditShare(name, path, proto, access, allowedClients, usersJson) {
+          this.isEditingShare = true;
+          let u = [];
+          try { u = typeof usersJson === 'string' ? JSON.parse(usersJson || '[]') : (usersJson || []); } catch(e) { u = []; }
+          this.shareForm = { name: name, path: path, proto: proto || 'smb', access: access || 'restricted', allowed_clients: allowedClients || '*', users: u };
+          this.openShareModal = true;
+        },
+        openAddVdev(pool) {
+          this.addVdevPool = pool;
+          this.openAddVdevModal = true;
+        },
+        openDiskAction(type, pool, targetDevice) {
+          this.diskAction = { type: type, pool: pool, targetDevice: targetDevice };
+          this.openDiskActionModal = true;
+        },
+        openPoolProps(pool, autotrim, autoexpand) {
+          this.poolProps = { pool: pool, autotrim: autotrim || 'off', autoexpand: autoexpand || 'on' };
+          this.openPoolPropsModal = true;
+        },
+        openDatasetProps(name, compression, recordsize, quota, atime, readonly, type) {
+          this.datasetProps = {
+            name: name,
+            compression: compression || 'lz4',
+            recordsize: recordsize || '128K',
+            quota: quota || 'none',
+            atime: atime || 'off',
+            readonly: readonly || 'off',
+            isZvol: type === 'volume'
+          };
+          this.openDatasetPropsModal = true;
+        },
+        openCreateSnapModal(dataset) {
+          this.snapDataset = dataset || '';
+          this.openCreateSnapModal = true;
+        },
+        openCloneSnapModal(snapshot) {
+          this.cloneSnapSource = snapshot;
+          this.openCloneSnapModal = true;
+        },
+        openDangerConfirm(type, name) {
+          this.dangerConfirm = { type: type, targetName: name, inputName: '' };
+          this.openDangerConfirmModal = true;
+        },
+        openDiskDrawer(disk) {
+          this.activeDisk = disk;
+          this.drawerOpen = true;
+        },
+        showToast(message, type) {
+          const id = Date.now();
+          this.toasts.push({ id, message, type: type || 'info' });
+          setTimeout(() => {
+            this.toasts = this.toasts.filter(t => t.id !== id);
+          }, 4500);
+        }
+      }"
+      @show-toast.window="showToast($event.detail.message, $event.detail.type)">
+
+  <!-- Topbar Header -->
+  {{template "partials/topbar.html" .}}
+
+  <div class="app-layout">
+    <!-- Sidebar Navigation -->
+    <aside class="app-sidebar">
+      <nav class="sidebar-menu">
+        <div class="sidebar-category">Storage Administration</div>
+
+        <button class="nav-item" :class="{ 'active': currentTab === 'dashboard' }" @click="currentTab = 'dashboard'">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+          <span>Dashboard &amp; Health</span>
+        </button>
+
+        <button class="nav-item" :class="{ 'active': currentTab === 'pools' }" @click="currentTab = 'pools'">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          <span>Storage Pools (ZFS)</span>
+          <span class="nav-badge">{{len .Pools}}</span>
+        </button>
+
+        <button class="nav-item" :class="{ 'active': currentTab === 'disks' }" @click="currentTab = 'disks'">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4 2h16c1.1 0 2 .9 2 2v16c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2zm0 4v3h16V6H4zm0 5v3h16v-3H4zm0 5v3h16v-3H4zM6 7h2v1H6V7zm0 5h2v1H6v-1zm0 5h2v1H6v-1z"/></svg>
+          <span>Physical Disks</span>
+          <span class="nav-badge">{{len .Disks}}</span>
+        </button>
+
+        <div class="sidebar-category">Sharing &amp; Access</div>
+
+        <button class="nav-item" :class="{ 'active': currentTab === 'shares' }" @click="currentTab = 'shares'">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-5 3c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2zm4 8h-8v-1c0-1.33 2.67-2 4-2s4 .67 4 2v1z"/></svg>
+          <span>Shares (SMB &amp; NFS)</span>
+          <span class="nav-badge">{{add (len .SmbShares) (len .NfsExports)}}</span>
+        </button>
+
+        <div class="sidebar-category">Data Protection</div>
+
+        <button class="nav-item" :class="{ 'active': currentTab === 'protection' }" @click="currentTab = 'protection'">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+          <span>Snapshots &amp; Scrub</span>
+          <span class="nav-badge">{{len .Snapshots}}</span>
+        </button>
+
+        <div class="sidebar-category">Infrastructure &amp; Network</div>
+
+        <button class="nav-item" :class="{ 'active': currentTab === 'network' }" @click="currentTab = 'network'">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4.5 11h-2V9H1v6h1.5v-2h2v2H6V9H4.5v2zm15 0h-2V9H16v6h1.5v-2h2v2H21V9h-1.5v2zm-6-7h-3c-1.1 0-2 .9-2 2v2h7V6c0-1.1-.9-2-2-2zm-6 9v2c0 1.1.9 2 2 2h3v3h1.5v-3h3c1.1 0 2-.9 2-2v-2h-11.5z"/></svg>
+          <span>Networking</span>
+          <span class="nav-badge">{{len .System.Network}}</span>
+        </button>
+
+        <div class="sidebar-category">Appliance &amp; Logs</div>
+
+        <button class="nav-item" :class="{ 'active': currentTab === 'system' }" @click="currentTab = 'system'">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+          <span>System &amp; Services</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="footer-title">{{if .System.OS}}{{.System.OS}}{{else}}Debian GNU/Linux 13{{end}}</div>
+        <div class="footer-kernel">Kernel {{if .System.Kernel}}{{.System.Kernel}}{{else}}Linux 6.12.0{{end}} &bull; OpenZFS</div>
+        <div>Uptime: <strong>{{if .System.UptimeSec}}{{formatUptime .System.UptimeSec}}{{else}}{{.System.Uptime}}{{end}}</strong></div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+      <!-- TAB 1: DASHBOARD -->
+      <section class="tab-pane" :class="{ 'active': currentTab === 'dashboard' }" x-show="currentTab === 'dashboard'">
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>Storage Appliance Dashboard</h1>
+            <p>Real-time storage telemetry, hardware compute load, OpenZFS ARC cache status and disk activity</p>
+          </div>
+          <div class="page-actions">
+            <span class="badge-status green">Kernel Telemetry Active</span>
+          </div>
+        </div>
+
+        {{template "partials/system_metrics.html" .}}
+
+        <div style="margin-top: 1.5rem;">
+          <h2 style="font-size: 1.05rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--pf-text-primary);">Storage Pools Status</h2>
+          {{template "partials/pools_list.html" .}}
+        </div>
+      </section>
+
+      <!-- TAB 2: STORAGE POOLS & DATASETS -->
+      <section class="tab-pane" :class="{ 'active': currentTab === 'pools' }" x-show="currentTab === 'pools'" x-cloak>
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>Storage Pools &amp; Datasets</h1>
+            <p>Verwaltung von ZFS Pools, VDEVs, Scrub-Vorgängen und Dateisystem-Datasets</p>
+          </div>
+          <div class="page-actions" style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-secondary" @click="openImportModal = true">Pool importieren</button>
+            <button class="btn btn-primary" @click="openCreatePoolModal = true">+ Pool erstellen</button>
+          </div>
+        </div>
+
+        {{template "partials/pools_list.html" .}}
+
+        <div style="margin-top: 2rem;">
+          {{template "partials/datasets_list.html" .}}
+        </div>
+      </section>
+
+      <!-- TAB 3: PHYSICAL DISKS -->
+      <section class="tab-pane" :class="{ 'active': currentTab === 'disks' }" x-show="currentTab === 'disks'" x-cloak>
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>Physische Laufwerke &amp; Hardware Chassis</h1>
+            <p>Drive-Bay-Erkennung, Standby/Spindown-Zustand, SMART-Gesundheit und Hardware-Inspektion</p>
+          </div>
+        </div>
+
+        {{template "partials/disks_table.html" .}}
+      </section>
+
+      <!-- TAB 4: SHARES (SMB & NFS) -->
+      <section class="tab-pane" :class="{ 'active': currentTab === 'shares' }" x-show="currentTab === 'shares'" x-cloak>
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>Netzwerk-Freigaben &amp; Storage-Benutzer</h1>
+            <p>Windows SMB/CIFS Freigaben, UNIX NFS Exports und isolierte Benutzerkonten</p>
+          </div>
+          <div class="page-actions" style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-secondary" @click="openCreateUserModal = true">+ Neuer Benutzer</button>
+            <button class="btn btn-primary" @click="openCreateShare('', '')">+ Neue Freigabe</button>
+          </div>
+        </div>
+
+        {{template "partials/shares_list.html" .}}
+
+        <div style="margin-top: 2rem;">
+          {{template "partials/users_list.html" .}}
+        </div>
+      </section>
+
+      <!-- TAB 5: DATA PROTECTION (SNAPSHOTS & SCRUB) -->
+      <section class="tab-pane" :class="{ 'active': currentTab === 'protection' }" x-show="currentTab === 'protection'" x-cloak>
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>Datensicherung &amp; Snapshots</h1>
+            <p>Unveränderliche OpenZFS Point-in-Time Schnappschüsse, Rollback und Klone</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-primary" @click="openCreateSnapModal('')">+ Manueller Snapshot</button>
+          </div>
+        </div>
+
+        {{template "partials/snapshots_list.html" .}}
+      </section>
+
+      <!-- TAB 6: NETWORKING -->
+      <section class="tab-pane" :class="{ 'active': currentTab === 'network' }" x-show="currentTab === 'network'" x-cloak>
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>Netzwerk-Schnittstellen</h1>
+            <p>Physische Gigabit/10GbE Schnittstellen, Link-Speed, MTU und IP-Adresskonfiguration</p>
+          </div>
+        </div>
+
+        {{template "partials/network_list.html" .}}
+      </section>
+
+      <!-- TAB 7: SYSTEM & SERVICES -->
+      <section class="tab-pane" :class="{ 'active': currentTab === 'system' }" x-show="currentTab === 'system'" x-cloak>
+        <div class="page-header">
+          <div class="page-title-group">
+            <h1>System &amp; Appliance Status</h1>
+            <p>Debian Linux Host-Informationen, Kernel-Parameter und Dienst-Status</p>
+          </div>
+        </div>
+
+        <div class="table-card">
+          <div class="table-toolbar">
+            <span class="toolbar-title">Host &amp; Appliance Übersicht</span>
+          </div>
+          <table class="pf-table">
+            <tbody>
+              <tr><td style="width: 200px; font-weight: 600;">Hostname</td><td class="font-mono text-blue">{{.System.Hostname}}</td></tr>
+              <tr><td style="font-weight: 600;">Betriebssystem</td><td>{{.System.OS}}</td></tr>
+              <tr><td style="font-weight: 600;">Kernel Version</td><td class="font-mono">{{.System.Kernel}}</td></tr>
+              <tr><td style="font-weight: 600;">CPU Architektur</td><td>{{.System.Arch}}</td></tr>
+              <tr><td style="font-weight: 600;">System Uptime</td><td class="font-mono">{{if .System.UptimeSec}}{{formatUptime .System.UptimeSec}}{{else}}{{.System.Uptime}}{{end}}</td></tr>
+              <tr><td style="font-weight: 600;">ZFS Module Version</td><td class="font-mono text-blue">{{if .ZfsVersion}}{{.ZfsVersion}}{{else}}2.2.6-native{{end}}</td></tr>
+              <tr><td style="font-weight: 600;">Laufzeit-Dienst (systemd)</td><td><span class="badge-status green">nasd.service active (running)</span></td></tr>
+              <tr><td style="font-weight: 600;">Samba Daemon</td><td><span class="badge-status green">smbd.service active</span></td></tr>
+              <tr><td style="font-weight: 600;">NFS Server Daemon</td><td><span class="badge-status green">nfs-kernel-server active</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Hardware Disk Drawer -->
+  {{template "partials/disk_drawer.html" .}}
+
+  <!-- All Modals -->
+  {{template "modals/create_share.html" .}}
+  {{template "modals/create_user.html" .}}
+  {{template "modals/create_pool.html" .}}
+  {{template "modals/add_vdev.html" .}}
+  {{template "modals/disk_action.html" .}}
+  {{template "modals/create_dataset.html" .}}
+  {{template "modals/create_zvol.html" .}}
+  {{template "modals/pool_props.html" .}}
+  {{template "modals/dataset_props.html" .}}
+  {{template "modals/create_snap.html" .}}
+  {{template "modals/clone_snap.html" .}}
+  {{template "modals/danger_confirm.html" .}}
+  {{template "modals/import_pool.html" .}}
+
+  <!-- Alpine Toast Notification Container -->
+  <div class="toast-container" x-cloak>
+    <template x-for="t in toasts" :key="t.id">
+      <div class="toast" :class="t.type" style="display: flex; align-items: center; gap: 0.5rem; animation: fadeIn 0.2s ease;">
+        <span x-show="t.type === 'success'" style="color: #3e8635;">✔</span>
+        <span x-show="t.type === 'error'" style="color: #c9190b;">✖</span>
+        <span x-show="t.type === 'info'" style="color: #0066cc;">ℹ</span>
+        <span x-text="t.message"></span>
+      </div>
+    </template>
+  </div>
+</body>
+</html>

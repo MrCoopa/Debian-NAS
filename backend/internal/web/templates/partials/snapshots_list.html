@@ -1,0 +1,42 @@
+<div id="snapshots-container" hx-get="/ui/partials/snapshots" hx-trigger="snapshotUpdate from:body" hx-ext="morph" hx-swap="morph">
+  <div class="table-card">
+    <div class="table-toolbar">
+      <span class="toolbar-title">OpenZFS Snapshots (Point-in-Time Backups)</span>
+      <div class="toolbar-actions">
+        <button class="btn btn-primary btn-sm" @click="openCreateSnapModal('')">+ Take Manual Snapshot</button>
+      </div>
+    </div>
+    <table class="pf-table">
+      <thead>
+        <tr>
+          <th>Snapshot Name</th>
+          <th>Dataset</th>
+          <th>Referenced Data</th>
+          <th>Used Space</th>
+          <th class="col-actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{if eq (len .Snapshots) 0}}
+          <tr><td colspan="5" class="text-dim" style="text-align: center; padding: 1.5rem;">Keine Snapshots vorhanden. Snapshots belegen 0 zusätzlichen Speicher, bis Daten geändert werden.</td></tr>
+        {{else}}
+          {{range $s := .Snapshots}}
+            <tr>
+              <td><strong class="font-mono text-blue">{{$s.Name}}</strong></td>
+              <td><span class="font-mono text-dim">{{$s.Dataset}}</span></td>
+              <td class="font-mono">{{formatBytes $s.ReferencedBytes}}</td>
+              <td class="font-mono text-dim">{{formatBytes $s.UsedBytes}}</td>
+              <td class="col-actions">
+                <div style="display: flex; gap: 0.35rem; justify-content: flex-end;">
+                  <button class="btn btn-secondary btn-sm" hx-post="/ui/actions/zfs/snapshots/rollback" hx-vals='{"snapshot": "{{$s.Name}}"}' hx-confirm="ACHTUNG: Dataset auf Snapshot '{{$s.Name}}' zurücksetzen? Alle neueren Daten gehen verloren!" hx-target="#snapshots-container" hx-swap="morph">Rollback</button>
+                  <button class="btn btn-secondary btn-sm" @click="openCloneSnapModal('{{$s.Name}}')">Clone</button>
+                  <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/zfs/snapshots?name={{$s.Name}}" hx-confirm="Snapshot '{{$s.Name}}' löschen?" hx-target="#snapshots-container" hx-swap="morph">Destroy</button>
+                </div>
+              </td>
+            </tr>
+          {{end}}
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>

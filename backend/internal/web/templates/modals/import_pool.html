@@ -1,0 +1,32 @@
+<div class="modal-backdrop" x-show="openImportModal" x-cloak>
+  <div class="modal-box" @click.outside="openImportModal = false">
+    <div class="modal-header">
+      <h3>Vorhandenen ZFS Pool importieren</h3>
+      <button type="button" class="modal-close" @click="openImportModal = false">&times;</button>
+    </div>
+    <form hx-post="/ui/actions/zfs/pools/import" hx-target="#pools-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openImportModal = false">
+      <div class="form-group">
+        <label>Pool Name oder numerische ID</label>
+        <input type="text" name="name_or_id" required placeholder="z.B. tank oder 1234567890123456789">
+        <span class="text-dim" style="font-size: 0.72rem;">Name des exportierten oder von einem anderen System übernommenen Pools.</span>
+      </div>
+
+      <div class="form-group">
+        <label>Neuer Pool Name (Optional)</label>
+        <input type="text" name="new_name" placeholder="Leer lassen, um alten Namen beizubehalten" pattern="[a-zA-Z0-9_\-\.]+">
+      </div>
+
+      <div class="form-group">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.82rem;">
+          <input type="checkbox" name="force" value="true">
+          <span><strong>Force Import (-f)</strong> &ndash; Erzwinge Import, selbst wenn der Pool zuvor nicht sauber exportiert wurde</span>
+        </label>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" @click="openImportModal = false">Abbrechen</button>
+        <button type="submit" class="btn btn-primary">Pool importieren</button>
+      </div>
+    </form>
+  </div>
+</div>

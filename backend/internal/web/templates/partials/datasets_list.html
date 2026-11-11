@@ -1,0 +1,77 @@
+<div id="datasets-container" hx-get="/ui/partials/datasets" hx-trigger="datasetUpdate from:body" hx-ext="morph" hx-swap="morph">
+  <div class="table-card">
+    <div class="table-toolbar">
+      <span class="toolbar-title">ZFS Filesystems &amp; Block Volumes (Zvols)</span>
+      <div class="toolbar-actions">
+        <button class="btn btn-secondary btn-sm" @click="openCreateZvolModal = true">+ New Zvol</button>
+        <button class="btn btn-primary btn-sm" @click="openCreateDatasetModal = true">+ New Dataset</button>
+      </div>
+    </div>
+    <table class="pf-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Used</th>
+          <th>Available</th>
+          <th>Compression</th>
+          <th>Recordsize</th>
+          <th>Quota</th>
+          <th>Read-Only</th>
+          <th>Snapshots</th>
+          <th class="col-actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{if eq (len .Datasets) 0}}
+          <tr><td colspan="10" class="text-dim" style="text-align: center; padding: 1.5rem;">Keine Datasets vorhanden. Erstelle zuerst einen Storage Pool.</td></tr>
+        {{else}}
+          {{range $ds := .Datasets}}
+            <tr>
+              <td>
+                <strong class="font-mono text-blue">{{$ds.Name}}</strong>
+                <div class="text-dim font-mono" style="font-size: 0.7rem;">{{$ds.Mountpoint}}</div>
+              </td>
+              <td>
+                <span class="badge-status {{if eq $ds.Type "volume"}}amber{{else}}blue{{end}}" style="font-size: 0.7rem;">
+                  {{if eq $ds.Type "volume"}}Zvol{{else}}Filesystem{{end}}
+                </span>
+              </td>
+              <td class="font-mono"><strong>{{formatBytes $ds.UsedBytes}}</strong></td>
+              <td class="font-mono text-dim">{{formatBytes $ds.AvailBytes}}</td>
+              <td><span class="badge-status slate font-mono" style="font-size: 0.7rem;">{{$ds.Compression}}</span></td>
+              <td class="font-mono text-dim">{{if $ds.RecordSize}}{{$ds.RecordSize}}{{else}}--{{end}}</td>
+              <td>
+                {{if and $ds.Quota (ne $ds.Quota "none")}}
+                  <span class="badge font-mono" style="background: rgba(240,171,0,0.15); color: #f0ab00; border: 1px solid rgba(240,171,0,0.3); padding: 2px 5px; border-radius: 3px; font-size: 0.72rem;">{{$ds.Quota}}</span>
+                {{else}}
+                  <span class="text-dim">none</span>
+                {{end}}
+              </td>
+              <td>
+                {{if eq $ds.ReadOnly "on"}}
+                  <span class="badge-status slate" style="font-size: 0.7rem;">Locked</span>
+                {{else}}
+                  <span class="badge-status green" style="font-size: 0.7rem;">RW</span>
+                {{end}}
+              </td>
+              <td>
+                <span class="badge-status slate font-mono" style="font-size: 0.7rem;">{{$ds.Snapshots}}</span>
+              </td>
+              <td class="col-actions">
+                <div style="display: flex; gap: 0.3rem; justify-content: flex-end;">
+                  <button class="btn btn-secondary btn-sm" @click="openDatasetProps('{{$ds.Name}}', '{{$ds.Compression}}', '{{$ds.RecordSize}}', '{{$ds.Quota}}', '{{$ds.Atime}}', '{{$ds.ReadOnly}}', '{{$ds.Type}}')">Properties</button>
+                  <button class="btn btn-secondary btn-sm" @click="openCreateSnapModal('{{$ds.Name}}')">Snap</button>
+                  {{if eq $ds.Type "filesystem"}}
+                    <button class="btn btn-secondary btn-sm" @click="openCreateShare('{{$ds.Name}}', '{{$ds.Mountpoint}}')">Share</button>
+                  {{end}}
+                  <button class="btn btn-danger btn-sm" @click="openDangerConfirm('dataset', '{{$ds.Name}}')">Destroy</button>
+                </div>
+              </td>
+            </tr>
+          {{end}}
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>

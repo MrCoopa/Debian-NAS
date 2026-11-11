@@ -1,0 +1,40 @@
+<div class="modal-backdrop" x-show="openAddVdevModal" x-cloak>
+  <div class="modal-box" @click.outside="openAddVdevModal = false">
+    <div class="modal-header">
+      <h3>Add VDEV / Expand Pool: <span class="text-blue font-mono" x-text="addVdevPool"></span></h3>
+      <button type="button" class="modal-close" @click="openAddVdevModal = false">&times;</button>
+    </div>
+    <form hx-post="/ui/actions/zfs/pools/vdev" hx-target="#pools-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openAddVdevModal = false">
+      <input type="hidden" name="pool" :value="addVdevPool">
+      <div class="form-group">
+        <label>VDEV Role / Type</label>
+        <select name="vdev_type">
+          <option value="mirror">Data Mirror (Zusätzliche Kapazität mit Redundanz)</option>
+          <option value="stripe">Data Stripe (Kapazitätserweiterung)</option>
+          <option value="cache">Cache (L2ARC SSD Lesecache)</option>
+          <option value="log">Log (SLOG / ZIL SSD Schreibbeschleunigung)</option>
+          <option value="special">Special (Schnelle SSDs für Metadaten &amp; kleine Dateien)</option>
+          <option value="spare">Hot Spare (Automatischer Ersatz bei Plattenausfall)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Disks to Add</label>
+        <div style="background: rgba(15,23,42,0.6); border: 1px solid var(--pf-border-color); border-radius: 4px; padding: 0.6rem; max-height: 140px; overflow-y: auto;">
+          {{range $d := .Disks}}
+            {{$inUse := or $d.ZfsPool $d.IsSystemDisk}}
+            <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.78rem; {{if $inUse}}opacity: 0.5; cursor: not-allowed;{{else}}cursor: pointer;{{end}}">
+              <input type="checkbox" name="disks" value="{{if $d.ByIDPath}}{{$d.ByIDPath}}{{else}}{{$d.Path}}{{end}}" {{if $inUse}}disabled{{end}}>
+              <strong class="font-mono text-blue">{{$d.Name}}</strong>
+              <span>{{$d.Model}}</span>
+              <span class="text-blue font-mono">({{formatBytes $d.SizeBytes}})</span>
+            </label>
+          {{end}}
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" @click="openAddVdevModal = false">Abbrechen</button>
+        <button type="submit" class="btn btn-primary">Add VDEV</button>
+      </div>
+    </form>
+  </div>
+</div>

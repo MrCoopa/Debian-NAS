@@ -1,0 +1,38 @@
+<div class="modal-backdrop" x-show="openDiskActionModal" x-cloak>
+  <div class="modal-box" @click.outside="openDiskActionModal = false">
+    <div class="modal-header">
+      <h3 x-text="diskAction.type === 'replace' ? ('Replace Disk ' + diskAction.targetDevice + ' in ' + diskAction.pool) : ('Attach Mirror Disk to ' + diskAction.targetDevice + ' in ' + diskAction.pool)"></h3>
+      <button type="button" class="modal-close" @click="openDiskActionModal = false">&times;</button>
+    </div>
+    <form :action="diskAction.type === 'replace' ? '/ui/actions/zfs/pools/disk/replace' : '/ui/actions/zfs/pools/disk/attach'"
+          :hx-post="diskAction.type === 'replace' ? '/ui/actions/zfs/pools/disk/replace' : '/ui/actions/zfs/pools/disk/attach'"
+          hx-target="#pools-container" hx-swap="morph"
+          @htmx:after-request="if (event.detail.successful) openDiskActionModal = false">
+      <input type="hidden" name="pool" :value="diskAction.pool">
+      <input type="hidden" name="existing_device" :value="diskAction.targetDevice">
+      <input type="hidden" name="old_device" :value="diskAction.targetDevice">
+      
+      <div class="form-group">
+        <label>Select New Replacement / Mirror Disk</label>
+        <select name="new_device" required>
+          <option value="">-- Freie Festplatte auswählen --</option>
+          {{range $d := .Disks}}
+            {{if and (not $d.ZfsPool) (not $d.IsSystemDisk)}}
+              <option value="{{if $d.ByIDPath}}{{$d.ByIDPath}}{{else}}{{$d.Path}}{{end}}">
+                {{$d.Name}} - {{$d.Model}} ({{formatBytes $d.SizeBytes}})
+              </option>
+            {{end}}
+          {{end}}
+        </select>
+        <small class="text-dim" style="font-size: 0.72rem; display: block; margin-top: 0.25rem;">
+          Die neue Festplatte muss mindestens so groß sein wie die bisherige Festplatte.
+        </small>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" @click="openDiskActionModal = false">Abbrechen</button>
+        <button type="submit" class="btn btn-primary" x-text="diskAction.type === 'replace' ? 'Start Resilver & Replace' : 'Attach as Mirror'"></button>
+      </div>
+    </form>
+  </div>
+</div>
