@@ -838,6 +838,56 @@ func (m *Manager) SetSpindown(devPath string, seconds int) error {
 	return nil
 }
 
+// SetAPM sets Advanced Power Management level using hdparm -B
+func (m *Manager) SetAPM(devPath string, level string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	target := m.findDiskLocked(devPath)
+	if target != nil {
+		target.AdvPowerManagement = level
+		devPath = target.Path
+	}
+
+	if m.mockMode {
+		if target == nil {
+			return fmt.Errorf("disk %s not found", devPath)
+		}
+		return nil
+	}
+
+	if err := validate.DevicePath(devPath); err != nil {
+		return fmt.Errorf("invalid disk device path: %w", err)
+	}
+
+	val := "255"
+	switch level {
+	case "Disabled", "255", "off", "Off":
+		val = "255"
+	case "1":
+		val = "1"
+	case "64":
+		val = "64"
+	case "127":
+		val = "127"
+	case "128":
+		val = "128"
+	case "192":
+		val = "192"
+	case "254":
+		val = "254"
+	default:
+		val = level
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "hdparm", "-B", val, devPath)
+	_ = cmd.Run()
+
+	return nil
+}
+
 // ForceStandby immediately puts a drive into standby
 func (m *Manager) ForceStandby(devPath string) error {
 	m.mu.Lock()

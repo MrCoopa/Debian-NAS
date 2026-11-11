@@ -74,6 +74,7 @@ func (s *Server) Routes() http.Handler {
 	// 2. Disks & Standby Control (45Drives Houston Chassis & SMART)
 	mux.HandleFunc("GET /api/v1/disks", s.handleListDisks)
 	mux.HandleFunc("POST /api/v1/disks/spindown", s.handleSetSpindown)
+	mux.HandleFunc("POST /api/v1/disks/apm", s.handleSetDiskAPM)
 	mux.HandleFunc("POST /api/v1/disks/standby", s.handleForceStandby)
 	mux.HandleFunc("POST /api/v1/disks/locate", s.handleToggleLocate)
 	mux.HandleFunc("POST /api/v1/disks/smart-test", s.handleTriggerSmartTest)
@@ -166,6 +167,7 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("POST /ui/actions/zfs/destroy", s.handleUIActionDangerDestroy)
 
 		mux.HandleFunc("POST /ui/actions/disks/spindown", s.handleUIActionSetSpindown)
+		mux.HandleFunc("POST /ui/actions/disks/apm", s.handleUIActionSetAPM)
 		mux.HandleFunc("POST /ui/actions/disks/standby", s.handleUIActionForceStandby)
 		mux.HandleFunc("POST /ui/actions/disks/locate", s.handleUIActionToggleLocate)
 		mux.HandleFunc("POST /ui/actions/disks/smart-test", s.handleUIActionTriggerSmartTest)
@@ -423,6 +425,39 @@ func (s *Server) handleSetSpindown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.jsonResponse(w, http.StatusOK, map[string]any{"status": "ok", "device": target, "timeout_seconds": sec})
+}
+
+func (s *Server) handleSetDiskAPM(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Path   string `json:"path"`
+		Device string `json:"device"`
+		Name   string `json:"name"`
+		Level  string `json:"level"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+	target := strings.TrimSpace(req.Path)
+	if target == "" {
+		target = strings.TrimSpace(req.Device)
+	}
+	if target == "" {
+		target = strings.TrimSpace(req.Name)
+	}
+	if target == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Disk device or path required")
+		return
+	}
+	level := strings.TrimSpace(req.Level)
+	if level == "" {
+		level = "Disabled"
+	}
+	if err := s.disks.SetAPM(target, level); err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, map[string]any{"status": "ok", "device": target, "apm_level": level})
 }
 
 func (s *Server) handleForceStandby(w http.ResponseWriter, r *http.Request) {

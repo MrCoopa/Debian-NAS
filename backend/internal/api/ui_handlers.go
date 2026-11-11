@@ -749,6 +749,27 @@ func (s *Server) handleUIActionSetSpindown(w http.ResponseWriter, r *http.Reques
 	s.handleUIPartialDisks(w, r)
 }
 
+func (s *Server) handleUIActionSetAPM(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	path := strings.TrimSpace(r.FormValue("path"))
+	level := strings.TrimSpace(r.FormValue("level"))
+	if path == "" {
+		s.setHXTrigger(w, "Device path is required", "error")
+		s.handleUIPartialDisks(w, r)
+		return
+	}
+	if level == "" {
+		level = "Disabled"
+	}
+
+	if err := s.disks.SetAPM(path, level); err != nil {
+		s.setHXTrigger(w, "Error configuring APM: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("APM for %s set to %s", path, level), "success", "diskUpdate")
+	}
+	s.handleUIPartialDisks(w, r)
+}
+
 func (s *Server) handleUIActionForceStandby(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	path := strings.TrimSpace(r.FormValue("path"))
