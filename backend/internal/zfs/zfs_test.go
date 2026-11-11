@@ -1,6 +1,8 @@
 package zfs
 
 import (
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -349,6 +351,198 @@ func TestStripZfsPartition_DebianLinux(t *testing.T) {
 			t.Errorf("stripZfsPartition(%q) = %q, want %q", input, got, expected)
 		}
 	}
+}
+
+func TestExecuteZfsRollback_BusyMountsAndRemount(t *testing.T) {
+	t.Run("fast path succeeds without touching mounts", func(t *testing.T) {
+		var cmds []string
+		releaseCalls := 0
+		runner := rollbackRunner{
+			run: func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+				cmds = append(cmds, name+" "+strings.Join(args, " "))
+				return nil, nil
+			},
+			collectMounts: func(target string) []zfsMountEntry {
+				t.Fatalf("collectMounts should not be called on fast path")
+				return nil
+			},
+			releaseMounts: func(target string, forceKill bool) {
+				releaseCalls++
+			},
+		}
+
+		if err := executeZfsRollback(runner, "Any/data@s1", "Any/data"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if releaseCalls != 0 {
+			t.Fatalf("expected 0 releaseMounts calls, got %d", releaseCalls)
+		}
+		want := []string{"zfs rollback -r Any/data@s1"}
+		if !reflect.DeepEqual(cmds, want) {
+			t.Fatalf("cmds = %v, want %v", cmds, want)
+		}
+	})
+
+	t.Run("graceful unmount recovers busy child mount and remounts parent-first", func(t *testing.T) {
+		var events []string
+		rollbackAttempt := 0
+		runner := rollbackRunner{
+			run: func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+				cmdStr := name + " " + strings.Join(args, " ")
+				events = append(events, cmdStr)
+				if name == "zfs" && len(args) >= 1 && args[0] == "rollback" {
+					rollbackAttempt++
+					if rollbackAttempt == 1 {
+						return []byte("cannot unmount '/mnt/Any': pool or dataset is busy"), fmt.Errorf("exit status 1")
+					}
+					return nil, nil
+				}
+				if name == "zfs" && len(args) >= 2 && args[0] == "mount" && args[1] == "Any" {
+					// Simulate parent already auto-mounted while child still needs zfs mount.
+					return []byte("filesystem 'Any' is already mounted"), fmt.Errorf("exit status 1")
+				}
+				return nil, nil
+			},
+			collectMounts: func(target string) []zfsMountEntry {
+				return []zfsMountEntry{
+					{name: "Any/sub", mountpoint: "/mnt/Any/sub", mounted: true},
+					{name: "Any/zvol1", mountpoint: "-", mounted: false},
+					{name: "Any", mountpoint: "/mnt/Any", mounted: true},
+				}
+			},
+			releaseMounts: func(target string, forceKill bool) {
+				events = append(events, fmt.Sprintf("release:%s:force=%v", target, forceKill))
+			},
+		}
+
+		if err := executeZfsRollback(runner, "Any@s1", "Any"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := []string{
+			"zfs rollback -r Any@s1",
+			"release:Any:force=false",
+			"zfs rollback -r Any@s1",
+			"zfs mount Any",
+			"zfs mount Any/sub",
+		}
+		if !reflect.DeepEqual(events, want) {
+			t.Fatalf("events = %#v, want %#v", events, want)
+		}
+	})
+
+	t.Run("force recovery unexports matching NFS shares kills busy handles and restores exports", func(t *testing.T) {
+		var events []string
+		rollbackAttempt := 0
+		runner := rollbackRunner{
+			run: func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+				cmdStr := name + " " + strings.Join(args, " ")
+				events = append(events, cmdStr)
+				if name == "zfs" && len(args) >= 1 && args[0] == "rollback" {
+					rollbackAttempt++
+					if rollbackAttempt <= 2 {
+						return []byte("cannot unmount '/mnt/Any/share': pool or dataset is busy"), fmt.Errorf("exit status 1")
+					}
+					return nil, nil
+				}
+				if name == "exportfs" && len(args) == 1 && args[0] == "-s" {
+					return []byte("/mnt/Any/share  <world>(rw,sync)\n/mnt/Any/share/sub  192.168.2.0/24(rw,sync)\n/mnt/OtherPool  *(rw,sync)\n"), nil
+				}
+				return nil, nil
+			},
+			collectMounts: func(target string) []zfsMountEntry {
+				return []zfsMountEntry{
+					{name: "Any/share", mountpoint: "/mnt/Any/share", mounted: true},
+				}
+			},
+			releaseMounts: func(target string, forceKill bool) {
+				events = append(events, fmt.Sprintf("release:%s:force=%v", target, forceKill))
+			},
+		}
+
+		if err := executeZfsRollback(runner, "Any/share@s1", "Any/share"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := []string{
+			"zfs rollback -r Any/share@s1",
+			"release:Any/share:force=false",
+			"zfs rollback -r Any/share@s1",
+			"exportfs -s",
+			"exportfs -u *:/mnt/Any/share",
+			"exportfs -u 192.168.2.0/24:/mnt/Any/share/sub",
+			"release:Any/share:force=true",
+			"zfs rollback -r Any/share@s1",
+			"zfs mount Any/share",
+			"exportfs -ra",
+		}
+		if !reflect.DeepEqual(events, want) {
+			t.Fatalf("events = %#v, want %#v", events, want)
+		}
+	})
+
+	t.Run("dependent clones preserve clear error without unmounting", func(t *testing.T) {
+		releaseCalls := 0
+		runner := rollbackRunner{
+			run: func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+				return []byte("cannot rollback to 'Any@s1': clones of previous snapshots exist\nuse '-R' to force deletion of all clones"), fmt.Errorf("exit status 1")
+			},
+			collectMounts: func(target string) []zfsMountEntry {
+				t.Fatalf("collectMounts should not run on clone error")
+				return nil
+			},
+			releaseMounts: func(target string, forceKill bool) {
+				releaseCalls++
+			},
+		}
+
+		err := executeZfsRollback(runner, "Any@s1", "Any")
+		if err == nil || !strings.Contains(err.Error(), "dependent clones") {
+			t.Fatalf("expected dependent clones error, got: %v", err)
+		}
+		if releaseCalls != 0 {
+			t.Fatalf("expected 0 releaseMounts calls, got %d", releaseCalls)
+		}
+	})
+
+	t.Run("remounts and restores NFS exports even if forced rollback still fails", func(t *testing.T) {
+		var events []string
+		runner := rollbackRunner{
+			run: func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+				events = append(events, name+" "+strings.Join(args, " "))
+				if name == "zfs" && len(args) >= 1 && args[0] == "rollback" {
+					return []byte("cannot unmount '/mnt/Any': pool or dataset is busy"), fmt.Errorf("exit status 1")
+				}
+				if name == "exportfs" && len(args) == 1 && args[0] == "-s" {
+					return []byte("/mnt/Any  *(rw,sync)\n"), nil
+				}
+				return nil, nil
+			},
+			collectMounts: func(target string) []zfsMountEntry {
+				return []zfsMountEntry{{name: "Any", mountpoint: "/mnt/Any", mounted: true}}
+			},
+			releaseMounts: func(target string, forceKill bool) {
+				events = append(events, fmt.Sprintf("release:%s:force=%v", target, forceKill))
+			},
+		}
+
+		err := executeZfsRollback(runner, "Any@s1", "Any")
+		if err == nil {
+			t.Fatalf("expected error when rollback fails all retries")
+		}
+		want := []string{
+			"zfs rollback -r Any@s1",
+			"release:Any:force=false",
+			"zfs rollback -r Any@s1",
+			"exportfs -s",
+			"exportfs -u *:/mnt/Any",
+			"release:Any:force=true",
+			"zfs rollback -r Any@s1",
+			"zfs mount Any",
+			"exportfs -ra",
+		}
+		if !reflect.DeepEqual(events, want) {
+			t.Fatalf("events = %#v, want %#v", events, want)
+		}
+	})
 }
 
 

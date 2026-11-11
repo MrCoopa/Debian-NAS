@@ -1,12 +1,4 @@
-<div id="snapshots-container" hx-get="/ui/partials/snapshots" hx-trigger="snapshotUpdate from:body" hx-ext="morph" hx-swap="morph"
-     x-data="{
-       snapSearch: '',
-       matchesSnap(name, ds) {
-         if (!this.snapSearch || !this.snapSearch.trim()) return true;
-         const q = this.snapSearch.toLowerCase();
-         return (name && name.toLowerCase().includes(q)) || (ds && ds.toLowerCase().includes(q));
-       }
-     }">
+<div id="snapshots-container" hx-get="/ui/partials/snapshots" hx-trigger="snapshotUpdate from:body" hx-swap="outerHTML">
   <div class="table-card">
     <div class="table-toolbar" style="flex-wrap: wrap; gap: 0.75rem;">
       <span class="toolbar-title">OpenZFS Snapshots (Point-in-Time Backups)</span>
@@ -40,9 +32,9 @@
               <td class="font-mono text-dim" style="font-size: 0.78rem;">{{formatTime $s.Created}}</td>
               <td class="col-actions">
                 <div style="display: flex; gap: 0.35rem; justify-content: flex-end; flex-wrap: wrap;">
-                  <button class="btn btn-secondary btn-sm" hx-post="/ui/actions/zfs/snapshots/rollback" hx-vals='{"snapshot": "{{$s.Name}}"}' hx-confirm="WARNING: Rollback dataset to snapshot '{{$s.Name}}'? All newer data and snapshots will be lost!" hx-target="#snapshots-container" hx-swap="morph">Rollback</button>
-                  <button class="btn btn-secondary btn-sm" @click="openCloneSnap('{{$s.Name}}')">Clone</button>
-                  <button class="btn btn-danger btn-sm" hx-delete="/ui/actions/zfs/snapshots?name={{urlquery $s.Name}}" hx-confirm="Destroy snapshot '{{$s.Name}}'?" hx-target="#snapshots-container" hx-swap="morph">Destroy</button>
+                  <button type="button" class="btn btn-secondary btn-sm" data-snapshot="{{$s.Name}}" hx-post="/ui/actions/zfs/snapshots/rollback" hx-vals='{"snapshot": "{{$s.Name}}"}' hx-confirm="WARNING: Rollback dataset to snapshot '{{$s.Name}}'? All newer data and snapshots will be lost!" hx-target="#snapshots-container" hx-swap="outerHTML">Rollback</button>
+                  <button type="button" class="btn btn-secondary btn-sm" data-snapshot="{{$s.Name}}" @click="openCloneSnap($el.dataset.snapshot)">Clone</button>
+                  <button type="button" class="btn btn-danger btn-sm" hx-delete="/ui/actions/zfs/snapshots?name={{urlquery $s.Name}}" hx-confirm="Destroy snapshot '{{$s.Name}}'?" hx-target="#snapshots-container" hx-swap="outerHTML">Destroy</button>
                 </div>
               </td>
             </tr>

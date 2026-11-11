@@ -856,6 +856,91 @@ func TestUI_FreshShareCreateImmediatelyEditableAndModalsLiveRefresh(t *testing.T
 	}
 }
 
+func TestSnapshotRollback_UI_LifecycleAndErrors(t *testing.T) {
+	srv := createTestServer(t)
+	handler := srv.Routes()
+
+	pools, err := srv.zfs.ListPools()
+	if err != nil || len(pools) == 0 {
+		t.Fatalf("expected mock pool, got len=%d err=%v", len(pools), err)
+	}
+	targetDS := pools[0].Name + "/rollbackui"
+	if err := srv.zfs.CreateDataset(targetDS, "lz4", "128K"); err != nil {
+		t.Fatalf("CreateDataset failed: %v", err)
+	}
+
+	// 1. Create older snapshot rb-s1 and newer snapshot rb-s2 via UI endpoint.
+	for _, snapName := range []string{"rb-s1", "rb-s2"} {
+		form := url.Values{
+			"dataset":       {targetDS},
+			"snapshot_name": {snapName},
+		}
+		req := httptest.NewRequest("POST", "/ui/actions/zfs/snapshots", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("create snapshot %s status=%d", snapName, rr.Code)
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, targetDS+"@"+snapName) {
+			t.Fatalf("created snapshot %s missing from returned partial", snapName)
+		}
+		if strings.Contains(body, `hx-swap="morph"`) {
+			t.Fatalf("snapshots partial still contains hx-swap=\"morph\"")
+		}
+	}
+
+	// 2. Clone newer snapshot rb-s2 -> rolling back to rb-s1 must fail cleanly with error toast.
+	cloneTarget := pools[0].Name + "/rollbackclone"
+	cloneForm := url.Values{
+		"snapshot":       {targetDS + "@rb-s2"},
+		"target_dataset": {cloneTarget},
+	}
+	cloneReq := httptest.NewRequest("POST", "/ui/actions/zfs/snapshots/clone", strings.NewReader(cloneForm.Encode()))
+	cloneReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	cloneRR := httptest.NewRecorder()
+	handler.ServeHTTP(cloneRR, cloneReq)
+	if cloneRR.Code != http.StatusOK || strings.Contains(cloneRR.Header().Get("HX-Trigger"), `"error"`) {
+		t.Fatalf("clone failed unexpectedly: status=%d trigger=%s", cloneRR.Code, cloneRR.Header().Get("HX-Trigger"))
+	}
+
+	blockedReq := httptest.NewRequest("POST", "/ui/actions/zfs/snapshots/rollback", strings.NewReader(url.Values{"snapshot": {targetDS + "@rb-s1"}}.Encode()))
+	blockedReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	blockedRR := httptest.NewRecorder()
+	handler.ServeHTTP(blockedRR, blockedReq)
+	blockedTrig := blockedRR.Header().Get("HX-Trigger")
+	if !strings.Contains(blockedTrig, `"error"`) || !strings.Contains(blockedTrig, "dependent clone") {
+		t.Fatalf("expected clone-blocked rollback error toast, got: %s", blockedTrig)
+	}
+	if !strings.Contains(blockedRR.Body.String(), targetDS+"@rb-s2") {
+		t.Fatalf("newer snapshot rb-s2 should remain when rollback fails")
+	}
+
+	// 3. Remove clone, then roll back to rb-s1 -> succeeds and removes rb-s2 immediately in HTML.
+	if err := srv.zfs.DestroyDataset(cloneTarget); err != nil {
+		t.Fatalf("DestroyDataset clone failed: %v", err)
+	}
+
+	rbReq := httptest.NewRequest("POST", "/ui/actions/zfs/snapshots/rollback", strings.NewReader(url.Values{"snapshot": {targetDS + "@rb-s1"}}.Encode()))
+	rbReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rbRR := httptest.NewRecorder()
+	handler.ServeHTTP(rbRR, rbReq)
+	rbTrig := rbRR.Header().Get("HX-Trigger")
+	for _, wantTrig := range []string{`"success"`, `"snapshotUpdate"`, `"datasetUpdate"`, `rolled back`} {
+		if !strings.Contains(rbTrig, wantTrig) {
+			t.Fatalf("expected HX-Trigger to contain %s, got: %s", wantTrig, rbTrig)
+		}
+	}
+	rbBody := rbRR.Body.String()
+	if !strings.Contains(rbBody, targetDS+"@rb-s1") {
+		t.Fatalf("expected rollback target snapshot rb-s1 to remain in HTML")
+	}
+	if strings.Contains(rbBody, targetDS+"@rb-s2") {
+		t.Fatalf("expected newer snapshot rb-s2 to be removed immediately after rollback")
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a

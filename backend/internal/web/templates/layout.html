@@ -57,6 +57,12 @@
         snapDataset: '',
         snapName: '',
         snapRecursive: false,
+        snapSearch: '',
+        matchesSnap(name, ds) {
+          if (!this.snapSearch || !this.snapSearch.trim()) return true;
+          const q = this.snapSearch.toLowerCase();
+          return (name && name.toLowerCase().includes(q)) || (ds && ds.toLowerCase().includes(q));
+        },
         openCloneSnapModal: false,
         cloneSnapSource: '',
         cloneSnapTarget: '',

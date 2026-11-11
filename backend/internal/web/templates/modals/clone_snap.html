@@ -4,7 +4,7 @@
       <h3>Clone Snapshot</h3>
       <button type="button" class="modal-close" @click="openCloneSnapModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/zfs/snapshots/clone" hx-target="#datasets-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openCloneSnapModal = false">
+    <form hx-post="/ui/actions/zfs/snapshots/clone" hx-target="#datasets-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el) { const res = window.nasTriggerHasError ? window.nasTriggerHasError(event.detail.xhr) : { hasError: false }; if (event.detail.successful && !res.hasError) { openCloneSnapModal = false; cloneSnapTarget = ''; } }">
       <div class="form-group">
         <label>Source Snapshot</label>
         <input type="text" name="snapshot" :value="cloneSnapSource" readonly class="font-mono" style="background: rgba(15,23,42,0.6);">

@@ -1501,11 +1501,191 @@ func (m *Manager) RollbackSnapshot(snapshot string) error {
 		return nil
 	}
 
-	out, err := runCommand(defaultZfsTimeout, "zfs", "rollback", "-r", snapshot)
-	if err != nil {
-		return fmt.Errorf("zfs rollback failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	return executeZfsRollback(m.defaultRollbackRunner(), snapshot, parts[0])
+}
+
+type rollbackRunner struct {
+	run           func(timeout time.Duration, name string, args ...string) ([]byte, error)
+	collectMounts func(target string) []zfsMountEntry
+	releaseMounts func(target string, forceKill bool)
+}
+
+func (m *Manager) defaultRollbackRunner() rollbackRunner {
+	return rollbackRunner{
+		run:           runCommand,
+		collectMounts: collectTargetMounts,
+		releaseMounts: m.releaseMountsForTarget,
 	}
-	return nil
+}
+
+func isRollbackCloneError(lowerOut string) bool {
+	return strings.Contains(lowerOut, "clones of previous snapshots exist") ||
+		strings.Contains(lowerOut, "dependent clone")
+}
+
+func isRollbackBusyError(lowerOut string) bool {
+	return strings.Contains(lowerOut, "busy") ||
+		strings.Contains(lowerOut, "unmount") ||
+		strings.Contains(lowerOut, "umount")
+}
+
+func formatRollbackError(snapshot string, out []byte, err error) error {
+	outStr := strings.TrimSpace(string(out))
+	lowerOut := strings.ToLower(outStr)
+	if isRollbackCloneError(lowerOut) {
+		return fmt.Errorf("cannot rollback to '%s': newer snapshots have dependent clones; destroy the cloned dataset(s) first (%s)", snapshot, outStr)
+	}
+	if outStr != "" {
+		return fmt.Errorf("zfs rollback failed: %v (%s)", err, outStr)
+	}
+	return fmt.Errorf("zfs rollback failed: %v", err)
+}
+
+func filterMountedZfsEntries(entries []zfsMountEntry) []zfsMountEntry {
+	var mounted []zfsMountEntry
+	for _, e := range entries {
+		mp := strings.TrimSpace(e.mountpoint)
+		if e.mounted && strings.HasPrefix(mp, "/") {
+			mounted = append(mounted, e)
+		}
+	}
+	return mounted
+}
+
+func nfsExportMatchesMountpoints(exportPath string, mountpoints []string) bool {
+	if !strings.HasPrefix(exportPath, "/mnt/") {
+		return false
+	}
+	for _, mp := range mountpoints {
+		if exportPath == mp ||
+			strings.HasPrefix(exportPath, mp+"/") ||
+			strings.HasPrefix(mp, exportPath+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// unexportNFSForMounts temporarily unexports active kernel NFS exports matching the target mountpoints.
+// Returns true if any matching export was unexported (so exportfs -ra should be run after remount).
+func unexportNFSForMounts(run func(time.Duration, string, ...string) ([]byte, error), entries []zfsMountEntry) bool {
+	mountpoints := make([]string, 0, len(entries))
+	for _, e := range entries {
+		mp := strings.TrimSpace(e.mountpoint)
+		if strings.HasPrefix(mp, "/mnt/") {
+			mountpoints = append(mountpoints, strings.TrimRight(mp, "/"))
+		}
+	}
+	if len(mountpoints) == 0 {
+		return false
+	}
+
+	out, err := run(fastZfsTimeout, "exportfs", "-s")
+	if err != nil {
+		return false
+	}
+
+	unexported := false
+	seen := make(map[string]bool)
+	for _, rawLine := range strings.Split(string(out), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		exportPath := strings.TrimRight(fields[0], "/")
+		if !nfsExportMatchesMountpoints(exportPath, mountpoints) {
+			continue
+		}
+		clientSpec := fields[1]
+		if idx := strings.IndexByte(clientSpec, '('); idx != -1 {
+			clientSpec = clientSpec[:idx]
+		}
+		clientSpec = strings.TrimSpace(clientSpec)
+		if clientSpec == "" || clientSpec == "<world>" {
+			clientSpec = "*"
+		}
+		targetSpec := clientSpec + ":" + exportPath
+		if seen[targetSpec] {
+			continue
+		}
+		seen[targetSpec] = true
+		if _, uErr := run(fastZfsTimeout, "exportfs", "-u", targetSpec); uErr == nil {
+			unexported = true
+		}
+	}
+	return unexported
+}
+
+// remountAfterRollback restores previously mounted datasets parent-first and reloads NFS exports if touched.
+func remountAfterRollback(run func(time.Duration, string, ...string) ([]byte, error), toRemount []zfsMountEntry, nfsUnexported bool) error {
+	var firstErr error
+	// toRemount is sorted deepest-first; reverse it to mount parent datasets before child datasets.
+	for i := len(toRemount) - 1; i >= 0; i-- {
+		entry := toRemount[i]
+		out, err := run(defaultZfsTimeout, "zfs", "mount", entry.name)
+		if err != nil {
+			lowerOut := strings.ToLower(string(out))
+			if strings.Contains(lowerOut, "already mounted") {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = fmt.Errorf("failed to remount '%s': %v (%s)", entry.name, err, strings.TrimSpace(string(out)))
+			}
+		}
+	}
+	if nfsUnexported {
+		_, _ = run(fastZfsTimeout, "exportfs", "-ra")
+	}
+	return firstErr
+}
+
+func executeZfsRollback(runner rollbackRunner, snapshot, dsName string) error {
+	out, err := runner.run(longZfsTimeout, "zfs", "rollback", "-r", snapshot)
+	if err == nil {
+		return nil
+	}
+	lowerOut := strings.ToLower(string(out))
+	if isRollbackCloneError(lowerOut) || !isRollbackBusyError(lowerOut) {
+		return formatRollbackError(snapshot, out, err)
+	}
+
+	mounts := runner.collectMounts(dsName)
+	toRemount := filterMountedZfsEntries(mounts)
+	nfsUnexported := false
+	remountHandled := false
+	defer func() {
+		if !remountHandled {
+			_ = remountAfterRollback(runner.run, toRemount, nfsUnexported)
+		}
+	}()
+
+	// Attempt 1: gracefully unmount target and nested child datasets deepest-first without killing processes.
+	runner.releaseMounts(dsName, false)
+	out, err = runner.run(longZfsTimeout, "zfs", "rollback", "-r", snapshot)
+	if err == nil {
+		remountHandled = true
+		return remountAfterRollback(runner.run, toRemount, nfsUnexported)
+	}
+	lowerOut = strings.ToLower(string(out))
+	if isRollbackCloneError(lowerOut) || !isRollbackBusyError(lowerOut) {
+		return formatRollbackError(snapshot, out, err)
+	}
+
+	// Attempt 2: release kernel NFS locks and force-terminate busy handles (e.g., smbd/open shells) on /mnt/... mounts.
+	if unexportNFSForMounts(runner.run, mounts) {
+		nfsUnexported = true
+	}
+	runner.releaseMounts(dsName, true)
+	out, err = runner.run(longZfsTimeout, "zfs", "rollback", "-r", snapshot)
+	if err != nil {
+		return formatRollbackError(snapshot, out, err)
+	}
+	remountHandled = true
+	return remountAfterRollback(runner.run, toRemount, nfsUnexported)
 }
 
 // DestroySnapshot deletes a snapshot

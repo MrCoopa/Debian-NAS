@@ -263,6 +263,25 @@ func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
 			want: []string{`hx-swap="outerHTML"`, `data-name="`, `openEditSmbShare($el.dataset.name`, `openEditNfsShare($el.dataset.path`, `table-responsive`},
 		},
 		{
+			file: "templates/partials/snapshots_list.html",
+			want: []string{`hx-swap="outerHTML"`, `hx-post="/ui/actions/zfs/snapshots/rollback"`, `data-snapshot="{{$s.Name}}"`, `type="button"`},
+			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`},
+		},
+		{
+			file: "templates/modals/create_snap.html",
+			want: []string{`hx-swap="outerHTML"`, `nasTriggerHasError`},
+			notWant: []string{`hx-swap="morph"`},
+		},
+		{
+			file: "templates/modals/clone_snap.html",
+			want: []string{`hx-swap="outerHTML"`, `nasTriggerHasError`},
+			notWant: []string{`hx-swap="morph"`},
+		},
+		{
+			file: "templates/layout.html",
+			want: []string{`snapSearch:`, `matchesSnap(`},
+		},
+		{
 			file: "templates/partials/system_metrics.html",
 			want: []string{`currentTab === 'dashboard' && !document.hidden`, `expandedDisks[$el.dataset.disk] = true`, `table-responsive`},
 			notWant: []string{`expandedDisk =`},
