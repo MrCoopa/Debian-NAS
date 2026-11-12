@@ -4,7 +4,7 @@
       <h3>Create New Zvol (Block Device)</h3>
       <button type="button" class="modal-close" @click="openCreateZvolModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/zfs/zvols" hx-target="#datasets-container" hx-swap="morph" @htmx:after-request="if (event.target === $el && event.detail.successful) openCreateZvolModal = false">
+    <form hx-post="/ui/actions/zfs/zvols" hx-target="#datasets-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el) { const res = window.nasTriggerHasError ? window.nasTriggerHasError(event.detail.xhr) : { hasError: false }; if (event.detail.successful && !res.hasError) { openCreateZvolModal = false; $el.reset(); } }">
       <div class="form-group">
         <label>Parent Pool / Dataset</label>
         <select name="parent" required

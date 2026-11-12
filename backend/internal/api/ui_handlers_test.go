@@ -534,8 +534,11 @@ func TestUI_DatasetRowActionsAndDestroyLifecycle(t *testing.T) {
 	if strings.Contains(dsBody, "display: none;\n      gap: 0.35rem;") {
 		t.Fatalf("expected row actions to be always visible rather than hover-hidden")
 	}
-	if !strings.Contains(dsBody, `openDangerConfirm('dataset', 'DATA/Any12')`) {
+	if !strings.Contains(dsBody, `data-dataset="DATA/Any12"`) || !strings.Contains(dsBody, `openDangerConfirm('dataset', $el.dataset.dataset)`) {
 		t.Fatalf("expected Destroy action for child dataset DATA/Any12, got: %s", dsBody)
+	}
+	if !strings.Contains(dsBody, `data-dataset="DATA"`) || !strings.Contains(dsBody, `openCreateDataset($el.dataset.dataset)`) {
+		t.Fatalf("expected + Dataset action using dataset attribute for DATA")
 	}
 
 	// 3. Destroy dataset via danger confirm endpoint

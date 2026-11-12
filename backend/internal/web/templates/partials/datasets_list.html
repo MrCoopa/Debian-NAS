@@ -1,26 +1,6 @@
-<div id="datasets-container" hx-get="/ui/partials/datasets" hx-trigger="datasetUpdate from:body" hx-ext="morph" hx-swap="morph"
-     x-data="{
-       search: '',
-       collapsed: {},
-       selected: '{{if gt (len .Datasets) 0}}{{(index .Datasets 0).Name}}{{end}}',
-       toggle(name) {
-         this.collapsed[name] = !this.collapsed[name];
-       },
-       isCollapsed(name) {
-         return !!this.collapsed[name];
-       },
-       isVisible(name) {
-         if (this.search && this.search.trim().length > 0) {
-           return name.toLowerCase().includes(this.search.toLowerCase());
-         }
-         for (const key in this.collapsed) {
-           if (this.collapsed[key] && name.startsWith(key + '/')) {
-             return false;
-           }
-         }
-         return true;
-       }
-     }">
+<div id="datasets-container" hx-get="/ui/partials/datasets" hx-trigger="datasetUpdate from:body" hx-swap="outerHTML"
+     data-default-selected="{{if gt (len .Datasets) 0}}{{(index .Datasets 0).Name}}{{end}}"
+     x-init="if (!datasetSelected && $el.dataset.defaultSelected) datasetSelected = $el.dataset.defaultSelected">
 
   <style>
     .tn-datasets-wrapper {
@@ -211,8 +191,8 @@
         <circle cx="11" cy="11" r="8"></circle>
         <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
       </svg>
-      <input type="text" x-model="search" placeholder="Search" class="tn-search-input" />
-      <button type="button" x-show="search.length > 0" @click="search = ''" class="tn-search-clear" style="display: none;" :style="search.length > 0 ? 'display: block;' : 'display: none;'">&times;</button>
+      <input type="text" x-model="datasetSearch" placeholder="Search" class="tn-search-input" />
+      <button type="button" x-show="datasetSearch.length > 0" @click="datasetSearch = ''" class="tn-search-clear" style="display: none;" :style="datasetSearch.length > 0 ? 'display: block;' : 'display: none;'">&times;</button>
     </div>
 
     <!-- Datasets Tree Table -->
@@ -246,17 +226,18 @@
               {{$usage := datasetUsage $ds.Name $ds.Mountpoint $smbShares $nfsExports $allDatasets}}
 
               <tr id="row-ds-{{domId $ds.Name}}" class="tn-tree-row"
-                  x-show="isVisible('{{$ds.Name}}')"
-                  @click="selected = '{{$ds.Name}}'"
-                  :class="{ 'is-selected': selected === '{{$ds.Name}}' }"
-                  :style="selected === '{{$ds.Name}}' ? 'border-left: 3px solid #008be5;' : 'border-left: 3px solid transparent;'">
+                  data-dataset="{{$ds.Name}}"
+                  x-show="isDatasetVisible($el.dataset.dataset)"
+                  @click="datasetSelected = $el.dataset.dataset"
+                  :class="{ 'is-selected': datasetSelected === $el.dataset.dataset }"
+                  :style="datasetSelected === $el.dataset.dataset ? 'border-left: 3px solid #008be5;' : 'border-left: 3px solid transparent;'">
                 
                 <!-- Dataset Column with Hierarchical Indentation, Expand/Collapse & Icons -->
                 <td style="padding-left: calc(0.75rem + {{mul $depth 28}}px);">
                   <div style="display: flex; align-items: center;">
                     {{if $hasChildren}}
-                      <button type="button" @click.stop="toggle('{{$ds.Name}}')" class="tn-tree-toggle" title="Toggle expand/collapse">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" class="tn-chevron" :class="{ 'collapsed': isCollapsed('{{$ds.Name}}') }">
+                      <button type="button" data-dataset="{{$ds.Name}}" @click.stop="toggleDataset($el.dataset.dataset)" class="tn-tree-toggle" title="Toggle expand/collapse">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" class="tn-chevron" data-dataset="{{$ds.Name}}" :class="{ 'collapsed': isDatasetCollapsed($el.dataset.dataset) }">
                           <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
                         </svg>
                       </button>
@@ -348,15 +329,23 @@
                 <td style="text-align: right;">
                   <div class="tn-row-actions">
                     {{if eq $ds.Type "filesystem"}}
-                      <button class="btn btn-secondary btn-sm" @click.stop="openCreateDataset('{{$ds.Name}}')">+ Dataset</button>
+                      <button type="button" class="btn btn-secondary btn-sm" data-dataset="{{$ds.Name}}" @click.stop="openCreateDataset($el.dataset.dataset)">+ Dataset</button>
                     {{end}}
-                    <button class="btn btn-secondary btn-sm" @click.stop="openDatasetProps('{{$ds.Name}}', '{{$ds.Compression}}', '{{$ds.RecordSize}}', '{{$ds.Quota}}', '{{$ds.Atime}}', '{{$ds.ReadOnly}}', '{{$ds.Type}}')">Properties</button>
-                    <button class="btn btn-secondary btn-sm" @click.stop="openCreateSnap('{{$ds.Name}}')">Snap</button>
+                    <button type="button" class="btn btn-secondary btn-sm"
+                            data-dataset="{{$ds.Name}}"
+                            data-compression="{{$ds.Compression}}"
+                            data-recordsize="{{$ds.RecordSize}}"
+                            data-quota="{{$ds.Quota}}"
+                            data-atime="{{$ds.Atime}}"
+                            data-readonly="{{$ds.ReadOnly}}"
+                            data-dstype="{{$ds.Type}}"
+                            @click.stop="openDatasetProps($el.dataset.dataset, $el.dataset.compression, $el.dataset.recordsize, $el.dataset.quota, $el.dataset.atime, $el.dataset.readonly, $el.dataset.dstype)">Properties</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-dataset="{{$ds.Name}}" @click.stop="openCreateSnap($el.dataset.dataset)">Snap</button>
                     {{if eq $ds.Type "filesystem"}}
-                      <button class="btn btn-secondary btn-sm" @click.stop="openCreateShare('{{baseName $ds.Name}}', '{{$ds.Mountpoint}}', 'smb')">Share</button>
+                      <button type="button" class="btn btn-secondary btn-sm" data-base-name="{{baseName $ds.Name}}" data-mountpoint="{{$ds.Mountpoint}}" @click.stop="openCreateShare($el.dataset.baseName, $el.dataset.mountpoint, 'smb')">Share</button>
                     {{end}}
                     {{if gt $depth 0}}
-                      <button class="btn btn-danger btn-sm" @click.stop="openDangerConfirm('dataset', '{{$ds.Name}}')">Destroy</button>
+                      <button type="button" class="btn btn-danger btn-sm" data-dataset="{{$ds.Name}}" @click.stop="openDangerConfirm('dataset', $el.dataset.dataset)">Destroy</button>
                     {{end}}
                   </div>
                 </td>

@@ -4,7 +4,7 @@
       <h3>Create New ZFS Dataset</h3>
       <button type="button" class="modal-close" @click="openCreateDatasetModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/zfs/datasets" hx-target="#datasets-container" hx-swap="morph" @htmx:after-request="if (event.target === $el && event.detail.successful) openCreateDatasetModal = false">
+    <form hx-post="/ui/actions/zfs/datasets" hx-target="#datasets-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el) { const res = window.nasTriggerHasError ? window.nasTriggerHasError(event.detail.xhr) : { hasError: false }; if (event.detail.successful && !res.hasError) { openCreateDatasetModal = false; $el.reset(); } }">
       <div class="form-group">
         <label>Parent Pool / Dataset</label>
         <div x-show="datasetParent">

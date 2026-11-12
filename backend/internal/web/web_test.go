@@ -278,8 +278,28 @@ func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
 			notWant: []string{`hx-swap="morph"`},
 		},
 		{
+			file:    "templates/partials/datasets_list.html",
+			want:    []string{`hx-swap="outerHTML"`, `type="button"`, `openCreateDataset($el.dataset.dataset)`, `datasetSearch`, `toggleDataset`, `isDatasetVisible`},
+			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`, `x-data=`},
+		},
+		{
+			file:    "templates/modals/create_dataset.html",
+			want:    []string{`hx-swap="outerHTML"`, `nasTriggerHasError`},
+			notWant: []string{`hx-swap="morph"`},
+		},
+		{
+			file:    "templates/modals/create_zvol.html",
+			want:    []string{`hx-swap="outerHTML"`, `nasTriggerHasError`},
+			notWant: []string{`hx-swap="morph"`},
+		},
+		{
+			file:    "templates/modals/dataset_props.html",
+			want:    []string{`hx-swap="outerHTML"`, `nasTriggerHasError`},
+			notWant: []string{`hx-swap="morph"`},
+		},
+		{
 			file: "templates/layout.html",
-			want: []string{`snapSearch:`, `matchesSnap(`},
+			want: []string{`snapSearch:`, `matchesSnap(`, `datasetSearch:`, `toggleDataset(`, `isDatasetVisible(`},
 		},
 		{
 			file: "templates/partials/system_metrics.html",

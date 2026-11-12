@@ -48,6 +48,26 @@
         diskAction: { type: 'replace', pool: '', targetDevice: '' },
         openCreateDatasetModal: false,
         datasetParent: '',
+        datasetSearch: '',
+        datasetCollapsed: {},
+        datasetSelected: '',
+        toggleDataset(name) {
+          this.datasetCollapsed[name] = !this.datasetCollapsed[name];
+        },
+        isDatasetCollapsed(name) {
+          return !!this.datasetCollapsed[name];
+        },
+        isDatasetVisible(name) {
+          if (this.datasetSearch && this.datasetSearch.trim().length > 0) {
+            return name.toLowerCase().includes(this.datasetSearch.toLowerCase());
+          }
+          for (const key in this.datasetCollapsed) {
+            if (this.datasetCollapsed[key] && name.startsWith(key + '/')) {
+              return false;
+            }
+          }
+          return true;
+        },
         openCreateZvolModal: false,
         openPoolPropsModal: false,
         poolProps: { pool: '', autotrim: 'off', autoexpand: 'on' },
@@ -295,7 +315,7 @@
     <aside class="omv-sidebar" :class="{ 'mobile-open': sidebarOpen, 'collapsed': sidebarCollapsed }">
       <nav class="omv-nav-list">
         <!-- 1. Dashboard -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'dashboard' }"
+        <button type="button" class="omv-nav-item" :class="{ 'active': currentTab === 'dashboard' }"
           @click="setTab('dashboard')">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path
@@ -305,7 +325,7 @@
         </button>
 
         <!-- 2. Disks -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'disks' }" @click="setTab('disks')">
+        <button type="button" class="omv-nav-item" :class="{ 'active': currentTab === 'disks' }" @click="setTab('disks')">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path
               d="M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm0 2v4h12V4H6zm12 16V10H6v10h12zm-3-3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z" />
@@ -315,7 +335,7 @@
         </button>
 
         <!-- 3. Storage -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'pools' }" @click="setTab('pools')">
+        <button type="button" class="omv-nav-item" :class="{ 'active': currentTab === 'pools' }" @click="setTab('pools')">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M2 20h20v-4H2v4zm2-3h2v2H4v-2zM2 4v4h20V4H2zm4 3H4V5h2v2zm-4 7h20v-4H2v4zm2-3h2v2H4v-2z" />
           </svg>
@@ -324,7 +344,7 @@
         </button>
 
         <!-- 4. Dataset -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'datasets' }" @click="setTab('datasets')">
+        <button type="button" class="omv-nav-item" :class="{ 'active': currentTab === 'datasets' }" @click="setTab('datasets')">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
           </svg>
@@ -333,7 +353,7 @@
         </button>
 
         <!-- 5. Shares -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'shares' }" @click="setTab('shares')">
+        <button type="button" class="omv-nav-item" :class="{ 'active': currentTab === 'shares' }" @click="setTab('shares')">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path
               d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-5 3c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2zm4 8h-8v-1c0-1.33 2.67-2 4-2s4 .67 4 2v1z" />
@@ -343,7 +363,7 @@
         </button>
 
         <!-- 6. User -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'users' }" @click="setTab('users')">
+        <button type="button" class="omv-nav-item" :class="{ 'active': currentTab === 'users' }" @click="setTab('users')">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path
               d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
@@ -353,7 +373,7 @@
         </button>
 
         <!-- 7. Data Protection -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'protection' }"
+        <button type="button" class="omv-nav-item" :class="{ 'active': currentTab === 'protection' }"
           @click="setTab('protection')">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path
@@ -364,7 +384,7 @@
         </button>
 
         <!-- 8. Services -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'services' }" @click="setTab('services')">
+        <button type="button" class="omv-nav-item" :class="{ 'active': currentTab === 'services' }" @click="setTab('services')">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path
               d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
@@ -374,7 +394,7 @@
         </button>
 
         <!-- 9. System -->
-        <button class="omv-nav-item" :class="{ 'active': currentTab === 'system' }" @click="setTab('system')">
+        <button type="button" class="omv-nav-item" :class="{ 'active': currentTab === 'system' }" @click="setTab('system')">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path
               d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z" />
@@ -445,8 +465,8 @@
                 Datasets</h1>
             </div>
             <div class="page-actions" style="display: flex; gap: 0.5rem;">
-              <button class="btn btn-secondary btn-sm" @click="openCreateZvolModal = true">+ Create Zvol</button>
-              <button class="btn btn-primary btn-sm" @click="openCreateDataset('')">+ Create Dataset</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click.stop="openCreateZvolModal = true">+ Create Zvol</button>
+              <button type="button" class="btn btn-primary btn-sm" @click.stop="openCreateDataset('')">+ Create Dataset</button>
             </div>
           </div>
 

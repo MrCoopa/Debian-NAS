@@ -4,7 +4,7 @@
       <h3>Dataset Properties: <span class="text-blue font-mono" x-text="datasetProps.name"></span></h3>
       <button type="button" class="modal-close" @click="openDatasetPropsModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/zfs/datasets/property" hx-target="#datasets-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openDatasetPropsModal = false">
+    <form hx-post="/ui/actions/zfs/datasets/property" hx-target="#datasets-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el) { const res = window.nasTriggerHasError ? window.nasTriggerHasError(event.detail.xhr) : { hasError: false }; if (event.detail.successful && !res.hasError) openDatasetPropsModal = false; }">
       <input type="hidden" name="dataset" :value="datasetProps.name">
       <input type="hidden" name="is_zvol" :value="datasetProps.isZvol ? 'true' : 'false'">
 
