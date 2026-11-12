@@ -2,6 +2,8 @@ package zfs
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -543,6 +545,175 @@ func TestExecuteZfsRollback_BusyMountsAndRemount(t *testing.T) {
 			t.Fatalf("events = %#v, want %#v", events, want)
 		}
 	})
+}
+
+func TestEnsureDatasetTreeMounted_ParentFirstAndCanmount(t *testing.T) {
+	var mountedCmds []string
+	collect := func(target string) []zfsMountEntry {
+		return []zfsMountEntry{
+			{name: "Docker/Share/deep", mountpoint: "/mnt/Docker/Share/deep", mounted: false, canmount: true},
+			{name: "Docker/Share", mountpoint: "/mnt/Docker/Share", mounted: true, canmount: true},
+			{name: "Docker/NoAuto", mountpoint: "/mnt/Docker/NoAuto", mounted: false, canmount: false},
+			{name: "Docker", mountpoint: "/mnt/Docker", mounted: false, canmount: true},
+		}
+	}
+	run := func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+		mountedCmds = append(mountedCmds, name+" "+strings.Join(args, " "))
+		return nil, nil
+	}
+
+	if err := ensureDatasetTreeMounted(run, collect, "Docker"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{
+		"zfs mount Docker",
+		"zfs mount Docker/Share/deep",
+	}
+	if !reflect.DeepEqual(mountedCmds, want) {
+		t.Fatalf("mountedCmds = %#v, want %#v", mountedCmds, want)
+	}
+
+	// Verify real mount error (e.g. non-empty directory) propagates cleanly while ignoring "already mounted".
+	errRun := func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+		if len(args) >= 2 && args[1] == "Docker" {
+			return []byte("filesystem 'Docker' is already mounted"), fmt.Errorf("exit status 1")
+		}
+		return []byte("cannot mount '/mnt/Docker/Share/deep': directory is not empty"), fmt.Errorf("exit status 1")
+	}
+	err := ensureDatasetTreeMounted(errRun, collect, "Docker")
+	if err == nil || !strings.Contains(err.Error(), "directory is not empty") {
+		t.Fatalf("expected non-empty directory mount error, got: %v", err)
+	}
+}
+
+func TestBuildRollbackPlan_RecursiveAndSkippedChildren(t *testing.T) {
+	allSnaps := []*Snapshot{
+		{Name: "Docker@s1", Dataset: "Docker"},
+		{Name: "Docker/Share@s1", Dataset: "Docker/Share"},
+		{Name: "Docker/Share/Sub@s1", Dataset: "Docker/Share/Sub"},
+	}
+	children := []string{"Docker/Share", "Docker/Share/Sub", "Docker/Extra"}
+
+	// Recursive plan rolls back deepest children first, then parent, and reports missing tag on Docker/Extra.
+	targetsRec, skippedRec := buildRollbackPlan("Docker", "s1", children, allSnaps, true)
+	wantTargetsRec := []string{"Docker/Share/Sub@s1", "Docker/Share@s1", "Docker@s1"}
+	if !reflect.DeepEqual(targetsRec, wantTargetsRec) {
+		t.Fatalf("recursive targets = %#v, want %#v", targetsRec, wantTargetsRec)
+	}
+	wantSkippedRec := []string{"Docker/Extra"}
+	if !reflect.DeepEqual(skippedRec, wantSkippedRec) {
+		t.Fatalf("recursive skipped = %#v, want %#v", skippedRec, wantSkippedRec)
+	}
+
+	// Non-recursive rolls back only target snapshot and reports all descendants as unchanged.
+	targetsSingle, skippedSingle := buildRollbackPlan("Docker", "s1", children, allSnaps, false)
+	if !reflect.DeepEqual(targetsSingle, []string{"Docker@s1"}) {
+		t.Fatalf("single targets = %#v, want [Docker@s1]", targetsSingle)
+	}
+	wantSkippedSingle := []string{"Docker/Extra", "Docker/Share", "Docker/Share/Sub"}
+	if !reflect.DeepEqual(skippedSingle, wantSkippedSingle) {
+		t.Fatalf("single skipped = %#v, want %#v", skippedSingle, wantSkippedSingle)
+	}
+}
+
+func TestParseSambaSharePaths_AndProcMountHolders(t *testing.T) {
+	smbConf := `
+[global]
+   workgroup = WORKGROUP
+
+[homes]
+   path = /home/%S
+
+[DockerShare]
+   path = /mnt/Docker/Share/
+   read only = no
+
+[Backup]
+   path = /mnt/DATA/Backup
+`
+	got := parseSambaSharePaths(smbConf)
+	want := map[string]string{
+		"DockerShare": "/mnt/Docker/Share",
+		"Backup":      "/mnt/DATA/Backup",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseSambaSharePaths = %#v, want %#v", got, want)
+	}
+
+	// Test fake /proc layout cross-platform via injected readlink reader.
+	procDir := t.TempDir()
+	for _, rel := range []string{"1/fd", "42/fd", "105/fd", "200/fd", "999/fd"} {
+		if err := os.MkdirAll(filepath.Join(procDir, rel), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(procDir, "105/fd/3"), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(procDir, "200/fd/7"), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	links := map[string]string{
+		filepath.Join(procDir, "42", "cwd"):       "/mnt/Docker/Share/subdir",
+		filepath.Join(procDir, "105", "fd", "3"):  "/mnt/Docker/Share/file.txt",
+		filepath.Join(procDir, "200", "fd", "7"):  "/var/log/syslog",
+		filepath.Join(procDir, "999", "cwd"):      "/mnt/Docker/Share",
+	}
+	pids := findMountHoldingPIDsWithReader(procDir, "/mnt/Docker/Share", 999, func(p string) (string, error) {
+		if v, ok := links[p]; ok {
+			return v, nil
+		}
+		return "", os.ErrNotExist
+	})
+	if !reflect.DeepEqual(pids, []int{42, 105}) {
+		t.Fatalf("findMountHoldingPIDsWithReader = %v, want [42 105]", pids)
+	}
+	if nonMnt := findMountHoldingPIDsWithReader(procDir, "/etc", 999, os.Readlink); nonMnt != nil {
+		t.Fatalf("expected non-/mnt path scan to refuse and return nil, got %v", nonMnt)
+	}
+}
+
+func TestRollbackSnapshotWithOptions_RecursiveMock(t *testing.T) {
+	m := NewManager(true)
+
+	// Create recursive snapshot on DATA (which has DATA/Fileshare, DATA/Fileshare/Milena, etc.)
+	if err := m.CreateSnapshotRecursive("DATA", "tree-snap", true); err != nil {
+		t.Fatalf("CreateSnapshotRecursive failed: %v", err)
+	}
+	if err := m.CreateSnapshotRecursive("DATA", "newer-tree-snap", true); err != nil {
+		t.Fatalf("second CreateSnapshotRecursive failed: %v", err)
+	}
+
+	snaps, err := m.ListSnapshots()
+	if err != nil {
+		t.Fatalf("ListSnapshots failed: %v", err)
+	}
+	var rootDescCount int
+	for _, s := range snaps {
+		if s.Name == "DATA@tree-snap" {
+			rootDescCount = s.DescendantCount
+		}
+	}
+	if rootDescCount == 0 {
+		t.Fatalf("expected DescendantCount > 0 on recursive DATA@tree-snap")
+	}
+
+	rolledBack, _, err := m.RollbackSnapshotWithOptions("DATA@tree-snap", true)
+	if err != nil {
+		t.Fatalf("recursive RollbackSnapshotWithOptions failed: %v", err)
+	}
+	if len(rolledBack) < 2 {
+		t.Fatalf("expected parent and child snapshots to roll back, got %v", rolledBack)
+	}
+
+	// Newer snapshots on both parent and child should be destroyed by recursive -r rollback.
+	afterSnaps, _ := m.ListSnapshots()
+	for _, s := range afterSnaps {
+		if strings.HasSuffix(s.Name, "@newer-tree-snap") {
+			t.Fatalf("expected newer snapshot %q to be destroyed after recursive rollback", s.Name)
+		}
+	}
 }
 
 

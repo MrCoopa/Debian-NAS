@@ -235,3 +235,47 @@ func TestSnapshotTasks_CronMatchingAndNamingSchema(t *testing.T) {
 	}
 }
 
+func TestSnapshotScheduler_EveryMinuteCronDoesNotSkipAdjacentMinutes(t *testing.T) {
+	m := NewManager(true)
+
+	task, err := m.SaveSnapshotTask(SnapshotTask{
+		Dataset:       "DATA",
+		Recursive:     false,
+		LifetimeValue: 1,
+		LifetimeUnit:  "day(s)",
+		NamingSchema:  "every-%Y-%m-%d_%H-%M-%S",
+		Schedule:      "* * * * *",
+		Enabled:       true,
+	})
+	if err != nil {
+		t.Fatalf("SaveSnapshotTask failed: %v", err)
+	}
+
+	// Simulate two scheduler ticks separated by only 4 seconds across a minute boundary (12:00:58 -> 12:01:02).
+	t1 := time.Date(2026, time.November, 12, 12, 0, 58, 0, time.UTC)
+	if ran := m.runDueSnapshotTasks(t1); ran == 0 {
+		t.Fatalf("expected task to execute on initial minute tick %v", t1)
+	}
+
+	// Simulate LastRun occurring at the end of minute 12:00.
+	m.mu.Lock()
+	m.snapTasks[task.ID].LastRun = t1
+	m.mu.Unlock()
+
+	// Same minute (12:00:59) should NOT double trigger.
+	tSameMin := time.Date(2026, time.November, 12, 12, 0, 59, 0, time.UTC)
+	if !sameCronMinute(t1, tSameMin) {
+		t.Fatalf("expected %v and %v to be in same cron minute", t1, tSameMin)
+	}
+
+	// Adjacent minute (12:01:02 — only 4 seconds later) MUST NOT be skipped!
+	tNextMin := time.Date(2026, time.November, 12, 12, 1, 2, 0, time.UTC)
+	if sameCronMinute(t1, tNextMin) {
+		t.Fatalf("expected %v and %v to be in different cron minutes", t1, tNextMin)
+	}
+	if ran := m.runDueSnapshotTasks(tNextMin); ran == 0 {
+		t.Fatalf("expected * * * * * task to execute on adjacent minute %v even <55s after %v", tNextMin, t1)
+	}
+}
+
+

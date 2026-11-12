@@ -736,24 +736,39 @@ func (m *Manager) pruneExpiredSnapshots(task *SnapshotTask, now time.Time) int {
 	return pruned
 }
 
+func sameCronMinute(a, b time.Time) bool {
+	if a.IsZero() {
+		return false
+	}
+	return a.In(b.Location()).Truncate(time.Minute).Equal(b.Truncate(time.Minute))
+}
+
+func (m *Manager) runDueSnapshotTasks(now time.Time) int {
+	tasks := m.ListSnapshotTasks()
+	executed := 0
+	for _, t := range tasks {
+		if !t.Enabled || strings.ToUpper(t.State) == "RUNNING" {
+			continue
+		}
+		// Avoid double trigger within the same calendar minute while never skipping adjacent minutes due to jitter.
+		if sameCronMinute(t.LastRun, now) {
+			continue
+		}
+		if matchesCronSchedule(t.Schedule, now) {
+			if _, _, err := m.RunSnapshotTask(t.ID); err == nil {
+				executed++
+			}
+		}
+	}
+	return executed
+}
+
 func (m *Manager) startSnapshotScheduler() {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
 	for now := range ticker.C {
-		tasks := m.ListSnapshotTasks()
-		for _, t := range tasks {
-			if !t.Enabled || strings.ToUpper(t.State) == "RUNNING" {
-				continue
-			}
-			// Avoid double trigger within the same minute.
-			if !t.LastRun.IsZero() && now.Sub(t.LastRun) < 55*time.Second {
-				continue
-			}
-			if matchesCronSchedule(t.Schedule, now) {
-				_, _, _ = m.RunSnapshotTask(t.ID)
-			}
-		}
+		m.runDueSnapshotTasks(now)
 	}
 }
 

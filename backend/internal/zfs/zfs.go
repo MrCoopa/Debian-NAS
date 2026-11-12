@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -132,6 +133,7 @@ type Snapshot struct {
 	UsedHuman       string    `json:"used_human"`
 	ReferencedBytes uint64    `json:"referenced_bytes"`
 	Referenced      string    `json:"referenced"`
+	DescendantCount int       `json:"descendant_count,omitempty"`
 }
 
 func syncPoolFields(p *Pool) {
@@ -1326,17 +1328,50 @@ func (m *Manager) DestroyDataset(name string) error {
 	return nil
 }
 
-// ListSnapshots returns all snapshots
-func (m *Manager) ListSnapshots() ([]*Snapshot, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+func annotateSnapshotDescendants(list []*Snapshot) {
+	byTag := make(map[string]map[string]bool)
+	for _, s := range list {
+		if s == nil {
+			continue
+		}
+		at := strings.IndexByte(s.Name, '@')
+		if at < 0 {
+			continue
+		}
+		tag := s.Name[at+1:]
+		if byTag[tag] == nil {
+			byTag[tag] = make(map[string]bool)
+		}
+		byTag[tag][s.Dataset] = true
+	}
+	for _, s := range list {
+		if s == nil {
+			continue
+		}
+		at := strings.IndexByte(s.Name, '@')
+		if at < 0 {
+			continue
+		}
+		tag := s.Name[at+1:]
+		prefix := s.Dataset + "/"
+		count := 0
+		for ds := range byTag[tag] {
+			if strings.HasPrefix(ds, prefix) {
+				count++
+			}
+		}
+		s.DescendantCount = count
+	}
+}
 
+func (m *Manager) listSnapshotsLocked() ([]*Snapshot, error) {
 	if m.mockMode {
 		list := make([]*Snapshot, len(m.mockSnaps))
 		copy(list, m.mockSnaps)
 		sort.Slice(list, func(i, j int) bool {
 			return strings.ToLower(list[i].Name) < strings.ToLower(list[j].Name)
 		})
+		annotateSnapshotDescendants(list)
 		return list, nil
 	}
 
@@ -1378,7 +1413,15 @@ func (m *Manager) ListSnapshots() ([]*Snapshot, error) {
 	sort.Slice(list, func(i, j int) bool {
 		return list[i].Name < list[j].Name
 	})
+	annotateSnapshotDescendants(list)
 	return list, nil
+}
+
+// ListSnapshots returns all snapshots
+func (m *Manager) ListSnapshots() ([]*Snapshot, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.listSnapshotsLocked()
 }
 
 // CreateSnapshot creates a manual snapshot on a single dataset or Zvol.
@@ -1462,62 +1505,163 @@ func (m *Manager) CreateSnapshotRecursive(dataset, snapName string, recursive bo
 
 // RollbackSnapshot rolls back a dataset to a snapshot (destroying newer snapshots with -r).
 func (m *Manager) RollbackSnapshot(snapshot string) error {
+	_, _, err := m.RollbackSnapshotWithOptions(snapshot, false)
+	return err
+}
+
+func (m *Manager) rollbackMockSnapshotLocked(snapshot string) error {
+	parts := strings.Split(snapshot, "@")
+	targetIdx := -1
+	var targetSnap *Snapshot
+	for i, s := range m.mockSnaps {
+		if s.Name == snapshot {
+			targetIdx = i
+			targetSnap = s
+			break
+		}
+	}
+	if targetIdx == -1 || targetSnap == nil {
+		return fmt.Errorf("snapshot '%s' does not exist", snapshot)
+	}
+
+	// Collect newer snapshots of the same dataset to be destroyed (mirroring zfs rollback -r)
+	dsName := parts[0]
+	newerSnaps := make(map[string]bool)
+	for i, s := range m.mockSnaps {
+		if s.Dataset == dsName && (s.Created.After(targetSnap.Created) || (s.Created.Equal(targetSnap.Created) && i > targetIdx)) {
+			newerSnaps[s.Name] = true
+		}
+	}
+	// Prevent rollback if a newer snapshot has dependent clones
+	for _, ds := range m.mockDS {
+		if newerSnaps[ds.Origin] {
+			return fmt.Errorf("cannot rollback to '%s': newer snapshot '%s' has dependent clone '%s'", snapshot, ds.Origin, ds.Name)
+		}
+	}
+	if len(newerSnaps) > 0 {
+		var kept []*Snapshot
+		for _, s := range m.mockSnaps {
+			if !newerSnaps[s.Name] {
+				kept = append(kept, s)
+			}
+		}
+		m.mockSnaps = kept
+		if ds, ok := m.mockDS[dsName]; ok {
+			ds.Snapshots = max(0, ds.Snapshots-len(newerSnaps))
+		}
+	}
+	return nil
+}
+
+// buildRollbackPlan computes which snapshots to roll back (deepest-child-first when recursive)
+// and which descendant filesystems exist that will not be rolled back.
+func buildRollbackPlan(dsName, snapTag string, childFilesystems []string, allSnaps []*Snapshot, recursive bool) (targets []string, skippedChildren []string) {
+	snapSet := make(map[string]bool, len(allSnaps))
+	for _, s := range allSnaps {
+		if s != nil {
+			snapSet[s.Name] = true
+		}
+	}
+
+	prefix := dsName + "/"
+	var descendants []string
+	seen := make(map[string]bool)
+	for _, child := range childFilesystems {
+		child = strings.TrimSpace(child)
+		if strings.HasPrefix(child, prefix) && !seen[child] {
+			seen[child] = true
+			descendants = append(descendants, child)
+		}
+	}
+	// Sort deepest dataset paths first so nested mounts unmount/rollback before parents.
+	sort.Slice(descendants, func(i, j int) bool {
+		di := strings.Count(descendants[i], "/")
+		dj := strings.Count(descendants[j], "/")
+		if di != dj {
+			return di > dj
+		}
+		return descendants[i] > descendants[j]
+	})
+
+	if recursive {
+		for _, child := range descendants {
+			candidate := child + "@" + snapTag
+			if snapSet[candidate] {
+				targets = append(targets, candidate)
+			} else {
+				skippedChildren = append(skippedChildren, child)
+			}
+		}
+	} else {
+		skippedChildren = append(skippedChildren, descendants...)
+	}
+
+	targets = append(targets, dsName+"@"+snapTag)
+	// Restore readable ascending order for skippedChildren reporting.
+	sort.Strings(skippedChildren)
+	return targets, skippedChildren
+}
+
+// RollbackSnapshotWithOptions rolls back snapshot (and matching descendant snapshots when recursive=true),
+// ensures target and child filesystems remain mounted afterwards, and returns rolled-back snapshots plus
+// any child filesystems that were not rolled back.
+func (m *Manager) RollbackSnapshotWithOptions(snapshot string, recursive bool) ([]string, []string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	snapshot = strings.TrimSpace(snapshot)
 	parts := strings.Split(snapshot, "@")
 	if len(parts) != 2 {
-		return fmt.Errorf("invalid snapshot target '%s': must contain exactly one '@'", snapshot)
+		return nil, nil, fmt.Errorf("invalid snapshot target '%s': must contain exactly one '@'", snapshot)
 	}
-	if err := validate.SnapshotName(parts[0], parts[1]); err != nil {
-		return fmt.Errorf("invalid snapshot name: %w", err)
+	dsName, snapTag := parts[0], parts[1]
+	if err := validate.SnapshotName(dsName, snapTag); err != nil {
+		return nil, nil, fmt.Errorf("invalid snapshot name: %w", err)
 	}
+
+	snaps, _ := m.listSnapshotsLocked()
+	var childFilesystems []string
+	if m.mockMode {
+		for name, ds := range m.mockDS {
+			if ds != nil && ds.Type != "volume" && strings.HasPrefix(name, dsName+"/") {
+				childFilesystems = append(childFilesystems, name)
+			}
+		}
+	} else {
+		for _, entry := range collectTargetMounts(dsName) {
+			if strings.HasPrefix(entry.name, dsName+"/") {
+				childFilesystems = append(childFilesystems, entry.name)
+			}
+		}
+	}
+
+	targets, skippedChildren := buildRollbackPlan(dsName, snapTag, childFilesystems, snaps, recursive)
 
 	if m.mockMode {
-		targetIdx := -1
-		var targetSnap *Snapshot
-		for i, s := range m.mockSnaps {
-			if s.Name == snapshot {
-				targetIdx = i
-				targetSnap = s
-				break
+		var rolledBack []string
+		for _, targetSnap := range targets {
+			if err := m.rollbackMockSnapshotLocked(targetSnap); err != nil {
+				return rolledBack, skippedChildren, err
 			}
+			rolledBack = append(rolledBack, targetSnap)
 		}
-		if targetIdx == -1 || targetSnap == nil {
-			return fmt.Errorf("snapshot '%s' does not exist", snapshot)
-		}
-
-		// Collect newer snapshots of the same dataset to be destroyed (mirroring zfs rollback -r)
-		dsName := parts[0]
-		newerSnaps := make(map[string]bool)
-		for i, s := range m.mockSnaps {
-			if s.Dataset == dsName && (s.Created.After(targetSnap.Created) || (s.Created.Equal(targetSnap.Created) && i > targetIdx)) {
-				newerSnaps[s.Name] = true
-			}
-		}
-		// Prevent rollback if a newer snapshot has dependent clones
-		for _, ds := range m.mockDS {
-			if newerSnaps[ds.Origin] {
-				return fmt.Errorf("cannot rollback to '%s': newer snapshot '%s' has dependent clone '%s'", snapshot, ds.Origin, ds.Name)
-			}
-		}
-		if len(newerSnaps) > 0 {
-			var kept []*Snapshot
-			for _, s := range m.mockSnaps {
-				if !newerSnaps[s.Name] {
-					kept = append(kept, s)
-				}
-			}
-			m.mockSnaps = kept
-			if ds, ok := m.mockDS[dsName]; ok {
-				ds.Snapshots = max(0, ds.Snapshots-len(newerSnaps))
-			}
-		}
-		return nil
+		return rolledBack, skippedChildren, nil
 	}
 
-	return executeZfsRollback(m.defaultRollbackRunner(), snapshot, parts[0])
+	runner := m.defaultRollbackRunner()
+	var rolledBack []string
+	for _, targetSnap := range targets {
+		targetParts := strings.SplitN(targetSnap, "@", 2)
+		if err := executeZfsRollback(runner, targetSnap, targetParts[0]); err != nil {
+			_ = ensureDatasetTreeMounted(runner.run, runner.collectMounts, dsName)
+			return rolledBack, skippedChildren, err
+		}
+		rolledBack = append(rolledBack, targetSnap)
+	}
+	if err := ensureDatasetTreeMounted(runner.run, runner.collectMounts, dsName); err != nil {
+		return rolledBack, skippedChildren, err
+	}
+	return rolledBack, skippedChildren, nil
 }
 
 type rollbackRunner struct {
@@ -2069,14 +2213,10 @@ type zfsMountEntry struct {
 	name       string
 	mountpoint string
 	mounted    bool
+	canmount   bool
 }
 
-// collectTargetMounts lists ZFS filesystems under target sorted deepest-mountpoint-first.
-func collectTargetMounts(target string) []zfsMountEntry {
-	out, err := runCommandOutput(fastZfsTimeout, "zfs", "list", "-H", "-t", "filesystem", "-r", "-o", "name,mountpoint,mounted", target)
-	if err != nil {
-		return nil
-	}
+func parseZfsMountEntries(out []byte) []zfsMountEntry {
 	var mounts []zfsMountEntry
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		fields := strings.Split(strings.TrimSpace(line), "\t")
@@ -2086,6 +2226,10 @@ func collectTargetMounts(target string) []zfsMountEntry {
 		dsName := strings.TrimSpace(fields[0])
 		mp := strings.TrimRight(strings.TrimSpace(fields[1]), "/")
 		mounted := strings.TrimSpace(fields[2]) == "yes"
+		canmount := true
+		if len(fields) >= 4 && strings.TrimSpace(fields[3]) != "" {
+			canmount = strings.TrimSpace(fields[3]) == "on"
+		}
 		if !strings.HasPrefix(mp, "/") || mp == "" {
 			continue
 		}
@@ -2093,6 +2237,7 @@ func collectTargetMounts(target string) []zfsMountEntry {
 			name:       dsName,
 			mountpoint: mp,
 			mounted:    mounted,
+			canmount:   canmount,
 		})
 	}
 	sort.Slice(mounts, func(i, j int) bool {
@@ -2104,14 +2249,253 @@ func collectTargetMounts(target string) []zfsMountEntry {
 	return mounts
 }
 
+// collectTargetMounts lists ZFS filesystems under target (or all filesystems when target == "") sorted deepest-mountpoint-first.
+func collectTargetMounts(target string) []zfsMountEntry {
+	args := []string{"list", "-H", "-t", "filesystem"}
+	if strings.TrimSpace(target) != "" {
+		args = append(args, "-r")
+	}
+	args = append(args, "-o", "name,mountpoint,mounted,canmount")
+	if strings.TrimSpace(target) != "" {
+		args = append(args, target)
+	}
+	out, err := runCommandOutput(fastZfsTimeout, "zfs", args...)
+	if err != nil {
+		return nil
+	}
+	return parseZfsMountEntries(out)
+}
+
+// CollectMountpointsForDataset returns all filesystem mountpoints (plus default /mnt/<ds> fallback) for a dataset tree.
+func (m *Manager) CollectMountpointsForDataset(dsName string) []string {
+	dsName = strings.TrimSpace(dsName)
+	if dsName == "" {
+		return nil
+	}
+	m.mu.RLock()
+	mockMode := m.mockMode
+	var mockMPs []string
+	if mockMode {
+		for name, ds := range m.mockDS {
+			if ds != nil && ds.Type != "volume" && (name == dsName || strings.HasPrefix(name, dsName+"/")) {
+				mp := strings.TrimRight(strings.TrimSpace(ds.Mountpoint), "/")
+				if strings.HasPrefix(mp, "/") {
+					mockMPs = append(mockMPs, mp)
+				}
+			}
+		}
+	}
+	m.mu.RUnlock()
+
+	if mockMode {
+		if len(mockMPs) == 0 {
+			return []string{"/mnt/" + dsName}
+		}
+		sort.Strings(mockMPs)
+		return mockMPs
+	}
+
+	entries := collectTargetMounts(dsName)
+	mps := make([]string, 0, len(entries)+1)
+	seen := make(map[string]bool)
+	for _, e := range entries {
+		if e.mountpoint != "" && !seen[e.mountpoint] {
+			seen[e.mountpoint] = true
+			mps = append(mps, e.mountpoint)
+		}
+	}
+	if len(mps) == 0 {
+		mps = append(mps, "/mnt/"+dsName)
+	}
+	return mps
+}
+
+// ensureDatasetTreeMounted mounts any unmounted canmount=on filesystems under target (or all when target == "") parent-first.
+func ensureDatasetTreeMounted(run func(time.Duration, string, ...string) ([]byte, error), collect func(string) []zfsMountEntry, target string) error {
+	entries := collect(target)
+	var firstErr error
+	// entries are sorted deepest-first; walk in reverse so parents mount before children.
+	for i := len(entries) - 1; i >= 0; i-- {
+		entry := entries[i]
+		if entry.mounted || !entry.canmount || !strings.HasPrefix(entry.mountpoint, "/") {
+			continue
+		}
+		out, err := run(defaultZfsTimeout, "zfs", "mount", entry.name)
+		if err != nil {
+			lowerOut := strings.ToLower(string(out))
+			if strings.Contains(lowerOut, "already mounted") {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = fmt.Errorf("failed to verify/mount ZFS dataset '%s' at '%s': %v (%s)", entry.name, entry.mountpoint, err, strings.TrimSpace(string(out)))
+			}
+		}
+	}
+	return firstErr
+}
+
+// EnsurePathMounted verifies any ZFS filesystem covering targetPath is actually mounted before share creation writes directories under /mnt.
+func (m *Manager) EnsurePathMounted(targetPath string) error {
+	cleanTarget := strings.TrimRight(filepath.ToSlash(filepath.Clean(strings.TrimSpace(targetPath))), "/")
+	if cleanTarget == "" || !strings.HasPrefix(cleanTarget, "/mnt/") || m.mockMode {
+		return nil
+	}
+	entries := collectTargetMounts("")
+	// Filter to entries whose mountpoint is an ancestor of (or equal to) cleanTarget, keeping order parent-first.
+	var matching []zfsMountEntry
+	for i := len(entries) - 1; i >= 0; i-- {
+		e := entries[i]
+		if cleanTarget == e.mountpoint || strings.HasPrefix(cleanTarget, e.mountpoint+"/") {
+			matching = append(matching, e)
+		}
+	}
+	for _, entry := range matching {
+		if entry.mounted || !entry.canmount {
+			continue
+		}
+		out, err := runCommand(defaultZfsTimeout, "zfs", "mount", entry.name)
+		if err != nil {
+			lowerOut := strings.ToLower(string(out))
+			if strings.Contains(lowerOut, "already mounted") {
+				continue
+			}
+			return fmt.Errorf("ZFS dataset '%s' is not mounted at '%s': %v (%s)", entry.name, entry.mountpoint, err, strings.TrimSpace(string(out)))
+		}
+	}
+	return nil
+}
+
+func parseSambaSharePaths(content string) map[string]string {
+	result := make(map[string]string)
+	currentSection := ""
+	for _, rawLine := range strings.Split(content, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			sec := strings.TrimSpace(line[1 : len(line)-1])
+			lowerSec := strings.ToLower(sec)
+			if lowerSec == "global" || lowerSec == "homes" || lowerSec == "printers" || lowerSec == "print$" {
+				currentSection = ""
+			} else {
+				currentSection = sec
+			}
+			continue
+		}
+		if currentSection == "" {
+			continue
+		}
+		if eqIdx := strings.IndexByte(line, '='); eqIdx > 0 {
+			key := strings.ToLower(strings.TrimSpace(line[:eqIdx]))
+			if key == "path" {
+				val := strings.TrimRight(filepath.ToSlash(filepath.Clean(strings.TrimSpace(line[eqIdx+1:]))), "/")
+				if strings.HasPrefix(val, "/") {
+					result[currentSection] = val
+				}
+			}
+		}
+	}
+	return result
+}
+
+func closeSambaSharesForMountpoints(run func(time.Duration, string, ...string) ([]byte, error), entries []zfsMountEntry) {
+	if len(entries) == 0 {
+		return
+	}
+	sharePaths := make(map[string]string)
+	var configFiles []string
+	if _, err := os.Stat("/etc/samba/nas-shares.conf"); err == nil {
+		configFiles = append(configFiles, "/etc/samba/nas-shares.conf")
+	}
+	if confMatches, err := filepath.Glob("/etc/samba/conf.d/*.conf"); err == nil {
+		configFiles = append(configFiles, confMatches...)
+	}
+	for _, cfg := range configFiles {
+		if data, err := os.ReadFile(cfg); err == nil {
+			for name, p := range parseSambaSharePaths(string(data)) {
+				sharePaths[name] = p
+			}
+		}
+	}
+	for shareName, sp := range sharePaths {
+		for _, entry := range entries {
+			mp := entry.mountpoint
+			if sp == mp || strings.HasPrefix(sp, mp+"/") || strings.HasPrefix(mp, sp+"/") {
+				_, _ = run(fastZfsTimeout, "smbcontrol", "smbd", "close-share", shareName)
+				_, _ = run(fastZfsTimeout, "smbcontrol", "all", "close-share", shareName)
+				break
+			}
+		}
+	}
+}
+
+func pathInsideMount(target, mountpoint string) bool {
+	if target == "" || mountpoint == "" {
+		return false
+	}
+	cleanTarget := strings.TrimRight(target, "/")
+	cleanMP := strings.TrimRight(mountpoint, "/")
+	return cleanTarget == cleanMP || strings.HasPrefix(cleanTarget, cleanMP+"/")
+}
+
+func findMountHoldingPIDsWithReader(procRoot, mountpoint string, selfPid int, readlink func(string) (string, error)) []int {
+	if !strings.HasPrefix(mountpoint, "/mnt/") || len(mountpoint) <= len("/mnt/") {
+		return nil
+	}
+	procEntries, err := os.ReadDir(procRoot)
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, pe := range procEntries {
+		if !pe.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(pe.Name())
+		if err != nil || pid <= 2 || pid == selfPid {
+			continue
+		}
+		matched := false
+		if cwd, err := readlink(filepath.Join(procRoot, pe.Name(), "cwd")); err == nil && pathInsideMount(cwd, mountpoint) {
+			matched = true
+		}
+		if !matched {
+			fdDir := filepath.Join(procRoot, pe.Name(), "fd")
+			if fdEntries, err := os.ReadDir(fdDir); err == nil {
+				for _, fe := range fdEntries {
+					if target, err := readlink(filepath.Join(fdDir, fe.Name())); err == nil && pathInsideMount(target, mountpoint) {
+						matched = true
+						break
+					}
+				}
+			}
+		}
+		if matched {
+			pids = append(pids, pid)
+		}
+	}
+	sort.Ints(pids)
+	return pids
+}
+
+func findMountHoldingPIDs(mountpoint string) []int {
+	return findMountHoldingPIDsWithReader("/proc", mountpoint, os.Getpid(), os.Readlink)
+}
+
 // releaseMountsForTarget unmounts target and any descendant ZFS filesystems deepest-first.
-// When forceKill is true, processes holding open handles inside /mnt/ mountpoints are killed
-// with fuser and umount -f / umount -lf fallbacks are attempted so pool/dataset removal succeeds.
+// When forceKill is true, active Samba shares on those mountpoints are closed and processes
+// holding open handles inside /mnt/ mountpoints are terminated (via fuser and /proc inspection)
+// before retrying zfs unmount -f, falling back to umount -f / umount -lf only as last resort.
 func (m *Manager) releaseMountsForTarget(target string, forceKill bool) {
 	mounts := collectTargetMounts(target)
 	if len(mounts) == 0 {
 		_, _ = runCommand(fastZfsTimeout, "zfs", "unmount", "-f", target)
 		return
+	}
+
+	if forceKill {
+		closeSambaSharesForMountpoints(runCommand, mounts)
 	}
 
 	fuserPath, fuserErr := exec.LookPath("fuser")
@@ -2128,13 +2512,20 @@ func (m *Manager) releaseMountsForTarget(target string, forceKill bool) {
 			continue
 		}
 
-		// Strictly limit fuser -km to ZFS mountpoints under /mnt/ to never touch system paths.
-		if fuserErr == nil && fuserPath != "" && strings.HasPrefix(entry.mountpoint, "/mnt/") && len(entry.mountpoint) > len("/mnt/") {
-			_, _ = runCommand(fastZfsTimeout, fuserPath, "-km", entry.mountpoint)
+		// Strictly limit fuser / /proc process termination to ZFS mountpoints under /mnt/ to never touch system paths.
+		if strings.HasPrefix(entry.mountpoint, "/mnt/") && len(entry.mountpoint) > len("/mnt/") {
+			if fuserErr == nil && fuserPath != "" {
+				_, _ = runCommand(fastZfsTimeout, fuserPath, "-km", entry.mountpoint)
+			}
 		}
 		if _, err := runCommand(fastZfsTimeout, "zfs", "unmount", "-f", entry.name); err != nil {
-			if _, umErr := runCommand(fastZfsTimeout, "umount", "-f", entry.mountpoint); umErr != nil {
-				_, _ = runCommand(fastZfsTimeout, "umount", "-lf", entry.mountpoint)
+			if strings.HasPrefix(entry.mountpoint, "/mnt/") && len(entry.mountpoint) > len("/mnt/") {
+				terminateMountHolders(entry.mountpoint)
+			}
+			if _, retryErr := runCommand(fastZfsTimeout, "zfs", "unmount", "-f", entry.name); retryErr != nil {
+				if _, umErr := runCommand(fastZfsTimeout, "umount", "-f", entry.mountpoint); umErr != nil {
+					_, _ = runCommand(fastZfsTimeout, "umount", "-lf", entry.mountpoint)
+				}
 			}
 		}
 	}
@@ -2383,6 +2774,7 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
 
 	out, err := runCommand(defaultZfsTimeout, "zpool", args...)
 	if err != nil {
+		imported := false
 		// Fallback with -d /dev/disk/by-id and then -d /dev
 		for _, devDir := range []string{"/dev/disk/by-id", "/dev"} {
 			dirArgs := []string{"import", "-d", devDir}
@@ -2394,13 +2786,25 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
 				dirArgs = append(dirArgs, newName)
 			}
 			if out2, err2 := runCommand(defaultZfsTimeout, "zpool", dirArgs...); err2 == nil {
-				return nil
+				imported = true
+				break
 			} else {
 				out = out2
 				err = err2
 			}
 		}
-		return fmt.Errorf("zpool import failed: %v (%s)", err, strings.TrimSpace(string(out)))
+		if !imported {
+			return fmt.Errorf("zpool import failed: %v (%s)", err, strings.TrimSpace(string(out)))
+		}
+	}
+	targetPool := strings.TrimSpace(newName)
+	if targetPool == "" && validate.PoolName(nameOrID) == nil {
+		targetPool = nameOrID
+	}
+	if targetPool != "" {
+		_ = ensureDatasetTreeMounted(runCommand, collectTargetMounts, targetPool)
+	} else {
+		_, _ = runCommand(defaultZfsTimeout, "zfs", "mount", "-a")
 	}
 	return nil
 }

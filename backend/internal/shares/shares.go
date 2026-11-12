@@ -64,6 +64,7 @@ type Manager struct {
 	smbShares    map[string]*SmbShare
 	nfsExports   map[string]*NfsExport
 	users        map[string]StorageUser
+	runCmd       func(timeout time.Duration, name string, args ...string) ([]byte, error)
 }
 
 func NewManager(mockMode bool, sambaConfDir, nfsConfFile string) *Manager {
@@ -74,6 +75,7 @@ func NewManager(mockMode bool, sambaConfDir, nfsConfFile string) *Manager {
 		smbShares:    make(map[string]*SmbShare),
 		nfsExports:   make(map[string]*NfsExport),
 		users:        make(map[string]StorageUser),
+		runCmd:       runCmdWithTimeout,
 	}
 
 	if m.mockMode {
@@ -384,6 +386,151 @@ func (m *Manager) syncSambaMasterConfig() error {
 	return nil
 }
 
+func (m *Manager) execCmd(timeout time.Duration, name string, args ...string) ([]byte, error) {
+	if m.runCmd != nil {
+		return m.runCmd(timeout, name, args...)
+	}
+	return runCmdWithTimeout(timeout, name, args...)
+}
+
+// PathOverlapsMount reports whether a share/export path sits on, beneath, or encompasses a dataset mountpoint.
+func PathOverlapsMount(sharePath, mountpoint string) bool {
+	sp := strings.TrimRight(filepath.ToSlash(filepath.Clean(strings.TrimSpace(sharePath))), "/")
+	mp := strings.TrimRight(filepath.ToSlash(filepath.Clean(strings.TrimSpace(mountpoint))), "/")
+	if sp == "" || mp == "" || !strings.HasPrefix(sp, "/") || !strings.HasPrefix(mp, "/") {
+		return false
+	}
+	return sp == mp || strings.HasPrefix(sp, mp+"/") || strings.HasPrefix(mp, sp+"/")
+}
+
+// SharesMatchingMountpoints returns SMB share names (sorted) and whether any NFS export overlaps the given mountpoints.
+func (m *Manager) SharesMatchingMountpoints(mountpoints []string) ([]string, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var smbNames []string
+	for name, s := range m.smbShares {
+		if s == nil {
+			continue
+		}
+		for _, mp := range mountpoints {
+			if PathOverlapsMount(s.Path, mp) {
+				smbNames = append(smbNames, name)
+				break
+			}
+		}
+	}
+	sort.Strings(smbNames)
+
+	hasNfs := false
+	for expPath := range m.nfsExports {
+		for _, mp := range mountpoints {
+			if PathOverlapsMount(expPath, mp) {
+				hasNfs = true
+				break
+			}
+		}
+		if hasNfs {
+			break
+		}
+	}
+	return smbNames, hasNfs
+}
+
+// ReleaseShareConnections cleanly closes active client sessions for the listed SMB shares so ZFS can unmount without lazy-detach.
+func (m *Manager) ReleaseShareConnections(smbNames []string) {
+	if m.mockMode || len(smbNames) == 0 {
+		return
+	}
+	m.closeSambaShares(smbNames)
+}
+
+func (m *Manager) closeSambaShares(smbNames []string) {
+	seen := make(map[string]bool, len(smbNames))
+	for _, rawName := range smbNames {
+		name := strings.TrimSpace(rawName)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		// Try smbd first, then all smb daemons in case worker routing needs broadcast.
+		_, _ = m.execCmd(5*time.Second, "smbcontrol", "smbd", "close-share", name)
+		_, _ = m.execCmd(5*time.Second, "smbcontrol", "all", "close-share", name)
+	}
+}
+
+func (m *Manager) applySmbDirPermissions(s *SmbShare, recursive bool) error {
+	if s == nil {
+		return nil
+	}
+	if err := os.MkdirAll(s.Path, 0775); err != nil {
+		return fmt.Errorf("failed to create share directory %s: %w", s.Path, err)
+	}
+
+	// Ensure parent mount dirs under /mnt/ have traverse (+x) permission so Samba users can enter the share.
+	for p := filepath.Dir(s.Path); strings.HasPrefix(filepath.ToSlash(p), "/mnt/"); p = filepath.Dir(p) {
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			if info.Mode().Perm()&0001 == 0 {
+				_, _ = m.execCmd(5*time.Second, "chmod", "a+x", p)
+			}
+		}
+	}
+
+	_, _ = m.execCmd(5*time.Second, "chgrp", "nasusers", s.Path)
+	if s.ReadOnly {
+		_, _ = m.execCmd(5*time.Second, "chmod", "0755", s.Path)
+		return nil
+	}
+	_, _ = m.execCmd(5*time.Second, "chmod", "2775", s.Path)
+	if !recursive {
+		return nil
+	}
+
+	// Repair existing subfolders/files so imported pools or root-created subdirs become writable for @nasusers.
+	done := make(chan struct{})
+	go func(targetPath string) {
+		defer close(done)
+		_, _ = m.execCmd(60*time.Second, "chgrp", "-R", "nasusers", targetPath)
+		_, _ = m.execCmd(60*time.Second, "chmod", "-R", "g+rwX", targetPath)
+		_, _ = m.execCmd(60*time.Second, "find", targetPath, "-type", "d", "-exec", "chmod", "g+s", "{}", "+")
+	}(s.Path)
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		// Large directory tree continues applying permissions in background without blocking HTTP UI
+	}
+	return nil
+}
+
+// RefreshSharesAfterRollback ensures Samba/NFS clients reconnect to the newly rolled-back filesystem mount
+// instead of holding stale directory handles or cached SMB2 listings.
+func (m *Manager) RefreshSharesAfterRollback(smbNames []string, hasNfs bool) {
+	if m.mockMode {
+		return
+	}
+	m.mu.RLock()
+	sharesSnapshot := make([]*SmbShare, 0, len(smbNames))
+	for _, name := range smbNames {
+		if s := m.smbShares[name]; s != nil {
+			cp := *s
+			sharesSnapshot = append(sharesSnapshot, &cp)
+		}
+	}
+	m.mu.RUnlock()
+
+	for _, s := range sharesSnapshot {
+		_ = m.applySmbDirPermissions(s, false)
+	}
+	if len(smbNames) > 0 {
+		m.closeSambaShares(smbNames)
+		_, _ = m.execCmd(5*time.Second, "smbcontrol", "all", "reload-config")
+		_, _ = m.execCmd(10*time.Second, "systemctl", "reload-or-restart", "smbd")
+	}
+	if hasNfs {
+		_, _ = m.execCmd(10*time.Second, "exportfs", "-ra")
+	}
+}
+
 func (m *Manager) SaveSmb(s *SmbShare) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -416,43 +563,13 @@ func (m *Manager) SaveSmb(s *SmbShare) error {
 	}
 
 	// Ensure nasusers group exists and all assigned users belong to nasusers
-	_, _ = runCmdWithTimeout(5*time.Second, "groupadd", "-f", "nasusers")
+	_, _ = m.execCmd(5*time.Second, "groupadd", "-f", "nasusers")
 	for _, u := range s.ValidUsers {
-		_, _ = runCmdWithTimeout(5*time.Second, "usermod", "-aG", "nasusers", u)
+		_, _ = m.execCmd(5*time.Second, "usermod", "-aG", "nasusers", u)
 	}
 
-	if err := os.MkdirAll(s.Path, 0775); err != nil {
-		return fmt.Errorf("failed to create share directory %s: %w", s.Path, err)
-	}
-
-	// Ensure parent mount dirs under /mnt/ have traverse (+x) permission so Samba users can enter the share
-	for p := filepath.Dir(s.Path); strings.HasPrefix(filepath.ToSlash(p), "/mnt/"); p = filepath.Dir(p) {
-		if info, err := os.Stat(p); err == nil && info.IsDir() {
-			if info.Mode().Perm()&0001 == 0 {
-				_, _ = runCmdWithTimeout(5*time.Second, "chmod", "a+x", p)
-			}
-		}
-	}
-
-	// Set group ownership and SetGID permissions on share directory
-	_, _ = runCmdWithTimeout(5*time.Second, "chgrp", "nasusers", s.Path)
-	if s.ReadOnly {
-		_, _ = runCmdWithTimeout(5*time.Second, "chmod", "0755", s.Path)
-	} else {
-		_, _ = runCmdWithTimeout(5*time.Second, "chmod", "2775", s.Path)
-		// Repair existing subfolders/files so imported pools or root-created subdirs become writable for @nasusers
-		done := make(chan struct{})
-		go func(targetPath string) {
-			defer close(done)
-			_, _ = runCmdWithTimeout(60*time.Second, "chgrp", "-R", "nasusers", targetPath)
-			_, _ = runCmdWithTimeout(60*time.Second, "chmod", "-R", "g+rwX", targetPath)
-			_, _ = runCmdWithTimeout(60*time.Second, "find", targetPath, "-type", "d", "-exec", "chmod", "g+s", "{}", "+")
-		}(s.Path)
-		select {
-		case <-done:
-		case <-time.After(3 * time.Second):
-			// Large directory tree continues applying permissions in background without blocking HTTP UI
-		}
+	if err := m.applySmbDirPermissions(s, true); err != nil {
+		return err
 	}
 
 	confPath := filepath.Join(m.sambaConfDir, fmt.Sprintf("%s.conf", s.Name))

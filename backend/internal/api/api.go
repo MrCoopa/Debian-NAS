@@ -1080,11 +1080,44 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request) {
 	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "created", "snapshot": dataset + "@" + name})
 }
 
+// rollbackSnapshotSynced cleanly releases overlapping Samba handles before ZFS rollback,
+// executes the rollback (optionally including matching descendant snapshots), and reloads
+// SMB/NFS shares so connected clients immediately see restored snapshot files.
+func (s *Server) rollbackSnapshotSynced(snapshot string, recursive bool) ([]string, []string, error) {
+	dsName := snapshot
+	if at := strings.IndexByte(snapshot, '@'); at >= 0 {
+		dsName = snapshot[:at]
+	}
+
+	var smbNames []string
+	var hasNfs bool
+	if s.zfs != nil && s.shares != nil {
+		mps := s.zfs.CollectMountpointsForDataset(dsName)
+		smbNames, hasNfs = s.shares.SharesMatchingMountpoints(mps)
+		if len(smbNames) > 0 {
+			s.shares.ReleaseShareConnections(smbNames)
+		}
+	}
+
+	rolledBack, skippedChildren, err := s.zfs.RollbackSnapshotWithOptions(snapshot, recursive)
+	if s.shares != nil && (len(smbNames) > 0 || hasNfs) {
+		s.shares.RefreshSharesAfterRollback(smbNames, hasNfs)
+	}
+	return rolledBack, skippedChildren, err
+}
+
+func (s *Server) ensureSharePathMounted(sharePath string) {
+	if s.zfs != nil && strings.TrimSpace(sharePath) != "" {
+		_ = s.zfs.EnsurePathMounted(sharePath)
+	}
+}
+
 func (s *Server) handleRollbackSnapshot(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Snapshot     string `json:"snapshot"`
 		Dataset      string `json:"dataset"`
 		SnapshotName string `json:"snapshot_name"`
+		Recursive    bool   `json:"recursive"`
 	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
@@ -1101,6 +1134,7 @@ func (s *Server) handleRollbackSnapshot(w http.ResponseWriter, r *http.Request) 
 	if target == "" {
 		target = strings.TrimSpace(r.URL.Query().Get("snapshot"))
 	}
+	recursive := req.Recursive || r.URL.Query().Get("recursive") == "true"
 	if target == "" {
 		s.errorResponse(w, http.StatusBadRequest, "Snapshot target required")
 		return
@@ -1109,11 +1143,17 @@ func (s *Server) handleRollbackSnapshot(w http.ResponseWriter, r *http.Request) 
 		parts := strings.Split(target, "@")
 		target = parts[0] + "@" + parts[len(parts)-1]
 	}
-	if err := s.zfs.RollbackSnapshot(target); err != nil {
+	rolledBack, skippedChildren, err := s.rollbackSnapshotSynced(target, recursive)
+	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "rolled back", "snapshot": target})
+	s.jsonResponse(w, http.StatusOK, map[string]interface{}{
+		"status":           "rolled back",
+		"snapshot":         target,
+		"rolled_back":      rolledBack,
+		"skipped_children": skippedChildren,
+	})
 }
 
 func (s *Server) handleDestroySnapshot(w http.ResponseWriter, r *http.Request) {
@@ -1384,6 +1424,7 @@ func (s *Server) handleSaveSmb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Enabled = true
+	s.ensureSharePathMounted(req.Path)
 	if err := s.shares.SaveSmb(&req); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1428,6 +1469,7 @@ func (s *Server) handleSaveNfs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Enabled = true
+	s.ensureSharePathMounted(req.Path)
 	if err := s.shares.SaveNfs(&req); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return

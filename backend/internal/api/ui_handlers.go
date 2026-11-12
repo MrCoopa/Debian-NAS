@@ -445,6 +445,8 @@ func (s *Server) handleUIActionSaveSmb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.ensureSharePathMounted(path)
+
 	if proto == "nfs" {
 		origPath := strings.TrimSpace(r.FormValue("orig_path"))
 		if origPath != "" && origPath != path {
@@ -945,16 +947,25 @@ func (s *Server) handleUIActionCreateSnapshot(w http.ResponseWriter, r *http.Req
 func (s *Server) handleUIActionRollbackSnapshot(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	snapshot := strings.TrimSpace(r.FormValue("snapshot"))
+	recursive := r.FormValue("recursive") == "true" || r.FormValue("recursive") == "on"
 	if snapshot == "" {
 		s.setHXTrigger(w, "Snapshot name is required", "error")
 		s.handleUIPartialSnapshots(w, r)
 		return
 	}
 
-	if err := s.zfs.RollbackSnapshot(snapshot); err != nil {
+	rolledBack, skippedChildren, err := s.rollbackSnapshotSynced(snapshot, recursive)
+	if err != nil {
 		s.setHXTrigger(w, "Rollback failed: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Dataset rolled back to '%s'", snapshot), "success", "snapshotUpdate", "datasetUpdate")
+		msg := fmt.Sprintf("Dataset rolled back to '%s'", snapshot)
+		toastType := "success"
+		if recursive && len(rolledBack) > 1 {
+			msg = fmt.Sprintf("Dataset tree rolled back recursively to '%s' (%d datasets)", snapshot, len(rolledBack))
+		} else if len(skippedChildren) > 0 {
+			msg = fmt.Sprintf("Dataset rolled back to '%s' (child datasets unchanged: %s)", snapshot, strings.Join(skippedChildren, ", "))
+		}
+		s.setHXTrigger(w, msg, toastType, "snapshotUpdate", "datasetUpdate")
 	}
 	s.handleUIPartialSnapshots(w, r)
 }

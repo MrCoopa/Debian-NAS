@@ -989,6 +989,51 @@ func TestUI_ExportedPoolAppearsInImportModalAndReimports(t *testing.T) {
 	}
 }
 
+func TestUI_SnapshotRollbackTreeAndChildWarning(t *testing.T) {
+	srv := createTestServer(t)
+	handler := srv.Routes()
+
+	// Create a recursive snapshot on DATA (which has nested datasets DATA/Fileshare, etc.)
+	snapForm := url.Values{
+		"dataset":       {"DATA"},
+		"snapshot_name": {"docker-like-snap"},
+		"recursive":     {"true"},
+	}
+	snapReq := httptest.NewRequest("POST", "/ui/actions/zfs/snapshots", strings.NewReader(snapForm.Encode()))
+	snapReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	snapRR := httptest.NewRecorder()
+	handler.ServeHTTP(snapRR, snapReq)
+	if snapRR.Code != http.StatusOK {
+		t.Fatalf("snapshot create failed: %d", snapRR.Code)
+	}
+	if !strings.Contains(snapRR.Body.String(), "Rollback Tree") {
+		t.Fatalf("expected 'Rollback Tree' button for parent snapshot with matching children, got:\n%s", snapRR.Body.String())
+	}
+
+	// Non-recursive rollback of DATA@docker-like-snap must warn about untouched child datasets
+	rbSingleReq := httptest.NewRequest("POST", "/ui/actions/zfs/snapshots/rollback", strings.NewReader(url.Values{
+		"snapshot": {"DATA@docker-like-snap"},
+	}.Encode()))
+	rbSingleReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rbSingleRR := httptest.NewRecorder()
+	handler.ServeHTTP(rbSingleRR, rbSingleReq)
+	if rbSingleRR.Code != http.StatusOK || !strings.Contains(rbSingleRR.Header().Get("HX-Trigger"), "child datasets unchanged") {
+		t.Fatalf("expected child datasets unchanged note in HX-Trigger, got: %s", rbSingleRR.Header().Get("HX-Trigger"))
+	}
+
+	// Recursive tree rollback must roll back parent and child snapshots cleanly
+	rbTreeReq := httptest.NewRequest("POST", "/ui/actions/zfs/snapshots/rollback", strings.NewReader(url.Values{
+		"snapshot":  {"DATA@docker-like-snap"},
+		"recursive": {"true"},
+	}.Encode()))
+	rbTreeReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rbTreeRR := httptest.NewRecorder()
+	handler.ServeHTTP(rbTreeRR, rbTreeReq)
+	if rbTreeRR.Code != http.StatusOK || !strings.Contains(rbTreeRR.Header().Get("HX-Trigger"), "rolled back recursively") {
+		t.Fatalf("expected recursive rollback toast in HX-Trigger, got: %s", rbTreeRR.Header().Get("HX-Trigger"))
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a

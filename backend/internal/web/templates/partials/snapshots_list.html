@@ -32,7 +32,10 @@
               <td class="font-mono text-dim" style="font-size: 0.78rem;">{{formatTime $s.Created}}</td>
               <td class="col-actions">
                 <div style="display: flex; gap: 0.35rem; justify-content: flex-end; flex-wrap: wrap;">
-                  <button type="button" class="btn btn-secondary btn-sm" data-snapshot="{{$s.Name}}" hx-post="/ui/actions/zfs/snapshots/rollback" hx-vals='{"snapshot": "{{$s.Name}}"}' hx-confirm="WARNING: Rollback dataset to snapshot '{{$s.Name}}'? All newer data and snapshots will be lost!" hx-target="#snapshots-container" hx-swap="outerHTML">Rollback</button>
+                  <button type="button" class="btn btn-secondary btn-sm" data-snapshot="{{$s.Name}}" hx-post="/ui/actions/zfs/snapshots/rollback" hx-vals='{"snapshot": "{{$s.Name}}"}' hx-confirm="WARNING: Rollback dataset to snapshot '{{$s.Name}}'? All newer data and snapshots on '{{$s.Dataset}}' will be lost!" hx-target="#snapshots-container" hx-swap="outerHTML">Rollback</button>
+                  {{if gt $s.DescendantCount 0}}
+                    <button type="button" class="btn btn-secondary btn-sm" data-snapshot="{{$s.Name}}" hx-post="/ui/actions/zfs/snapshots/rollback" hx-vals='{"snapshot": "{{$s.Name}}", "recursive": "true"}' hx-confirm="WARNING: Recursively rollback '{{$s.Name}}' and {{$s.DescendantCount}} matching child dataset snapshot(s)? All newer data and snapshots across the dataset tree will be lost!" hx-target="#snapshots-container" hx-swap="outerHTML">Rollback Tree</button>
+                  {{end}}
                   <button type="button" class="btn btn-secondary btn-sm" data-snapshot="{{$s.Name}}" @click.stop="openCloneSnap($el.dataset.snapshot)">Clone</button>
                   <button type="button" class="btn btn-danger btn-sm" hx-delete="/ui/actions/zfs/snapshots?name={{urlquery $s.Name}}" hx-confirm="Destroy snapshot '{{$s.Name}}'?" hx-target="#snapshots-container" hx-swap="outerHTML">Destroy</button>
                 </div>

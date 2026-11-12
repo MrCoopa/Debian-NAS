@@ -1,8 +1,10 @@
 package shares
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestGenerateSmbConfig(t *testing.T) {
@@ -95,6 +97,61 @@ func TestNormalizeMainSmbConf_KeepsGlobalIntact(t *testing.T) {
 	secondPass := normalizeMainSmbConf(normalized)
 	if secondPass != normalized {
 		t.Fatalf("normalizeMainSmbConf not idempotent:\nfirst:\n%s\nsecond:\n%s", normalized, secondPass)
+	}
+}
+
+func TestShareRollbackSync_MatchingAndLifecycleCommands(t *testing.T) {
+	if !PathOverlapsMount("/mnt/Docker/Share", "/mnt/Docker") {
+		t.Fatal("expected /mnt/Docker/Share to overlap mountpoint /mnt/Docker")
+	}
+	if !PathOverlapsMount("/mnt/Docker", "/mnt/Docker/Share") {
+		t.Fatal("expected /mnt/Docker share on pool root to overlap child dataset /mnt/Docker/Share")
+	}
+	if PathOverlapsMount("/mnt/Other/Share", "/mnt/Docker") {
+		t.Fatal("unexpected overlap for unrelated pool")
+	}
+
+	m := NewManager(true, "", "")
+	m.smbShares = map[string]*SmbShare{
+		"ShareRoot":  {Name: "ShareRoot", Path: "/mnt/Docker", Enabled: true},
+		"ShareChild": {Name: "ShareChild", Path: "/mnt/Docker/Data", Enabled: true},
+		"Unrelated":  {Name: "Unrelated", Path: "/mnt/Other", Enabled: true},
+	}
+	m.nfsExports = map[string]*NfsExport{
+		"/mnt/Docker/Data": {Path: "/mnt/Docker/Data", Enabled: true},
+	}
+
+	smbNames, hasNfs := m.SharesMatchingMountpoints([]string{"/mnt/Docker", "/mnt/Docker/Data"})
+	if !reflect.DeepEqual(smbNames, []string{"ShareChild", "ShareRoot"}) {
+		t.Fatalf("SharesMatchingMountpoints smbNames = %v, want [ShareChild ShareRoot]", smbNames)
+	}
+	if !hasNfs {
+		t.Fatal("expected hasNfs = true for matching export")
+	}
+
+	// Simulate Linux command execution using injected runCmd (share directories skipped cleanly when non-existent/RO).
+	var cmds []string
+	m.mockMode = false
+	m.runCmd = func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+		cmds = append(cmds, name+" "+strings.Join(args, " "))
+		return nil, nil
+	}
+
+	m.ReleaseShareConnections(smbNames)
+	m.RefreshSharesAfterRollback(smbNames, hasNfs)
+
+	wantSubstrings := []string{
+		"smbcontrol smbd close-share ShareChild",
+		"smbcontrol smbd close-share ShareRoot",
+		"smbcontrol all reload-config",
+		"systemctl reload-or-restart smbd",
+		"exportfs -ra",
+	}
+	joined := strings.Join(cmds, "\n")
+	for _, want := range wantSubstrings {
+		if !strings.Contains(joined, want) {
+			t.Errorf("expected command %q in rollback share lifecycle, got:\n%s", want, joined)
+		}
 	}
 }
 
