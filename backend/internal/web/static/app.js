@@ -146,6 +146,9 @@ console.log("Debian Storage Appliance: Go + HTMX + Alpine.js initialized.");
     if (reqPath.indexOf("/ui/partials/") !== 0) {
       return;
     }
+    if (detail.xhr) {
+      detail.xhr._nasReqStartedAt = Date.now();
+    }
     var trig = detail.requestConfig.triggeringEvent;
     if (trig && trig.type && trig.type.indexOf("every") === 0) {
       if (!window.nasCanBackgroundPoll(elt)) {
@@ -163,6 +166,19 @@ console.log("Debian Storage Appliance: Go + HTMX + Alpine.js initialized.");
     var swappedAt = lastActionSwap[elt.id];
     if (swappedAt && Date.now() - swappedAt < 450) {
       event.preventDefault();
+    }
+  });
+
+  // Drop stale GET partial responses that were in flight before a newer mutation swapped the same container.
+  document.addEventListener("htmx:beforeSwap", function (event) {
+    var detail = event.detail;
+    if (!detail || !detail.requestConfig || detail.requestConfig.verb !== "get") {
+      return;
+    }
+    var target = detail.target;
+    var reqStarted = detail.xhr && detail.xhr._nasReqStartedAt;
+    if (target && target.id && reqStarted && lastActionSwap[target.id] && reqStarted < lastActionSwap[target.id]) {
+      detail.shouldSwap = false;
     }
   });
 

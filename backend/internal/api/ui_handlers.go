@@ -1170,14 +1170,31 @@ func (s *Server) handleUIActionSetSpindown(w http.ResponseWriter, r *http.Reques
 
 	var seconds int
 	if secRaw := strings.TrimSpace(r.FormValue("seconds")); secRaw != "" {
-		seconds, _ = strconv.Atoi(secRaw)
+		parsed, err := strconv.Atoi(secRaw)
+		if err != nil || parsed < 0 {
+			s.setHXTrigger(w, "Invalid spindown seconds value", "error")
+			s.handleUIPartialDisks(w, r)
+			return
+		}
+		seconds = parsed
 	} else {
-		mins, _ := strconv.Atoi(r.FormValue("timeout_minutes"))
+		minRaw := strings.TrimSpace(r.FormValue("timeout_minutes"))
+		if minRaw == "" {
+			minRaw = "0"
+		}
+		mins, err := strconv.Atoi(minRaw)
+		if err != nil || mins < 0 {
+			s.setHXTrigger(w, "Invalid spindown minutes value", "error")
+			s.handleUIPartialDisks(w, r)
+			return
+		}
 		seconds = mins * 60
 	}
 
 	if err := s.disks.SetSpindown(path, seconds); err != nil {
 		s.setHXTrigger(w, "Error setting spindown timeout: "+err.Error(), "error")
+	} else if seconds == 0 {
+		s.setHXTrigger(w, fmt.Sprintf("Spindown for %s disabled (Always On)", path), "success", "diskUpdate")
 	} else {
 		s.setHXTrigger(w, fmt.Sprintf("Spindown for %s configured to %d minutes", path, seconds/60), "success", "diskUpdate")
 	}

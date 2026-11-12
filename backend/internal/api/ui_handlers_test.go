@@ -1227,5 +1227,66 @@ func TestUI_ZfsArcConfigurationLifecycle(t *testing.T) {
 	}
 }
 
+func TestUI_DiskPowerSettingsDoNotRevertAcrossRenders(t *testing.T) {
+	srv := createTestServer(t)
+	handler := srv.Routes()
+
+	// 1. Set sdc Adv. Power Management to "Disabled" and Spindown to Always On (0)
+	apmReq := httptest.NewRequest("POST", "/ui/actions/disks/apm", strings.NewReader(url.Values{
+		"path":  {"/dev/sdc"},
+		"level": {"Disabled"},
+	}.Encode()))
+	apmReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	apmRR := httptest.NewRecorder()
+	handler.ServeHTTP(apmRR, apmReq)
+	if apmRR.Code != http.StatusOK || strings.Contains(apmRR.Header().Get("HX-Trigger"), `"type":"error"`) {
+		t.Fatalf("POST /ui/actions/disks/apm failed: code=%d trig=%s", apmRR.Code, apmRR.Header().Get("HX-Trigger"))
+	}
+
+	spReq := httptest.NewRequest("POST", "/ui/actions/disks/spindown", strings.NewReader(url.Values{
+		"path":            {"/dev/sdc"},
+		"timeout_minutes": {"0"},
+	}.Encode()))
+	spReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	spRR := httptest.NewRecorder()
+	handler.ServeHTTP(spRR, spReq)
+	if spRR.Code != http.StatusOK || !strings.Contains(spRR.Header().Get("HX-Trigger"), "Always On") {
+		t.Fatalf("POST /ui/actions/disks/spindown (0) failed: code=%d trig=%s", spRR.Code, spRR.Header().Get("HX-Trigger"))
+	}
+
+	// 2. Subsequent background polls (/ui/partials/disks) and rescan (/api/v1/disks?rescan=true) must keep Disabled + Always On
+	rescanReq := httptest.NewRequest("GET", "/api/v1/disks?rescan=true", nil)
+	rescanRR := httptest.NewRecorder()
+	handler.ServeHTTP(rescanRR, rescanReq)
+	if rescanRR.Code != http.StatusOK {
+		t.Fatalf("GET /api/v1/disks?rescan=true failed: %d", rescanRR.Code)
+	}
+
+	pollReq := httptest.NewRequest("GET", "/ui/partials/disks", nil)
+	pollRR := httptest.NewRecorder()
+	handler.ServeHTTP(pollRR, pollReq)
+	if pollRR.Code != http.StatusOK {
+		t.Fatalf("GET /ui/partials/disks failed: %d", pollRR.Code)
+	}
+	body := pollRR.Body.String()
+	rowIdx := strings.Index(body, `id="row-disk-detail-sdc"`)
+	if rowIdx < 0 {
+		t.Fatalf("missing sdc detail row")
+	}
+	sdcSection := body[rowIdx:]
+	if trEnd := strings.Index(sdcSection, `</tr>`); trEnd > 0 {
+		sdcSection = sdcSection[:trEnd]
+	}
+	if !strings.Contains(sdcSection, `<option value="Disabled" selected>Disabled`) {
+		t.Fatalf("expected sdc APM select to keep Disabled selected after rescan & poll, got: %s", sdcSection)
+	}
+	if strings.Contains(sdcSection, `<option value="128" selected>`) {
+		t.Fatalf("expected sdc APM select NOT to revert to 128 selected, got: %s", sdcSection)
+	}
+	if !strings.Contains(sdcSection, `<option value="0" selected>Always On</option>`) {
+		t.Fatalf("expected sdc Spindown select to keep Always On selected, got: %s", sdcSection)
+	}
+}
+
 
 

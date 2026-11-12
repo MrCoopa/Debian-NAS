@@ -65,9 +65,28 @@
               @change="runDrawerDiskAction('/ui/actions/disks/spindown', { path: activeDisk.path, seconds: activeDisk.spindown_seconds, timeout_minutes: Math.round((Number(activeDisk.spindown_seconds) || 0) / 60) })">
         <option value="0">Disabled (Always On)</option>
         <option value="300">5 Minutes</option>
+        <option value="600">10 Minutes</option>
         <option value="900">15 Minutes (Default)</option>
+        <option value="1200">20 Minutes</option>
         <option value="1800">30 Minutes</option>
         <option value="3600">1 Hour</option>
+        <option value="7200">2 Hours</option>
+        <option value="18000">5 Hours</option>
+      </select>
+    </div>
+    <div>
+      <span class="text-dim" style="display: block; font-size: 0.72rem; margin-bottom: 0.2rem;">Adv. Power Management:</span>
+      <select style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: var(--pf-bg-input); border: 1px solid var(--pf-border-color); color: var(--pf-text-primary); border-radius: 4px;"
+              x-model="activeDisk.adv_power_management"
+              :disabled="!activeDisk.path"
+              @change="runDrawerDiskAction('/ui/actions/disks/apm', { path: activeDisk.path, level: activeDisk.adv_power_management })">
+        <option value="Disabled">Disabled (Max Performance)</option>
+        <option value="1">1 - Min Power (Standby)</option>
+        <option value="64">64 - Low Power (Standby)</option>
+        <option value="127">127 - Medium (Standby)</option>
+        <option value="128">128 - Min Power (No Standby)</option>
+        <option value="192">192 - Medium (No Standby)</option>
+        <option value="254">254 - Max Performance</option>
       </select>
     </div>
   </div>

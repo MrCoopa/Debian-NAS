@@ -86,12 +86,8 @@ func syncDiskFields(d *DiskInfo) {
 	} else if d.Pool != "" && d.ZfsPool == "" {
 		d.ZfsPool = d.Pool
 	}
-	if d.AdvPowerManagement == "" {
-		if d.IsRotational {
-			d.AdvPowerManagement = "128"
-		} else {
-			d.AdvPowerManagement = "Disabled"
-		}
+	if d.AdvPowerManagement == "" || strings.EqualFold(d.AdvPowerManagement, "255") || strings.EqualFold(d.AdvPowerManagement, "off") {
+		d.AdvPowerManagement = "Disabled"
 	}
 	if d.IsSystemDisk && d.ZfsPool == "" {
 		d.ZfsPool = "boot-pool"
@@ -104,18 +100,44 @@ func syncDiskFields(d *DiskInfo) {
 	}
 }
 
+// DiskPowerConfig stores persisted per-disk power settings across scans and reboots.
+type DiskPowerConfig struct {
+	Name               string `json:"name,omitempty"`
+	ByIDPath           string `json:"by_id_path,omitempty"`
+	Serial             string `json:"serial,omitempty"`
+	SpindownSeconds    *int   `json:"spindown_seconds,omitempty"`
+	AdvPowerManagement string `json:"adv_power_management,omitempty"`
+}
+
+// NormalizeAPMLevel validates and normalizes an APM level ("Disabled"/"255" or "1".."254").
+func NormalizeAPMLevel(raw string) (displayVal string, hdparmArg string, err error) {
+	s := strings.TrimSpace(raw)
+	if s == "" || strings.EqualFold(s, "disabled") || strings.EqualFold(s, "off") || s == "255" {
+		return "Disabled", "255", nil
+	}
+	n, convErr := strconv.Atoi(s)
+	if convErr != nil || n < 1 || n > 254 {
+		return "", "", fmt.Errorf("invalid APM level '%s': must be Disabled (255) or 1..254", raw)
+	}
+	norm := strconv.Itoa(n)
+	return norm, norm, nil
+}
+
 type Manager struct {
-	mu           sync.RWMutex
-	mockMode     bool
-	cachedDisks  map[string]*DiskInfo
-	hdIdleConfig string
-	configPath   string
+	mu               sync.RWMutex
+	mockMode         bool
+	cachedDisks      map[string]*DiskInfo
+	savedConfigs     map[string]DiskPowerConfig
+	hdIdleConfig     string
+	configPath       string
+	customConfigPath bool
 }
 
 func NewManager(mockMode bool, hdIdleConfig string) *Manager {
 	m := &Manager{
 		mockMode:     mockMode,
 		cachedDisks:  make(map[string]*DiskInfo),
+		savedConfigs: make(map[string]DiskPowerConfig),
 		hdIdleConfig: hdIdleConfig,
 		configPath:   "/etc/nas/disks.json",
 	}
@@ -123,15 +145,33 @@ func NewManager(mockMode bool, hdIdleConfig string) *Manager {
 	if m.mockMode {
 		m.initMockDisks()
 	} else {
-		// Scan linux disks on startup
+		m.mu.Lock()
+		m.loadSavedDiskConfigLocked()
 		_, _ = m.scanLinuxDisks()
-		m.loadSavedSpindownConfig()
+		toApply := m.snapshotSavedApplyTargetsLocked()
+		m.mu.Unlock()
+		m.applyDiskConfigsToHardware(toApply)
 	}
 
 	// Start background non-intrusive status poll loop
 	go m.startMonitorLoop()
 
 	return m
+}
+
+// SetConfigPath sets a custom persistence file path (primarily for testing).
+func (m *Manager) SetConfigPath(path string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.configPath = path
+	m.customConfigPath = path != ""
+	if path != "" {
+		m.loadSavedDiskConfigLocked()
+		for _, d := range m.cachedDisks {
+			m.applySavedConfigToDiskLocked(d)
+			syncDiskFields(d)
+		}
+	}
 }
 
 func (m *Manager) initMockDisks() {
@@ -172,6 +212,7 @@ func (m *Manager) initMockDisks() {
 			SizeBytes:          2000398934016,
 			SizeHuman:          "1.82 TiB",
 			IsRotational:       true,
+			AdvPowerManagement: "128",
 			State:              StateStandby,
 			TemperatureC:       -1, // asleep
 			SpindownSeconds:    900,
@@ -196,6 +237,7 @@ func (m *Manager) initMockDisks() {
 			SizeBytes:          12000138625024,
 			SizeHuman:          "10.91 TiB",
 			IsRotational:       true,
+			AdvPowerManagement: "128",
 			State:              StateStandby,
 			TemperatureC:       -1, // asleep
 			SpindownSeconds:    900,
@@ -220,6 +262,7 @@ func (m *Manager) initMockDisks() {
 			SizeBytes:          16000900661248,
 			SizeHuman:          "14.55 TiB",
 			IsRotational:       true,
+			AdvPowerManagement: "128",
 			State:              StateActive,
 			TemperatureC:       31,
 			SpindownSeconds:    1200,
@@ -566,12 +609,36 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 			poolName = poolMap[filepath.Base(byID)]
 		}
 
-		spindownSec := 900
+		spindownSec := 0
+		if rotational {
+			spindownSec = 900
+		}
+		advPowerMgmt := "Disabled"
 		locateLed := false
-		if existing, exists := m.cachedDisks[name]; exists {
+		if saved, ok := m.lookupSavedConfigLocked(name, byID, serial); ok {
+			if saved.SpindownSeconds != nil && *saved.SpindownSeconds >= 0 {
+				spindownSec = *saved.SpindownSeconds
+			}
+			if saved.AdvPowerManagement != "" {
+				advPowerMgmt = saved.AdvPowerManagement
+			}
+		} else if existing, exists := m.cachedDisks[name]; exists {
 			if existing.SpindownSeconds >= 0 {
 				spindownSec = existing.SpindownSeconds
 			}
+			if existing.AdvPowerManagement != "" {
+				advPowerMgmt = existing.AdvPowerManagement
+			} else if rotational && state == StateActive {
+				advPowerMgmt = m.readHardwareAPMSafe(devPath)
+			}
+			locateLed = existing.LocateLed
+			if smartLastTest == "" && existing.SmartLastTest != "" {
+				smartLastTest = existing.SmartLastTest
+			}
+		} else if rotational && state == StateActive {
+			advPowerMgmt = m.readHardwareAPMSafe(devPath)
+		}
+		if existing, exists := m.cachedDisks[name]; exists {
 			locateLed = existing.LocateLed
 			if smartLastTest == "" && existing.SmartLastTest != "" {
 				smartLastTest = existing.SmartLastTest
@@ -608,6 +675,7 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 			State:              state,
 			TemperatureC:       temp,
 			SpindownSeconds:    spindownSec,
+			AdvPowerManagement: advPowerMgmt,
 			ZfsPool:            poolName,
 			Pool:               poolName,
 			Slot:               slotIdx,
@@ -774,35 +842,41 @@ func (m *Manager) TriggerSmartTest(devPath, testType string) error {
 	}
 
 	target := m.findDiskLocked(devPath)
-	if target != nil {
-		devPath = target.Path
-		target.SmartStatus = fmt.Sprintf("TESTING (%s Self-Test running...)", strings.ToUpper(testType))
-		if m.mockMode {
-			go func(d *DiskInfo) {
-				time.Sleep(4 * time.Second)
-				m.mu.Lock()
-				d.SmartStatus = "PASSED (Self-Test Completed 100%)"
-				m.mu.Unlock()
-			}(target)
-			return nil
-		}
+	if target == nil {
+		return fmt.Errorf("disk %s not found", devPath)
 	}
+	diskPath := target.Path
 
 	if m.mockMode {
-		if target == nil {
-			return fmt.Errorf("disk %s not found", devPath)
-		}
+		target.SmartStatus = fmt.Sprintf("TESTING (%s Self-Test running...)", strings.ToUpper(testType))
+		go func(d *DiskInfo) {
+			time.Sleep(4 * time.Second)
+			m.mu.Lock()
+			d.SmartStatus = "PASSED (Self-Test Completed 100%)"
+			m.mu.Unlock()
+		}(target)
 		return nil
 	}
 
-	if err := validate.DevicePath(devPath); err != nil {
+	if err := validate.DevicePath(diskPath); err != nil {
 		return fmt.Errorf("invalid disk device path: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "smartctl", "-t", testType, devPath)
-	return cmd.Run()
+	cmd := exec.CommandContext(ctx, "smartctl", "-t", testType, diskPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg != "" {
+			return fmt.Errorf("smartctl -t %s %s failed: %s", testType, diskPath, msg)
+		}
+		return fmt.Errorf("smartctl -t %s %s failed: %w", testType, diskPath, err)
+	}
+
+	target.SmartStatus = fmt.Sprintf("TESTING (%s Self-Test running...)", strings.ToUpper(testType))
+	target.SmartLastTest = fmt.Sprintf("%s self-test running", testType)
+	target.LastStateCheck = time.Now()
+	return nil
 }
 
 // readTemperatureSafe uses smartctl with '-n standby' so it exits with code 2 if disk is sleeping!
@@ -811,120 +885,113 @@ func (m *Manager) readTemperatureSafe(devPath string) int {
 	return t
 }
 
-// SetSpindown sets spindown timeout for a drive using hdparm and hd-idle
-func (m *Manager) SetSpindown(devPath string, seconds int) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	target := m.findDiskLocked(devPath)
-	if target != nil {
-		target.SpindownSeconds = seconds
-		target.SpindownTimeoutSeconds = seconds
-		devPath = target.Path
-	}
-
-	if m.mockMode {
-		if target == nil {
-			return fmt.Errorf("disk %s not found", devPath)
-		}
-		return nil
-	}
-
-	if err := validate.DevicePath(devPath); err != nil {
-		return fmt.Errorf("invalid disk device path: %w", err)
-	}
-
+func spindownSecondsToHdparmArg(seconds int) int {
 	// hdparm standby value formula (-S):
 	// 0 = disabled
 	// 1-240 = multiples of 5 seconds (5s to 20 mins)
 	// 241-251 = 1 to 11 units of 30 minutes (30m to 5.5 hours)
-	// 252 = 21 minutes (vendor specific)
 	// 253 = vendor-defined timeout between 8 and 12 hours
-	// 255 = 21 minutes plus 15 seconds
-	var val int
 	if seconds <= 0 {
-		val = 0
-	} else if seconds <= 1200 {
-		val = seconds / 5
+		return 0
+	}
+	if seconds <= 1200 {
+		val := seconds / 5
 		if val < 1 {
-			val = 1
-		} else if val > 240 {
-			val = 240
+			return 1
 		}
-	} else if seconds <= 19800 {
-		// 1800s (30m) -> 241, 3600s (1h) -> 242, ..., 19800s (5.5h) -> 251
+		if val > 240 {
+			return 240
+		}
+		return val
+	}
+	if seconds <= 19800 {
 		units := (seconds + 899) / 1800
 		if units < 1 {
 			units = 1
 		} else if units > 11 {
 			units = 11
 		}
-		val = 240 + units
-	} else if seconds >= 28800 {
-		// Vendor-defined 8-12 hours
-		val = 253
-	} else {
-		// Between 5.5h and 8h: cap at 251 (5.5h) instead of 252 (which means 21 minutes!)
-		val = 251
+		return 240 + units
+	}
+	if seconds >= 28800 {
+		return 253
+	}
+	return 251
+}
+
+// SetSpindown sets spindown timeout for a drive using hdparm and hd-idle
+func (m *Manager) SetSpindown(devPath string, seconds int) error {
+	if seconds < 0 {
+		return fmt.Errorf("spindown timeout must be >= 0 (got %d)", seconds)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "hdparm", "-S", fmt.Sprintf("%d", val), devPath)
-	_ = cmd.Run()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	// Persist settings
-	m.saveSpindownConfig()
+	target := m.findDiskLocked(devPath)
+	if target == nil {
+		return fmt.Errorf("disk %s not found", devPath)
+	}
+	diskPath := target.Path
+
+	if !m.mockMode {
+		if err := validate.DevicePath(diskPath); err != nil {
+			return fmt.Errorf("invalid disk device path: %w", err)
+		}
+		hdErr := applyHardwareSpindown(diskPath, seconds)
+		hasHdIdle := m.hasHdIdleConfig()
+		if hdErr != nil && seconds > 0 && !hasHdIdle {
+			return hdErr
+		}
+	}
+
+	target.SpindownSeconds = seconds
+	target.SpindownTimeoutSeconds = seconds
+	target.LastStateCheck = time.Now()
+	m.recordSavedConfigLocked(target)
+	if !m.mockMode || m.customConfigPath {
+		m.saveDiskConfigLocked()
+	}
+	if !m.mockMode {
+		m.syncHdIdleConfigLocked()
+	}
 	return nil
 }
 
 // SetAPM sets Advanced Power Management level using hdparm -B
 func (m *Manager) SetAPM(devPath string, level string) error {
+	displayVal, hdparmArg, err := NormalizeAPMLevel(level)
+	if err != nil {
+		return err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	target := m.findDiskLocked(devPath)
-	if target != nil {
-		target.AdvPowerManagement = level
-		devPath = target.Path
+	if target == nil {
+		return fmt.Errorf("disk %s not found", devPath)
 	}
+	diskPath := target.Path
 
-	if m.mockMode {
-		if target == nil {
-			return fmt.Errorf("disk %s not found", devPath)
+	if !m.mockMode {
+		if err := validate.DevicePath(diskPath); err != nil {
+			return fmt.Errorf("invalid disk device path: %w", err)
 		}
-		return nil
+		if err := applyHardwareAPM(diskPath, hdparmArg); err != nil {
+			if displayVal != "Disabled" {
+				return err
+			}
+			// "Disabled" means APM off; virtual/non-APM drives already have APM disabled.
+		}
 	}
 
-	if err := validate.DevicePath(devPath); err != nil {
-		return fmt.Errorf("invalid disk device path: %w", err)
+	target.AdvPowerManagement = displayVal
+	target.LastStateCheck = time.Now()
+	m.recordSavedConfigLocked(target)
+	if !m.mockMode || m.customConfigPath {
+		m.saveDiskConfigLocked()
 	}
-
-	val := "255"
-	switch level {
-	case "Disabled", "255", "off", "Off":
-		val = "255"
-	case "1":
-		val = "1"
-	case "64":
-		val = "64"
-	case "127":
-		val = "127"
-	case "128":
-		val = "128"
-	case "192":
-		val = "192"
-	case "254":
-		val = "254"
-	default:
-		val = level
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "hdparm", "-B", val, devPath)
-	_ = cmd.Run()
-
 	return nil
 }
 
@@ -934,28 +1001,32 @@ func (m *Manager) ForceStandby(devPath string) error {
 	defer m.mu.Unlock()
 
 	target := m.findDiskLocked(devPath)
-	if target != nil {
-		target.State = StateStandby
-		target.PowerState = "STANDBY"
-		target.TemperatureC = -1
-		devPath = target.Path
+	if target == nil {
+		return fmt.Errorf("disk %s not found", devPath)
 	}
+	diskPath := target.Path
 
-	if m.mockMode {
-		if target == nil {
-			return fmt.Errorf("disk %s not found", devPath)
+	if !m.mockMode {
+		if err := validate.DevicePath(diskPath); err != nil {
+			return fmt.Errorf("invalid disk device path: %w", err)
 		}
-		return nil
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "hdparm", "-y", diskPath)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			msg := strings.TrimSpace(string(out))
+			if msg != "" {
+				return fmt.Errorf("hdparm -y %s failed: %s", diskPath, msg)
+			}
+			return fmt.Errorf("hdparm -y %s failed: %w", diskPath, err)
+		}
 	}
 
-	if err := validate.DevicePath(devPath); err != nil {
-		return fmt.Errorf("invalid disk device path: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "hdparm", "-y", devPath)
-	return cmd.Run()
+	target.State = StateStandby
+	target.PowerState = "STANDBY"
+	target.TemperatureC = -1
+	target.LastStateCheck = time.Now()
+	return nil
 }
 
 // ToggleLocate toggles the enclosure identify / locate LED for a disk (45Drives Houston feature)
@@ -968,26 +1039,26 @@ func (m *Manager) ToggleLocate(devPath string) (bool, error) {
 		return false, fmt.Errorf("disk %s not found", devPath)
 	}
 
-	target.LocateLed = !target.LocateLed
+	nextState := !target.LocateLed
 
-	if m.mockMode {
-		return target.LocateLed, nil
+	if !m.mockMode {
+		if err := validate.DevicePath(target.Path); err != nil {
+			return false, fmt.Errorf("invalid disk device path: %w", err)
+		}
+		// Real Linux: use ledctl locate/off if available on the host
+		if _, lookErr := exec.LookPath("ledctl"); lookErr == nil {
+			action := "off"
+			if nextState {
+				action = "locate"
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, "ledctl", fmt.Sprintf("%s=%s", action, target.Path))
+			_ = cmd.Run()
+		}
 	}
 
-	if err := validate.DevicePath(target.Path); err != nil {
-		return false, fmt.Errorf("invalid disk device path: %w", err)
-	}
-
-	// Real Linux: use ledctl locate or sas2ircu / smartctl activity
-	action := "off"
-	if target.LocateLed {
-		action = "locate"
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "ledctl", fmt.Sprintf("%s=%s", action, target.Path))
-	_ = cmd.Run()
-
+	target.LocateLed = nextState
 	return target.LocateLed, nil
 }
 
@@ -1056,52 +1127,121 @@ func (m *Manager) startMonitorLoop() {
 		if m.mockMode {
 			continue
 		}
+		m.pollDiskStatesOnce()
+	}
+}
+
+type diskPollSnapshot struct {
+	name         string
+	path         string
+	byIDPath     string
+	serial       string
+	isRotational bool
+	prevState    DiskState
+	needAPMProbe bool
+}
+
+type diskApplyTarget struct {
+	path           string
+	state          DiskState
+	spindownSec    *int
+	advPowerMgmt   string
+	isRotational   bool
+}
+
+func (m *Manager) pollDiskStatesOnce() {
+	m.mu.RLock()
+	snaps := make([]diskPollSnapshot, 0, len(m.cachedDisks))
+	for _, d := range m.cachedDisks {
+		_, hasSaved := m.lookupSavedConfigLocked(d.Name, d.ByIDPath, d.Serial)
+		snaps = append(snaps, diskPollSnapshot{
+			name:         d.Name,
+			path:         d.Path,
+			byIDPath:     d.ByIDPath,
+			serial:       d.Serial,
+			isRotational: d.IsRotational,
+			prevState:    d.State,
+			needAPMProbe: d.IsRotational && !hasSaved && d.AdvPowerManagement == "",
+		})
+	}
+	m.mu.RUnlock()
+
+	var wakeApply []diskApplyTarget
+	for _, snap := range snaps {
+		scanStarted := time.Now()
+		var state DiskState = StateActive
+		temp := -1
+		var hours, realloc, pending int
+		var status, lastTest, probedAPM string
+
+		if snap.isRotational {
+			state = m.checkStandbySafe(snap.path)
+			if state == StateActive {
+				temp, hours, realloc, pending, status, lastTest = m.readSmartAttributesSafe(snap.path)
+				if snap.needAPMProbe {
+					probedAPM = m.readHardwareAPMSafe(snap.path)
+				}
+			}
+		} else {
+			temp, hours, realloc, pending, status, lastTest = m.readSmartAttributesSafe(snap.path)
+		}
+
 		m.mu.Lock()
-		for _, d := range m.cachedDisks {
-			if d.IsRotational {
-				// Query non-intrusively
-				state := m.checkStandbySafe(d.Path)
-				d.State = state
+		d, exists := m.cachedDisks[snap.name]
+		if exists {
+			wokeFromSleep := snap.isRotational &&
+				(snap.prevState == StateStandby || snap.prevState == StateSleep) &&
+				state == StateActive
+
+			if !d.LastStateCheck.After(scanStarted) {
+				if snap.isRotational {
+					d.State = state
+				}
 				if state == StateActive {
-					temp, hours, realloc, pending, status, lastTest := m.readSmartAttributesSafe(d.Path)
-					d.TemperatureC = temp
-					if hours > 0 {
-						d.PowerOnHours = hours
-					}
-					d.ReallocatedSectors = realloc
-					d.PendingSectors = pending
-					if status != "" {
-						d.SmartStatus = status
-					}
-					if lastTest != "" {
-						d.SmartLastTest = lastTest
+					if temp > 0 {
+						d.TemperatureC = temp
+					} else if !snap.isRotational && temp >= 0 {
+						d.TemperatureC = temp
 					}
 				} else {
 					d.TemperatureC = -1
-				}
-				d.LastStateCheck = time.Now()
-				syncDiskFields(d)
-			} else {
-				temp, hours, realloc, pending, status, lastTest := m.readSmartAttributesSafe(d.Path)
-				if temp > 0 {
-					d.TemperatureC = temp
 				}
 				if hours > 0 {
 					d.PowerOnHours = hours
 				}
 				d.ReallocatedSectors = realloc
 				d.PendingSectors = pending
-				if status != "" {
+				if status != "" && !strings.HasPrefix(d.SmartStatus, "TESTING") {
 					d.SmartStatus = status
 				}
-				if lastTest != "" {
+				if lastTest != "" && !strings.HasPrefix(d.SmartStatus, "TESTING") {
 					d.SmartLastTest = lastTest
+				}
+				if d.AdvPowerManagement == "" && probedAPM != "" {
+					d.AdvPowerManagement = probedAPM
 				}
 				d.LastStateCheck = time.Now()
 				syncDiskFields(d)
 			}
+
+			// Re-apply explicit saved APM / Spindown if drive spun up externally from standby
+			if wokeFromSleep {
+				if saved, ok := m.lookupSavedConfigLocked(d.Name, d.ByIDPath, d.Serial); ok {
+					wakeApply = append(wakeApply, diskApplyTarget{
+						path:         d.Path,
+						state:        StateActive,
+						spindownSec:  saved.SpindownSeconds,
+						advPowerMgmt: saved.AdvPowerManagement,
+						isRotational: d.IsRotational,
+					})
+				}
+			}
 		}
 		m.mu.Unlock()
+	}
+
+	if len(wakeApply) > 0 {
+		m.applyDiskConfigsToHardware(wakeApply)
 	}
 }
 
@@ -1214,30 +1354,317 @@ func (m *Manager) readSysfsString(path string) string {
 	return strings.TrimSpace(string(b))
 }
 
-func (m *Manager) saveSpindownConfig() {
-	timeouts := make(map[string]int)
-	for name, d := range m.cachedDisks {
-		timeouts[name] = d.SpindownSeconds
+func diskConfigKey(name, byIDPath, serial string) string {
+	if byIDPath != "" && !strings.HasPrefix(byIDPath, "/dev/sd") && !strings.HasPrefix(byIDPath, "/dev/nvme") && !strings.HasPrefix(byIDPath, "/dev/vd") && !strings.HasPrefix(byIDPath, "/dev/xvd") {
+		return byIDPath
 	}
-	_ = os.MkdirAll(filepath.Dir(m.configPath), 0755)
-	data, err := json.MarshalIndent(timeouts, "", "  ")
-	if err == nil {
-		_ = os.WriteFile(m.configPath, data, 0644)
+	if serial != "" {
+		return "serial:" + serial
+	}
+	return name
+}
+
+func (m *Manager) lookupSavedConfigLocked(name, byIDPath, serial string) (DiskPowerConfig, bool) {
+	if len(m.savedConfigs) == 0 {
+		return DiskPowerConfig{}, false
+	}
+	key := diskConfigKey(name, byIDPath, serial)
+	if cfg, ok := m.savedConfigs[key]; ok {
+		return cfg, true
+	}
+	if byIDPath != "" {
+		for _, cfg := range m.savedConfigs {
+			if cfg.ByIDPath == byIDPath {
+				return cfg, true
+			}
+		}
+	}
+	if serial != "" {
+		for _, cfg := range m.savedConfigs {
+			if cfg.Serial != "" && cfg.Serial == serial {
+				return cfg, true
+			}
+		}
+	}
+	if cfg, ok := m.savedConfigs[name]; ok {
+		return cfg, true
+	}
+	for _, cfg := range m.savedConfigs {
+		if cfg.Name != "" && cfg.Name == name {
+			return cfg, true
+		}
+	}
+	return DiskPowerConfig{}, false
+}
+
+func (m *Manager) recordSavedConfigLocked(d *DiskInfo) {
+	if d == nil {
+		return
+	}
+	if m.savedConfigs == nil {
+		m.savedConfigs = make(map[string]DiskPowerConfig)
+	}
+	key := diskConfigKey(d.Name, d.ByIDPath, d.Serial)
+	spSec := d.SpindownSeconds
+	apm := d.AdvPowerManagement
+	// Remove stale aliases pointing to the same disk under older keys
+	for k, existing := range m.savedConfigs {
+		if k == key {
+			continue
+		}
+		if (d.ByIDPath != "" && existing.ByIDPath == d.ByIDPath) ||
+			(d.Serial != "" && existing.Serial == d.Serial) ||
+			existing.Name == d.Name {
+			if apm == "" {
+				apm = existing.AdvPowerManagement
+			}
+			delete(m.savedConfigs, k)
+		}
+	}
+	m.savedConfigs[key] = DiskPowerConfig{
+		Name:               d.Name,
+		ByIDPath:           d.ByIDPath,
+		Serial:             d.Serial,
+		SpindownSeconds:    &spSec,
+		AdvPowerManagement: apm,
 	}
 }
 
-func (m *Manager) loadSavedSpindownConfig() {
+func (m *Manager) applySavedConfigToDiskLocked(d *DiskInfo) {
+	if d == nil {
+		return
+	}
+	cfg, ok := m.lookupSavedConfigLocked(d.Name, d.ByIDPath, d.Serial)
+	if !ok {
+		return
+	}
+	if cfg.SpindownSeconds != nil && *cfg.SpindownSeconds >= 0 {
+		d.SpindownSeconds = *cfg.SpindownSeconds
+	}
+	if cfg.AdvPowerManagement != "" {
+		if norm, _, err := NormalizeAPMLevel(cfg.AdvPowerManagement); err == nil {
+			d.AdvPowerManagement = norm
+		}
+	}
+}
+
+func (m *Manager) saveDiskConfigLocked() {
+	if m.configPath == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(m.configPath), 0755)
+	data, err := json.MarshalIndent(m.savedConfigs, "", "  ")
+	if err == nil {
+		tmpPath := m.configPath + ".tmp"
+		if writeErr := os.WriteFile(tmpPath, data, 0644); writeErr == nil {
+			_ = os.Rename(tmpPath, m.configPath)
+		} else {
+			_ = os.WriteFile(m.configPath, data, 0644)
+		}
+	}
+}
+
+func (m *Manager) loadSavedDiskConfigLocked() {
+	if m.configPath == "" {
+		return
+	}
 	data, err := os.ReadFile(m.configPath)
 	if err != nil {
 		return
 	}
-	var timeouts map[string]int
-	if err := json.Unmarshal(data, &timeouts); err == nil {
-		for name, sec := range timeouts {
-			if d, ok := m.cachedDisks[name]; ok {
-				d.SpindownSeconds = sec
+
+	var structured map[string]DiskPowerConfig
+	if err := json.Unmarshal(data, &structured); err == nil && len(structured) > 0 {
+		loadedAny := false
+		for _, cfg := range structured {
+			if cfg.SpindownSeconds != nil || cfg.AdvPowerManagement != "" || cfg.Name != "" || cfg.ByIDPath != "" || cfg.Serial != "" {
+				loadedAny = true
+				break
 			}
 		}
+		if loadedAny {
+			if m.savedConfigs == nil {
+				m.savedConfigs = make(map[string]DiskPowerConfig)
+			}
+			for k, cfg := range structured {
+				if cfg.AdvPowerManagement != "" {
+					if norm, _, normErr := NormalizeAPMLevel(cfg.AdvPowerManagement); normErr == nil {
+						cfg.AdvPowerManagement = norm
+					}
+				}
+				m.savedConfigs[k] = cfg
+			}
+			return
+		}
+	}
+
+	// Backward compatibility with legacy map[string]int format
+	var legacy map[string]int
+	if err := json.Unmarshal(data, &legacy); err == nil {
+		if m.savedConfigs == nil {
+			m.savedConfigs = make(map[string]DiskPowerConfig)
+		}
+		for name, sec := range legacy {
+			v := sec
+			m.savedConfigs[name] = DiskPowerConfig{
+				Name:            name,
+				SpindownSeconds: &v,
+			}
+		}
+	}
+}
+
+func (m *Manager) snapshotSavedApplyTargetsLocked() []diskApplyTarget {
+	var out []diskApplyTarget
+	for _, d := range m.cachedDisks {
+		cfg, ok := m.lookupSavedConfigLocked(d.Name, d.ByIDPath, d.Serial)
+		if !ok {
+			continue
+		}
+		out = append(out, diskApplyTarget{
+			path:         d.Path,
+			state:        d.State,
+			spindownSec:  cfg.SpindownSeconds,
+			advPowerMgmt: cfg.AdvPowerManagement,
+			isRotational: d.IsRotational,
+		})
+	}
+	return out
+}
+
+func (m *Manager) applyDiskConfigsToHardware(targets []diskApplyTarget) {
+	hasAnySaved := false
+	for _, t := range targets {
+		hasAnySaved = true
+		if t.state == StateStandby || t.state == StateSleep {
+			continue
+		}
+		if t.advPowerMgmt != "" {
+			if _, arg, err := NormalizeAPMLevel(t.advPowerMgmt); err == nil {
+				_ = applyHardwareAPM(t.path, arg)
+			}
+		}
+		if t.spindownSec != nil && *t.spindownSec >= 0 {
+			_ = applyHardwareSpindown(t.path, *t.spindownSec)
+		}
+	}
+	if hasAnySaved {
+		m.mu.Lock()
+		m.syncHdIdleConfigLocked()
+		m.mu.Unlock()
+	}
+}
+
+func applyHardwareSpindown(devPath string, seconds int) error {
+	val := spindownSecondsToHdparmArg(seconds)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "hdparm", "-S", fmt.Sprintf("%d", val), devPath)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg != "" {
+			return fmt.Errorf("hdparm -S %d %s failed: %s", val, devPath, msg)
+		}
+		return fmt.Errorf("hdparm -S %d %s failed: %w", val, devPath, err)
+	}
+	return nil
+}
+
+func applyHardwareAPM(devPath, hdparmArg string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "hdparm", "-B", hdparmArg, devPath)
+	out, err := cmd.CombinedOutput()
+	outStr := strings.TrimSpace(string(out))
+	lower := strings.ToLower(outStr)
+	if err != nil || strings.Contains(lower, "not supported") || strings.Contains(lower, "failed") || strings.Contains(lower, "inappropriate ioctl") {
+		if outStr != "" {
+			return fmt.Errorf("APM level %s rejected by %s: %s", hdparmArg, devPath, outStr)
+		}
+		if err != nil {
+			return fmt.Errorf("APM level %s rejected by %s: %w", hdparmArg, devPath, err)
+		}
+		return fmt.Errorf("APM level %s not supported by %s", hdparmArg, devPath)
+	}
+	return nil
+}
+
+func (m *Manager) readHardwareAPMSafe(devPath string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "hdparm", "-B", devPath)
+	out, err := cmd.CombinedOutput()
+	if err != nil && len(out) == 0 {
+		return "Disabled"
+	}
+	return parseHdparmAPMOutput(string(out))
+}
+
+func parseHdparmAPMOutput(output string) string {
+	lower := strings.ToLower(output)
+	if strings.Contains(lower, "not supported") || strings.Contains(lower, "inappropriate ioctl") {
+		return "Disabled"
+	}
+	for _, line := range strings.Split(output, "\n") {
+		l := strings.ToLower(strings.TrimSpace(line))
+		if strings.Contains(l, "apm_level") {
+			if idx := strings.LastIndex(l, "="); idx >= 0 {
+				val := strings.TrimSpace(l[idx+1:])
+				if val == "off" || val == "255" || val == "not supported" {
+					return "Disabled"
+				}
+				if norm, _, err := NormalizeAPMLevel(val); err == nil {
+					return norm
+				}
+			}
+		}
+	}
+	return "Disabled"
+}
+
+func (m *Manager) hasHdIdleConfig() bool {
+	if m.hdIdleConfig == "" {
+		return false
+	}
+	_, err := os.Stat(m.hdIdleConfig)
+	return err == nil
+}
+
+func (m *Manager) syncHdIdleConfigLocked() {
+	if !m.hasHdIdleConfig() {
+		return
+	}
+	var names []string
+	for name := range m.cachedDisks {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	opts := []string{"-i", "0"}
+	for _, name := range names {
+		d := m.cachedDisks[name]
+		if d == nil || !d.IsRotational || d.SpindownSeconds <= 0 {
+			continue
+		}
+		targetDev := d.Path
+		if strings.HasPrefix(d.ByIDPath, "/dev/disk/by-id/") {
+			targetDev = d.ByIDPath
+		}
+		opts = append(opts, "-a", targetDev, "-i", strconv.Itoa(d.SpindownSeconds))
+	}
+	opts = append(opts, "-l", "/var/log/hd-idle.log")
+
+	content := fmt.Sprintf("# Managed by nasd\nSTART_HD_IDLE=true\nHD_IDLE_OPTS=%q\n", strings.Join(opts, " "))
+	if existing, err := os.ReadFile(m.hdIdleConfig); err == nil && string(existing) == content {
+		return
+	}
+	if err := os.WriteFile(m.hdIdleConfig, []byte(content), 0644); err == nil && !m.mockMode {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = exec.CommandContext(ctx, "systemctl", "try-restart", "hd-idle").Run()
+		}()
 	}
 }
 

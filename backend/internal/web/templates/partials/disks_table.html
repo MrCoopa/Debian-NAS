@@ -38,16 +38,18 @@
             </td>
             <td style="padding: 0.75rem 1rem;">
               <span class="text-dim" style="font-style: italic;">
-                {{if or (eq $d.SpindownSeconds 0) (not $d.IsRotational)}}
+                {{if not $d.SpindownSeconds}}
                   Always On
-                {{else}}
+                {{else if ge $d.SpindownSeconds 60}}
                   {{div $d.SpindownSeconds 60}} min
+                {{else}}
+                  {{$d.SpindownSeconds}} s
                 {{end}}
               </span>
             </td>
             <td style="padding: 0.75rem 1rem;">
               <span class="font-mono text-dim" style="cursor: pointer;" @click="toggleDisk('{{$d.Name}}')" title="Click to configure APM">
-                {{if $d.AdvPowerManagement}}{{$d.AdvPowerManagement}}{{else if $d.IsRotational}}128{{else}}Disabled{{end}}
+                {{if $d.AdvPowerManagement}}{{$d.AdvPowerManagement}}{{else}}Disabled{{end}}
               </span>
             </td>
             <td style="padding: 0.75rem 1rem; text-align: right;">
@@ -113,11 +115,16 @@
                             onchange="this.form.requestSubmit()">
                       <option value="0" {{if eq $d.SpindownSeconds 0}}selected{{end}}>Always On</option>
                       <option value="5" {{if eq $d.SpindownSeconds 300}}selected{{end}}>5 Minutes</option>
+                      <option value="10" {{if eq $d.SpindownSeconds 600}}selected{{end}}>10 Minutes</option>
                       <option value="15" {{if eq $d.SpindownSeconds 900}}selected{{end}}>15 Minutes</option>
+                      <option value="20" {{if eq $d.SpindownSeconds 1200}}selected{{end}}>20 Minutes</option>
                       <option value="30" {{if eq $d.SpindownSeconds 1800}}selected{{end}}>30 Minutes</option>
                       <option value="60" {{if eq $d.SpindownSeconds 3600}}selected{{end}}>1 Hour</option>
                       <option value="120" {{if eq $d.SpindownSeconds 7200}}selected{{end}}>2 Hours</option>
                       <option value="300" {{if eq $d.SpindownSeconds 18000}}selected{{end}}>5 Hours</option>
+                      {{if $d.SpindownSeconds}}{{if and (gt $d.SpindownSeconds 0) (ne $d.SpindownSeconds 300) (ne $d.SpindownSeconds 600) (ne $d.SpindownSeconds 900) (ne $d.SpindownSeconds 1200) (ne $d.SpindownSeconds 1800) (ne $d.SpindownSeconds 3600) (ne $d.SpindownSeconds 7200) (ne $d.SpindownSeconds 18000)}}
+                        <option value="{{div $d.SpindownSeconds 60}}" selected>{{div $d.SpindownSeconds 60}} Minutes (Custom)</option>
+                      {{end}}{{end}}
                     </select>
                   </form>
                 </div>
@@ -127,13 +134,16 @@
                     <input type="hidden" name="path" value="{{$d.Path}}">
                     <select name="level" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #1a1a1a; border: 1px solid #333; color: #fff; border-radius: 4px; width: 100%;"
                             onchange="this.form.requestSubmit()">
-                      <option value="Disabled" {{if or (eq $d.AdvPowerManagement "Disabled") (eq $d.AdvPowerManagement "255")}}selected{{end}}>Disabled (Max Performance)</option>
+                      <option value="Disabled" {{if or (not $d.AdvPowerManagement) (eq $d.AdvPowerManagement "Disabled") (eq $d.AdvPowerManagement "255")}}selected{{end}}>Disabled (Max Performance)</option>
                       <option value="1" {{if eq $d.AdvPowerManagement "1"}}selected{{end}}>1 - Min Power (Standby)</option>
                       <option value="64" {{if eq $d.AdvPowerManagement "64"}}selected{{end}}>64 - Low Power (Standby)</option>
                       <option value="127" {{if eq $d.AdvPowerManagement "127"}}selected{{end}}>127 - Medium (Standby)</option>
-                      <option value="128" {{if or (eq $d.AdvPowerManagement "128") (and (not $d.AdvPowerManagement) $d.IsRotational)}}selected{{end}}>128 - Min Power (No Standby)</option>
+                      <option value="128" {{if eq $d.AdvPowerManagement "128"}}selected{{end}}>128 - Min Power (No Standby)</option>
                       <option value="192" {{if eq $d.AdvPowerManagement "192"}}selected{{end}}>192 - Medium (No Standby)</option>
                       <option value="254" {{if eq $d.AdvPowerManagement "254"}}selected{{end}}>254 - Max Performance</option>
+                      {{if and $d.AdvPowerManagement (ne $d.AdvPowerManagement "Disabled") (ne $d.AdvPowerManagement "255") (ne $d.AdvPowerManagement "1") (ne $d.AdvPowerManagement "64") (ne $d.AdvPowerManagement "127") (ne $d.AdvPowerManagement "128") (ne $d.AdvPowerManagement "192") (ne $d.AdvPowerManagement "254")}}
+                        <option value="{{$d.AdvPowerManagement}}" selected>{{$d.AdvPowerManagement}} (Custom)</option>
+                      {{end}}
                     </select>
                   </form>
                 </div>
