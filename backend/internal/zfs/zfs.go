@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -2763,7 +2764,139 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
 		return nil
 	}
 
-	args := []string{"import"}
+	return executeZfsPoolImport(runCommand, collectTargetMounts, nameOrID, newName, force)
+}
+
+type zfsMountpointProp struct {
+	name   string
+	value  string
+	source string
+}
+
+type zfsMountpointUpdate struct {
+	dataset    string
+	mountpoint string
+}
+
+func resolvePoolNameByGUID(zpoolListOut []byte, nameOrID string) string {
+	target := strings.TrimSpace(nameOrID)
+	if target == "" {
+		return ""
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(zpoolListOut)), "\n") {
+		fields := strings.Split(strings.TrimSpace(line), "\t")
+		if len(fields) >= 2 && strings.TrimSpace(fields[1]) == target {
+			return strings.TrimSpace(fields[0])
+		}
+	}
+	return ""
+}
+
+func parseZfsMountpointProps(out []byte) []zfsMountpointProp {
+	var props []zfsMountpointProp
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) < 3 {
+			continue
+		}
+		name := strings.TrimSpace(fields[0])
+		val := strings.TrimSpace(fields[1])
+		src := strings.TrimSpace(fields[2])
+		if name == "" {
+			continue
+		}
+		props = append(props, zfsMountpointProp{
+			name:   name,
+			value:  val,
+			source: src,
+		})
+	}
+	return props
+}
+
+// planImportMountpointUpdates normalizes imported pool mountpoints to live under /mnt/<pool>
+// permanently (e.g., TrueNAS /<pool> root & child datasets) while preserving none/legacy/inherit
+// and non-relocated /mnt/, /srv/, /storage/ subpaths.
+func planImportMountpointUpdates(targetPool, oldPoolName string, props []zfsMountpointProp) []zfsMountpointUpdate {
+	targetPool = strings.TrimSpace(targetPool)
+	oldPoolName = strings.TrimSpace(oldPoolName)
+	if targetPool == "" {
+		return nil
+	}
+	wantRootMP := "/mnt/" + targetPool
+	var updates []zfsMountpointUpdate
+
+	for _, p := range props {
+		if p.name != targetPool && !strings.HasPrefix(p.name, targetPool+"/") {
+			continue
+		}
+		valLower := strings.ToLower(p.value)
+		if valLower == "" || valLower == "none" || valLower == "legacy" || valLower == "-" {
+			continue
+		}
+		cleanMP := path.Clean(p.value)
+
+		if p.name == targetPool {
+			if cleanMP != wantRootMP {
+				updates = append(updates, zfsMountpointUpdate{
+					dataset:    p.name,
+					mountpoint: wantRootMP,
+				})
+			}
+			continue
+		}
+
+		// Inherited children automatically pick up their normalized parent's /mnt/... path.
+		if p.source == "default" || strings.HasPrefix(p.source, "inherited from ") {
+			continue
+		}
+
+		// If renamed during import and the old mountpoint explicitly pointed under /mnt/<oldPool>,
+		// relocate it to /mnt/<targetPool> instead of colliding with an old mount path.
+		if oldPoolName != "" && oldPoolName != targetPool {
+			oldPrefix := "/mnt/" + oldPoolName
+			if cleanMP == oldPrefix || strings.HasPrefix(cleanMP, oldPrefix+"/") {
+				relocated := wantRootMP + strings.TrimPrefix(cleanMP, oldPrefix)
+				if cleanMP != relocated {
+					updates = append(updates, zfsMountpointUpdate{
+						dataset:    p.name,
+						mountpoint: relocated,
+					})
+				}
+				continue
+			}
+		}
+
+		// Keep explicit mountpoints already safely placed under standard storage roots.
+		if strings.HasPrefix(cleanMP, "/mnt/") || strings.HasPrefix(cleanMP, "/srv/") || strings.HasPrefix(cleanMP, "/storage/") {
+			continue
+		}
+
+		// Any other explicit mountpoint (TrueNAS /<pool>/..., /, /etc, /media, /mnt, etc.)
+		// is permanently rewritten under /mnt/<dataset> before mounting.
+		wantChildMP := "/mnt/" + p.name
+		if cleanMP != wantChildMP {
+			updates = append(updates, zfsMountpointUpdate{
+				dataset:    p.name,
+				mountpoint: wantChildMP,
+			})
+		}
+	}
+	return updates
+}
+
+func executeZfsPoolImport(
+	runCmd func(time.Duration, string, ...string) ([]byte, error),
+	collectMounts func(string) []zfsMountEntry,
+	nameOrID, newName string,
+	force bool,
+) error {
+	nameOrID = strings.TrimSpace(nameOrID)
+	newName = strings.TrimSpace(newName)
+
+	// Import with -N (do not mount yet) so foreign/TrueNAS mountpoints like /<pool>
+	// or OS paths can be normalized permanently under /mnt/<pool> before mounting.
+	args := []string{"import", "-N"}
 	if force {
 		args = append(args, "-f")
 	}
@@ -2772,12 +2905,12 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
 		args = append(args, newName)
 	}
 
-	out, err := runCommand(defaultZfsTimeout, "zpool", args...)
+	out, err := runCmd(defaultZfsTimeout, "zpool", args...)
 	if err != nil {
 		imported := false
 		// Fallback with -d /dev/disk/by-id and then -d /dev
 		for _, devDir := range []string{"/dev/disk/by-id", "/dev"} {
-			dirArgs := []string{"import", "-d", devDir}
+			dirArgs := []string{"import", "-N", "-d", devDir}
 			if force {
 				dirArgs = append(dirArgs, "-f")
 			}
@@ -2785,7 +2918,7 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
 			if newName != "" {
 				dirArgs = append(dirArgs, newName)
 			}
-			if out2, err2 := runCommand(defaultZfsTimeout, "zpool", dirArgs...); err2 == nil {
+			if out2, err2 := runCmd(defaultZfsTimeout, "zpool", dirArgs...); err2 == nil {
 				imported = true
 				break
 			} else {
@@ -2797,14 +2930,34 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
 			return fmt.Errorf("zpool import failed: %v (%s)", err, strings.TrimSpace(string(out)))
 		}
 	}
-	targetPool := strings.TrimSpace(newName)
+
+	targetPool := newName
 	if targetPool == "" && validate.PoolName(nameOrID) == nil {
 		targetPool = nameOrID
 	}
+	if targetPool == "" {
+		if listOut, listErr := runCmd(fastZfsTimeout, "zpool", "list", "-H", "-o", "name,guid"); listErr == nil {
+			targetPool = resolvePoolNameByGUID(listOut, nameOrID)
+		}
+	}
+
 	if targetPool != "" {
-		_ = ensureDatasetTreeMounted(runCommand, collectTargetMounts, targetPool)
+		propsOut, propErr := runCmd(fastZfsTimeout, "zfs", "get", "-H", "-t", "filesystem", "-o", "name,value,source", "-r", "mountpoint", targetPool)
+		if propErr != nil {
+			return fmt.Errorf("pool '%s' imported without mounting, but failed to inspect mountpoints: %v (%s)", targetPool, propErr, strings.TrimSpace(string(propsOut)))
+		}
+		oldPoolName := ""
+		if newName != "" && validate.PoolName(nameOrID) == nil {
+			oldPoolName = nameOrID
+		}
+		for _, upd := range planImportMountpointUpdates(targetPool, oldPoolName, parseZfsMountpointProps(propsOut)) {
+			if setOut, setErr := runCmd(defaultZfsTimeout, "zfs", "set", "mountpoint="+upd.mountpoint, upd.dataset); setErr != nil {
+				return fmt.Errorf("pool '%s' imported without mounting, but failed to set mountpoint '%s' on '%s': %v (%s)", targetPool, upd.mountpoint, upd.dataset, setErr, strings.TrimSpace(string(setOut)))
+			}
+		}
+		_ = ensureDatasetTreeMounted(runCmd, collectMounts, targetPool)
 	} else {
-		_, _ = runCommand(defaultZfsTimeout, "zfs", "mount", "-a")
+		_, _ = runCmd(defaultZfsTimeout, "zfs", "mount", "-a")
 	}
 	return nil
 }

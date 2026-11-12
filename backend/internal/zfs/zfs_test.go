@@ -716,5 +716,193 @@ func TestRollbackSnapshotWithOptions_RecursiveMock(t *testing.T) {
 	}
 }
 
+func TestPlanImportMountpointUpdates(t *testing.T) {
+	t.Run("TrueNAS_To_Mnt", func(t *testing.T) {
+		raw := strings.Join([]string{
+			"tank\t/tank\tlocal",
+			"tank/media\t/tank/media\tinherited from tank",
+			"tank/apps\t/tank/apps\tlocal",
+			"tank/ix-apps\tnone\tlocal",
+			"tank/legacyfs\tlegacy\tlocal",
+			"tank/ok\t/mnt/tank/ok\tlocal",
+			"otherpool/ds\t/otherpool/ds\tlocal",
+		}, "\n")
+		got := planImportMountpointUpdates("tank", "", parseZfsMountpointProps([]byte(raw)))
+		want := []zfsMountpointUpdate{
+			{dataset: "tank", mountpoint: "/mnt/tank"},
+			{dataset: "tank/apps", mountpoint: "/mnt/tank/apps"},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("updates = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("Native_And_Dangerous_Paths", func(t *testing.T) {
+		raw := strings.Join([]string{
+			"DATA\t/mnt/DATA\tlocal",
+			"DATA/Share\t/mnt/DATA/Share\tinherited from DATA",
+			"DATA/Srv\t/srv/DATA/Srv\tlocal",
+			"DATA/RootBug\t/\tlocal",
+			"DATA/MntRoot\t/mnt\tlocal",
+			"DATA/EtcBug\t/etc/custom\treceived",
+		}, "\n")
+		got := planImportMountpointUpdates("DATA", "", parseZfsMountpointProps([]byte(raw)))
+		want := []zfsMountpointUpdate{
+			{dataset: "DATA/RootBug", mountpoint: "/mnt/DATA/RootBug"},
+			{dataset: "DATA/MntRoot", mountpoint: "/mnt/DATA/MntRoot"},
+			{dataset: "DATA/EtcBug", mountpoint: "/mnt/DATA/EtcBug"},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("updates = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("Renamed_Import_Relocates_Old_Mnt", func(t *testing.T) {
+		raw := strings.Join([]string{
+			"archiv\t/mnt/tank\tlocal",
+			"archiv/docs\t/mnt/tank/docs\tinherited from archiv",
+			"archiv/custom\t/mnt/tank/custom\tlocal",
+		}, "\n")
+		got := planImportMountpointUpdates("archiv", "tank", parseZfsMountpointProps([]byte(raw)))
+		want := []zfsMountpointUpdate{
+			{dataset: "archiv", mountpoint: "/mnt/archiv"},
+			{dataset: "archiv/custom", mountpoint: "/mnt/archiv/custom"},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("updates = %#v, want %#v", got, want)
+		}
+	})
+}
+
+func TestExecuteZfsPoolImport_NormalizesAndMounts(t *testing.T) {
+	t.Run("TrueNAS_Pool_Import_Uses_NoMount_Normalizes_Then_Mounts", func(t *testing.T) {
+		var cmds []string
+		run := func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+			cmdLine := name + " " + strings.Join(args, " ")
+			cmds = append(cmds, cmdLine)
+			if name == "zfs" && len(args) > 0 && args[0] == "get" {
+				return []byte("tank\t/tank\tlocal\ntank/media\t/tank/media\tinherited from tank\ntank/apps\t/tank/apps\tlocal\n"), nil
+			}
+			return nil, nil
+		}
+		collect := func(target string) []zfsMountEntry {
+			return []zfsMountEntry{
+				{name: "tank/media", mountpoint: "/mnt/tank/media", mounted: false, canmount: true},
+				{name: "tank/apps", mountpoint: "/mnt/tank/apps", mounted: false, canmount: true},
+				{name: "tank", mountpoint: "/mnt/tank", mounted: false, canmount: true},
+			}
+		}
+
+		if err := executeZfsPoolImport(run, collect, "tank", "", true); err != nil {
+			t.Fatalf("executeZfsPoolImport failed: %v", err)
+		}
+		want := []string{
+			"zpool import -N -f tank",
+			"zfs get -H -t filesystem -o name,value,source -r mountpoint tank",
+			"zfs set mountpoint=/mnt/tank tank",
+			"zfs set mountpoint=/mnt/tank/apps tank/apps",
+			"zfs mount tank",
+			"zfs mount tank/apps",
+			"zfs mount tank/media",
+		}
+		if !reflect.DeepEqual(cmds, want) {
+			t.Fatalf("cmds = %#v, want %#v", cmds, want)
+		}
+	})
+
+	t.Run("Import_By_Numeric_GUID_Resolves_Name_And_Normalizes", func(t *testing.T) {
+		var cmds []string
+		guid := "1483920193849182741"
+		run := func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+			cmds = append(cmds, name+" "+strings.Join(args, " "))
+			if name == "zpool" && len(args) > 0 && args[0] == "list" {
+				return []byte("other\t999999999\ntruenas\t" + guid + "\n"), nil
+			}
+			if name == "zfs" && len(args) > 0 && args[0] == "get" {
+				return []byte("truenas\t/truenas\tlocal\n"), nil
+			}
+			return nil, nil
+		}
+		collect := func(target string) []zfsMountEntry {
+			return []zfsMountEntry{
+				{name: "truenas", mountpoint: "/mnt/truenas", mounted: false, canmount: true},
+			}
+		}
+
+		if err := executeZfsPoolImport(run, collect, guid, "", false); err != nil {
+			t.Fatalf("executeZfsPoolImport by GUID failed: %v", err)
+		}
+		want := []string{
+			"zpool import -N " + guid,
+			"zpool list -H -o name,guid",
+			"zfs get -H -t filesystem -o name,value,source -r mountpoint truenas",
+			"zfs set mountpoint=/mnt/truenas truenas",
+			"zfs mount truenas",
+		}
+		if !reflect.DeepEqual(cmds, want) {
+			t.Fatalf("cmds = %#v, want %#v", cmds, want)
+		}
+	})
+
+	t.Run("Native_Mnt_Pool_Skips_Redundant_Set_And_Avoids_Double_Mnt", func(t *testing.T) {
+		var cmds []string
+		run := func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+			cmds = append(cmds, name+" "+strings.Join(args, " "))
+			if name == "zfs" && len(args) > 0 && args[0] == "get" {
+				return []byte("DATA\t/mnt/DATA\tlocal\nDATA/Share\t/mnt/DATA/Share\tinherited from DATA\n"), nil
+			}
+			return nil, nil
+		}
+		collect := func(target string) []zfsMountEntry {
+			return []zfsMountEntry{
+				{name: "DATA/Share", mountpoint: "/mnt/DATA/Share", mounted: false, canmount: true},
+				{name: "DATA", mountpoint: "/mnt/DATA", mounted: false, canmount: true},
+			}
+		}
+
+		if err := executeZfsPoolImport(run, collect, "DATA", "", false); err != nil {
+			t.Fatalf("executeZfsPoolImport native pool failed: %v", err)
+		}
+		want := []string{
+			"zpool import -N DATA",
+			"zfs get -H -t filesystem -o name,value,source -r mountpoint DATA",
+			"zfs mount DATA",
+			"zfs mount DATA/Share",
+		}
+		if !reflect.DeepEqual(cmds, want) {
+			t.Fatalf("cmds = %#v, want %#v", cmds, want)
+		}
+	})
+
+	t.Run("Mountpoint_Set_Error_Aborts_Before_Mounting", func(t *testing.T) {
+		var cmds []string
+		run := func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+			cmds = append(cmds, name+" "+strings.Join(args, " "))
+			if name == "zfs" && len(args) > 0 && args[0] == "get" {
+				return []byte("evil\t/\tlocal\n"), nil
+			}
+			if name == "zfs" && len(args) > 0 && args[0] == "set" {
+				return []byte("permission denied"), fmt.Errorf("exit status 1")
+			}
+			return nil, nil
+		}
+		collect := func(target string) []zfsMountEntry {
+			t.Fatalf("collectMounts should not be called when mountpoint normalization fails")
+			return nil
+		}
+
+		err := executeZfsPoolImport(run, collect, "evil", "", false)
+		if err == nil || !strings.Contains(err.Error(), "imported without mounting") {
+			t.Fatalf("expected abort error mentioning imported without mounting, got: %v", err)
+		}
+		for _, c := range cmds {
+			if strings.HasPrefix(c, "zfs mount") {
+				t.Fatalf("must not attempt mount after set failure, cmds=%v", cmds)
+			}
+		}
+	})
+}
+
+
 
 
