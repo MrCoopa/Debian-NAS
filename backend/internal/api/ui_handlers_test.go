@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1308,8 +1309,9 @@ func TestUI_SnapshotsGroupedByPoolAndPagination(t *testing.T) {
 	srv := createTestServer(t)
 	handler := srv.Routes()
 
-	_ = srv.zfs.CreateSnapshot("DATA/apps", "test-snap-01")
-	_ = srv.zfs.CreateSnapshot("DATA/apps", "test-snap-02")
+	for i := 1; i <= 15; i++ {
+		_ = srv.zfs.CreateSnapshot("DATA", fmt.Sprintf("test-snap-%02d", i))
+	}
 	_ = srv.zfs.CreateSnapshot("SSD-MIRROR/fast", "test-fast-01")
 
 	req := httptest.NewRequest("GET", "/ui/partials/snapshots", nil)
@@ -1327,11 +1329,14 @@ func TestUI_SnapshotsGroupedByPoolAndPagination(t *testing.T) {
 	if !strings.Contains(body, `Pool: <strong class="text-blue">SSD-MIRROR</strong>`) {
 		t.Fatalf("expected pool SSD-MIRROR table in body: %s", body)
 	}
-	if !strings.Contains(body, "pageSize: 10") {
-		t.Fatalf("expected pageSize 10 in body: %s", body)
+	if !strings.Contains(body, "isSnapRowVisible") {
+		t.Fatalf("expected isSnapRowVisible in body: %s", body)
 	}
 	if !strings.Contains(body, "table-pagination") {
 		t.Fatalf("expected table-pagination container in body: %s", body)
+	}
+	if !strings.Contains(body, "Page <span class=\"text-white\" x-text=\"getSnapPage('DATA')\">1</span> of <span class=\"text-white\">2</span>") {
+		t.Fatalf("expected page 1 of 2 in body: %s", body)
 	}
 }
 

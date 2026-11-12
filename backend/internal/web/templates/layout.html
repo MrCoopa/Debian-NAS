@@ -79,6 +79,37 @@
         snapName: '',
         snapRecursive: false,
         snapSearch: '',
+        snapPage: {},
+        snapFilter: {},
+        getSnapPage(pool) {
+          return this.snapPage[pool] || 1;
+        },
+        setSnapPage(pool, page) {
+          this.snapPage = Object.assign({}, this.snapPage, { [pool]: Math.max(1, page) });
+        },
+        snapPrevPage(pool) {
+          const cur = this.getSnapPage(pool);
+          if (cur > 1) this.setSnapPage(pool, cur - 1);
+        },
+        snapNextPage(pool, maxPages) {
+          const cur = this.getSnapPage(pool);
+          if (cur < maxPages) this.setSnapPage(pool, cur + 1);
+        },
+        getSnapFilter(pool) {
+          return (this.snapFilter[pool] || '').toLowerCase().trim();
+        },
+        setSnapFilter(pool, text) {
+          this.snapFilter = Object.assign({}, this.snapFilter, { [pool]: text });
+          this.setSnapPage(pool, 1);
+        },
+        isSnapRowVisible(pool, idx, name, ds) {
+          const q = this.getSnapFilter(pool);
+          if (q) {
+            return (name && name.toLowerCase().includes(q)) || (ds && ds.toLowerCase().includes(q));
+          }
+          const page = this.getSnapPage(pool);
+          return Math.floor(idx / 10) === (page - 1);
+        },
         matchesSnap(name, ds) {
           if (!this.snapSearch || !this.snapSearch.trim()) return true;
           const q = this.snapSearch.toLowerCase();

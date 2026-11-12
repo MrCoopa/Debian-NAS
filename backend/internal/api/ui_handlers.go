@@ -17,9 +17,11 @@ import (
 )
 
 type PoolSnapshotsGroup struct {
-	PoolName  string
-	Health    string
-	Snapshots []*zfs.Snapshot
+	PoolName   string
+	Health     string
+	TotalCount int
+	TotalPages int
+	Snapshots  []*zfs.Snapshot
 }
 
 // ViewData is passed to the root layout and all partials
@@ -149,10 +151,18 @@ func (s *Server) buildPartialViewData(mask viewFetchMask, req ...*http.Request) 
 					break
 				}
 			}
+			snaps := poolMap[pName]
+			totCount := len(snaps)
+			totPages := (totCount + 9) / 10
+			if totPages < 1 {
+				totPages = 1
+			}
 			snapshotsByPool = append(snapshotsByPool, PoolSnapshotsGroup{
-				PoolName:  pName,
-				Health:    health,
-				Snapshots: poolMap[pName],
+				PoolName:   pName,
+				Health:     health,
+				TotalCount: totCount,
+				TotalPages: totPages,
+				Snapshots:  snaps,
 			})
 		}
 	}

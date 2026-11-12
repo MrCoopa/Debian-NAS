@@ -1,45 +1,16 @@
 <div id="snapshots-container" hx-get="/ui/partials/snapshots" hx-trigger="every 8s [currentTab === 'protection' && !document.hidden], snapshotUpdate from:body, snapshotTaskUpdate from:body, datasetUpdate from:body, poolUpdate from:body" hx-swap="outerHTML">
   {{range $grp := .SnapshotsByPool}}
-    <div class="table-card" style="margin-bottom: 1.5rem;" x-data="{
-        page: 1,
-        pageSize: 10,
-        search: '',
-        allSnaps: [
-          {{range $idx, $s := $grp.Snapshots}}
-            {{if $idx}},{{end}}{ name: '{{$s.Name}}', dataset: '{{$s.Dataset}}' }
-          {{end}}
-        ],
-        get filtered() {
-          if (!this.search || !this.search.trim()) return this.allSnaps;
-          const q = this.search.toLowerCase().trim();
-          return this.allSnaps.filter(s => (s.name && s.name.toLowerCase().includes(q)) || (s.dataset && s.dataset.toLowerCase().includes(q)));
-        },
-        get totalPages() {
-          return Math.max(1, Math.ceil(this.filtered.length / this.pageSize));
-        },
-        get startIdx() {
-          return (this.page - 1) * this.pageSize;
-        },
-        get endIdx() {
-          return Math.min(this.startIdx + this.pageSize, this.filtered.length);
-        },
-        get pageSet() {
-          return new Set(this.filtered.slice(this.startIdx, this.endIdx).map(s => s.name));
-        },
-        isShown(name) {
-          return this.pageSet.has(name);
-        }
-    }">
+    <div class="table-card" style="margin-bottom: 1.5rem;">
       <div class="table-toolbar" style="flex-wrap: wrap; gap: 0.75rem; justify-content: space-between; align-items: center;">
         <div style="display: flex; align-items: center; gap: 0.6rem;">
           <span class="toolbar-title" style="display: flex; align-items: center; gap: 0.5rem;">
             <span>Pool: <strong class="text-blue">{{$grp.PoolName}}</strong></span>
             <span class="badge-status {{if eq $grp.Health "ONLINE"}}green{{else}}amber{{end}}" style="font-size: 0.68rem;">{{$grp.Health}}</span>
           </span>
-          <span class="badge-status" style="font-size: 0.68rem; background: #262626; color: #a0a0a0;" x-text="filtered.length + ' Snapshots'">{{len $grp.Snapshots}} Snapshots</span>
+          <span class="badge-status" style="font-size: 0.68rem; background: #262626; color: #a0a0a0;">{{$grp.TotalCount}} Snapshots</span>
         </div>
         <div class="toolbar-actions" style="display: flex; align-items: center; gap: 0.5rem;">
-          <input type="text" x-model="search" @input="page = 1" placeholder="Filter {{$grp.PoolName}}..." style="padding: 0.28rem 0.6rem; font-size: 0.78rem; width: 170px; background: #141414; border: 1px solid var(--fn-border-main, #333); border-radius: 3px; color: var(--fn-text-primary, #fff);">
+          <input type="text" :value="getSnapFilter('{{$grp.PoolName}}')" @input="setSnapFilter('{{$grp.PoolName}}', $event.target.value)" placeholder="Filter {{$grp.PoolName}}..." style="padding: 0.28rem 0.6rem; font-size: 0.78rem; width: 170px; background: #141414; border: 1px solid var(--fn-border-main, #333); border-radius: 3px; color: var(--fn-text-primary, #fff);">
           <button type="button" class="btn btn-primary btn-sm" @click.stop="openCreateSnap('{{$grp.PoolName}}')">+ Take Manual Snapshot</button>
         </div>
       </div>
@@ -64,13 +35,8 @@
                 </td>
               </tr>
             {{else}}
-              <tr x-show="filtered.length === 0" style="display: none;">
-                <td colspan="6" class="text-dim" style="text-align: center; padding: 1.5rem;">
-                  No snapshots match the filter '<span x-text="search"></span>'.
-                </td>
-              </tr>
-              {{range $s := $grp.Snapshots}}
-                <tr id="row-snap-{{domId $s.Name}}" x-show="isShown('{{$s.Name}}')">
+              {{range $idx, $s := $grp.Snapshots}}
+                <tr id="row-snap-{{domId $s.Name}}" x-show="isSnapRowVisible('{{$grp.PoolName}}', {{$idx}}, '{{$s.Name}}', '{{$s.Dataset}}')">
                   <td><strong class="font-mono text-blue">{{$s.Name}}</strong></td>
                   <td><span class="font-mono text-dim">{{$s.Dataset}}</span></td>
                   <td class="font-mono">{{formatBytes $s.ReferencedBytes}}</td>
@@ -93,21 +59,25 @@
         </table>
       </div>
 
-      {{if $grp.Snapshots}}
-        <div class="table-pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 1rem; border-top: 1px solid var(--fn-border-main, #262626); background: rgba(0,0,0,0.15); font-size: 0.8rem;" x-show="allSnaps.length > 0">
+      {{if gt $grp.TotalCount 0}}
+        <div class="table-pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 1rem; border-top: 1px solid var(--fn-border-main, #262626); background: rgba(0,0,0,0.15); font-size: 0.8rem;">
           <div class="text-dim">
-            <span x-show="filtered.length > 0">
-              Showing <span class="font-mono text-white" x-text="startIdx + 1"></span> - <span class="font-mono text-white" x-text="endIdx"></span> of <span class="font-mono text-white" x-text="filtered.length"></span> snapshots
+            <span x-show="!getSnapFilter('{{$grp.PoolName}}')">
+              Showing <span class="font-mono text-white" x-text="((getSnapPage('{{$grp.PoolName}}') - 1) * 10) + 1">1</span> - <span class="font-mono text-white" x-text="Math.min(getSnapPage('{{$grp.PoolName}}') * 10, {{$grp.TotalCount}})">{{if gt $grp.TotalCount 10}}10{{else}}{{$grp.TotalCount}}{{end}}</span> of <span class="font-mono text-white">{{$grp.TotalCount}}</span> snapshots
             </span>
-            <span x-show="filtered.length === 0">0 snapshots</span>
-          </div>
-          <div style="display: flex; gap: 0.5rem; align-items: center;" x-show="totalPages > 1">
-            <button type="button" class="btn btn-secondary btn-sm" :disabled="page <= 1" @click="page--">‹ Previous</button>
-            <span class="font-mono" style="font-size: 0.78rem; color: #a0a0a0;">
-              Page <span class="text-white" x-text="page"></span> of <span class="text-white" x-text="totalPages"></span>
+            <span x-show="getSnapFilter('{{$grp.PoolName}}')">
+              Filter active for "<span class="font-mono text-white" x-text="getSnapFilter('{{$grp.PoolName}}')"></span>"
             </span>
-            <button type="button" class="btn btn-secondary btn-sm" :disabled="page >= totalPages" @click="page++">Next ›</button>
           </div>
+          {{if gt $grp.TotalPages 1}}
+            <div style="display: flex; gap: 0.5rem; align-items: center;" x-show="!getSnapFilter('{{$grp.PoolName}}')">
+              <button type="button" class="btn btn-secondary btn-sm" :disabled="getSnapPage('{{$grp.PoolName}}') <= 1" @click="snapPrevPage('{{$grp.PoolName}}')">‹ Previous</button>
+              <span class="font-mono" style="font-size: 0.78rem; color: #a0a0a0;">
+                Page <span class="text-white" x-text="getSnapPage('{{$grp.PoolName}}')">1</span> of <span class="text-white">{{$grp.TotalPages}}</span>
+              </span>
+              <button type="button" class="btn btn-secondary btn-sm" :disabled="getSnapPage('{{$grp.PoolName}}') >= {{$grp.TotalPages}}" @click="snapNextPage('{{$grp.PoolName}}', {{$grp.TotalPages}})">Next ›</button>
+            </div>
+          {{end}}
         </div>
       {{end}}
     </div>
