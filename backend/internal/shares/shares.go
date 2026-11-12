@@ -278,7 +278,7 @@ func normalizeMainSmbConf(content string) string {
 			strings.Contains(trimmed, "Dynamic Debian NAS shares") {
 			continue
 		}
-		if inGlobal && (lower == "map to guest = bad user" ||
+		if inGlobal && (strings.HasPrefix(lower, "map to guest") ||
 			lower == "usershare allow guests = yes" ||
 			lower == "browseable = yes") {
 			continue
@@ -303,7 +303,7 @@ func normalizeMainSmbConf(content string) string {
 	}
 
 	globalOpts := []string{
-		"   map to guest = Bad User",
+		"   map to guest = Never",
 		"   usershare allow guests = yes",
 	}
 
@@ -1034,18 +1034,33 @@ func (m *Manager) FixSharePermissions(name string) error {
 		return nil
 	}
 
-	// 1. Ensure group nasusers exists and valid users are members
+	// 1. Ensure group nasusers exists and valid users are members (creating user if missing)
 	_, _ = runCmdWithTimeout(5*time.Second, "groupadd", "-f", "nasusers")
 	for _, u := range s.ValidUsers {
-		_, _ = runCmdWithTimeout(5*time.Second, "usermod", "-aG", "nasusers", u)
-	}
-
-	// 2. Ensure parent dirs under /mnt/ are traversable (chmod a+x)
-	for p := filepath.Dir(s.Path); strings.HasPrefix(filepath.ToSlash(p), "/mnt/"); p = filepath.Dir(p) {
-		if info, err := os.Stat(p); err == nil && info.IsDir() {
-			_, _ = m.execCmd(5*time.Second, "chmod", "a+x", p)
+		if u == "" {
+			continue
+		}
+		ctxId, cancelId := context.WithTimeout(context.Background(), 3*time.Second)
+		err := exec.CommandContext(ctxId, "id", u).Run()
+		cancelId()
+		if err != nil {
+			nologin := "/usr/sbin/nologin"
+			if _, statErr := os.Stat(nologin); statErr != nil {
+				nologin = "/bin/false"
+			}
+			_, _ = m.execCmd(5*time.Second, "useradd", "-M", "-s", nologin, "-G", "nasusers", "-c", "NAS Storage User", u)
+		} else {
+			_, _ = runCmdWithTimeout(5*time.Second, "usermod", "-aG", "nasusers", u)
 		}
 	}
+
+	// 2. Ensure parent dirs under /mnt are traversable (chmod 0755)
+	for p := s.Path; strings.HasPrefix(filepath.ToSlash(p), "/mnt"); p = filepath.Dir(p) {
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			_, _ = m.execCmd(5*time.Second, "chmod", "0755", p)
+		}
+	}
+	_ = os.Chmod("/mnt", 0755)
 
 	// 2.5 Lift restrictive TrueNAS ZFS ACLs on the underlying pool if applicable
 	cleanPath := filepath.ToSlash(s.Path)
@@ -1057,6 +1072,9 @@ func (m *Manager) FixSharePermissions(name string) error {
 			_, _ = m.execCmd(5*time.Second, "zfs", "set", "acltype=posix", poolName)
 			_, _ = m.execCmd(5*time.Second, "zfs", "set", "aclmode=discard", poolName)
 			_, _ = m.execCmd(5*time.Second, "zfs", "set", "aclinherit=passthrough", poolName)
+			_, _ = m.execCmd(5*time.Second, "zfs", "inherit", "-r", "acltype", poolName)
+			_, _ = m.execCmd(5*time.Second, "zfs", "inherit", "-r", "aclmode", poolName)
+			_, _ = m.execCmd(5*time.Second, "zfs", "inherit", "-r", "aclinherit", poolName)
 		}
 	}
 

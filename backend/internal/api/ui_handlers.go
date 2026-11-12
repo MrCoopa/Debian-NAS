@@ -686,6 +686,7 @@ func (s *Server) handleUIActionSaveSmb(w http.ResponseWriter, r *http.Request) {
 		if err := s.shares.SaveSmb(smb); err != nil {
 			s.setHXTrigger(w, "Error saving SMB share: "+err.Error(), "error")
 		} else {
+			_ = s.shares.FixSharePermissions(name)
 			s.setHXTrigger(w, fmt.Sprintf("SMB share '%s' successfully configured", name), "success", "shareUpdate", "userUpdate")
 		}
 	}
