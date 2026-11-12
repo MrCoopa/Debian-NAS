@@ -38,6 +38,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
   samba \
   smbclient \
   nfs-kernel-server \
+  rpcbind \
   psmisc \
   hdparm \
   smartmontools \
@@ -93,8 +94,10 @@ systemctl restart smbd nmbd || true
 systemctl enable --now wsdd2 2>/dev/null || systemctl enable --now wsdd 2>/dev/null || systemctl enable --now wsdd-server 2>/dev/null || true
 systemctl restart wsdd2 2>/dev/null || systemctl restart wsdd 2>/dev/null || systemctl restart wsdd-server 2>/dev/null || true
 
-# 2. NFS Exports Ordner
+# 2. NFS Exports Ordner & Dienste aktivieren
 mkdir -p /etc/exports.d
+systemctl enable --now rpcbind 2>/dev/null || true
+systemctl enable --now nfs-kernel-server 2>/dev/null || true
 
 # 3. Config-Verzeichnis für nasd (restriktive Rechte 0700)
 mkdir -p /etc/nas
