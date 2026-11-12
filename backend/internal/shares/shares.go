@@ -1047,6 +1047,19 @@ func (m *Manager) FixSharePermissions(name string) error {
 		}
 	}
 
+	// 2.5 Lift restrictive TrueNAS ZFS ACLs on the underlying pool if applicable
+	cleanPath := filepath.ToSlash(s.Path)
+	if strings.HasPrefix(cleanPath, "/mnt/") {
+		rel := strings.TrimPrefix(cleanPath, "/mnt/")
+		parts := strings.Split(rel, "/")
+		if len(parts) > 0 && parts[0] != "" {
+			poolName := parts[0]
+			_, _ = m.execCmd(5*time.Second, "zfs", "set", "acltype=posix", poolName)
+			_, _ = m.execCmd(5*time.Second, "zfs", "set", "aclmode=discard", poolName)
+			_, _ = m.execCmd(5*time.Second, "zfs", "set", "aclinherit=passthrough", poolName)
+		}
+	}
+
 	// 3. Primary owner: single user if assigned, else root
 	primaryUser := "root"
 	if len(s.ValidUsers) == 1 && s.ValidUsers[0] != "" {
