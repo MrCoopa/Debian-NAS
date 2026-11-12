@@ -71,6 +71,11 @@
                 data-guest="{{$s.GuestOk}}"
                 data-users="{{join $s.ValidUsers ","}}"
                 @click="openEditSmbShare($el.dataset.name, $el.dataset.path, $el.dataset.readonly === 'true', $el.dataset.guest === 'true', $el.dataset.users)">Edit</button>
+              <button type="button" class="btn btn-secondary btn-sm"
+                hx-post="/ui/actions/shares/smb/fix-permissions?name={{urlquery $s.Name}}"
+                hx-target="#shares-container"
+                hx-swap="outerHTML"
+                title="Fix folder ownership and permissions (nasusers / 2775)">Fix Permissions</button>
               <button type="button" class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/smb?name={{urlquery $s.Name}}"
                 hx-confirm="Delete SMB share '{{$s.Name}}'?" hx-target="#shares-container"
                 hx-swap="outerHTML">Delete</button>

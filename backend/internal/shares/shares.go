@@ -755,9 +755,9 @@ func (m *Manager) writeNfsExportsLocked() error {
 			options := exp.Options
 			if options == "" {
 				if exp.ReadOnly {
-					options = "ro,sync,no_subtree_check,root_squash"
+					options = "ro,sync,no_subtree_check,no_root_squash"
 				} else {
-					options = "rw,sync,no_subtree_check,root_squash"
+					options = "rw,sync,no_subtree_check,no_root_squash"
 				}
 			}
 			clients := exp.AllowedClients
@@ -961,5 +961,104 @@ func (m *Manager) DeleteUser(username string) error {
 			return fmt.Errorf("userdel failed: %v (%s)", err, outStr)
 		}
 	}
+	return nil
+}
+
+// SetUserPassword updates the password for an existing storage user and syncs with Samba.
+func (m *Manager) SetUserPassword(username, password string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	username = strings.ToLower(strings.TrimSpace(username))
+	if err := validate.Username(username); err != nil {
+		return fmt.Errorf("invalid username: %w", err)
+	}
+	if err := validate.Password(password); err != nil {
+		return fmt.Errorf("invalid password: %w", err)
+	}
+
+	if m.mockMode {
+		if u, ok := m.users[username]; ok {
+			m.users[username] = u
+		} else {
+			m.users[username] = StorageUser{Username: username, Role: "user"}
+		}
+		return nil
+	}
+
+	// 1. Ensure nasusers group exists and user is member
+	_, _ = runCmdWithTimeout(5*time.Second, "groupadd", "-f", "nasusers")
+	_, _ = runCmdWithTimeout(5*time.Second, "usermod", "-aG", "nasusers", username)
+
+	// 2. Set Samba password via smbpasswd
+	ctxPw, cancelPw := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelPw()
+	cmd := exec.CommandContext(ctxPw, "smbpasswd", "-a", "-s", username)
+	cmd.Stdin = strings.NewReader(fmt.Sprintf("%s\n%s\n", password, password))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		outStr := strings.TrimSpace(string(out))
+		if strings.Contains(outStr, "Failed to add") || strings.Contains(outStr, "already exists") {
+			ctxUp, cancelUp := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancelUp()
+			updateCmd := exec.CommandContext(ctxUp, "smbpasswd", "-s", username)
+			updateCmd.Stdin = strings.NewReader(fmt.Sprintf("%s\n%s\n", password, password))
+			if uOut, uErr := updateCmd.CombinedOutput(); uErr != nil {
+				return fmt.Errorf("smbpasswd update failed: %v (%s)", uErr, strings.TrimSpace(string(uOut)))
+			}
+		} else {
+			return fmt.Errorf("smbpasswd failed: %v (%s)", err, outStr)
+		}
+	}
+
+	// 3. Ensure user is enabled in Samba
+	_, _ = runCmdWithTimeout(5*time.Second, "smbpasswd", "-e", username)
+
+	if _, ok := m.users[username]; !ok {
+		m.users[username] = StorageUser{Username: username, Role: "user"}
+	}
+	return nil
+}
+
+// FixSharePermissions applies appropriate ownership and group permissions on the share path.
+func (m *Manager) FixSharePermissions(name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	s, ok := m.smbShares[name]
+	if !ok || s == nil {
+		return fmt.Errorf("share '%s' not found", name)
+	}
+
+	if m.mockMode {
+		return nil
+	}
+
+	// 1. Ensure group nasusers exists and valid users are members
+	_, _ = runCmdWithTimeout(5*time.Second, "groupadd", "-f", "nasusers")
+	for _, u := range s.ValidUsers {
+		_, _ = runCmdWithTimeout(5*time.Second, "usermod", "-aG", "nasusers", u)
+	}
+
+	// 2. Ensure parent dirs under /mnt/ are traversable (chmod a+x)
+	for p := filepath.Dir(s.Path); strings.HasPrefix(filepath.ToSlash(p), "/mnt/"); p = filepath.Dir(p) {
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			_, _ = m.execCmd(5*time.Second, "chmod", "a+x", p)
+		}
+	}
+
+	// 3. Primary owner: single user if assigned, else root
+	primaryUser := "root"
+	if len(s.ValidUsers) == 1 && s.ValidUsers[0] != "" {
+		primaryUser = s.ValidUsers[0]
+	}
+
+	_, _ = m.execCmd(15*time.Second, "chown", "-R", primaryUser+":nasusers", s.Path)
+	_, _ = m.execCmd(15*time.Second, "chmod", "-R", "2775", s.Path)
+
+	// Reload Samba so clients see permissions immediately
+	_, _ = m.execCmd(5*time.Second, "smbcontrol", "all", "reload-config")
+	_, _ = m.execCmd(10*time.Second, "systemctl", "reload-or-restart", "smbd")
+
 	return nil
 }

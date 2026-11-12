@@ -45,6 +45,12 @@
           }
         },
         openCreateUserModal: false,
+        openPasswordModal: false,
+        passwordUser: '',
+        openSetPasswordModal(username) {
+          this.passwordUser = username;
+          this.openPasswordModal = true;
+        },
         openCreatePoolModal: false,
         openAddVdevModal: false,
         addVdevPool: '',
@@ -761,6 +767,7 @@
   <!-- All Modals -->
   {{template "modals/create_share.html" .}}
   {{template "modals/create_user.html" .}}
+  {{template "modals/set_user_password.html" .}}
   {{template "modals/create_pool.html" .}}
   {{template "modals/add_vdev.html" .}}
   {{template "modals/disk_action.html" .}}

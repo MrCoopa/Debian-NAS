@@ -46,7 +46,10 @@
                 {{end}}
               </td>
               <td class="col-actions">
-                <button type="button" class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/users?username={{urlquery $u.Username}}" hx-confirm="Delete storage user '{{$u.Username}}'?" hx-target="#users-container" hx-swap="outerHTML">Delete</button>
+                <div style="display: flex; gap: 0.35rem; justify-content: flex-end; flex-wrap: wrap;">
+                  <button type="button" class="btn btn-secondary btn-sm" @click.stop="openSetPasswordModal('{{$u.Username}}')">Set Password</button>
+                  <button type="button" class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/users?username={{urlquery $u.Username}}" hx-confirm="Delete storage user '{{$u.Username}}'?" hx-target="#users-container" hx-swap="outerHTML">Delete</button>
+                </div>
               </td>
             </tr>
           {{end}}

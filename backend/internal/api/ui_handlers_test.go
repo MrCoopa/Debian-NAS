@@ -1393,6 +1393,39 @@ func TestUI_FaviconServed(t *testing.T) {
 	}
 }
 
+func TestUI_SetUserPasswordAndFixPermissions(t *testing.T) {
+	srv := createTestServer(t)
+	handler := srv.Routes()
+
+	// 1. Set User Password
+	form := url.Values{
+		"username": {"testuser"},
+		"password": {"newsecretpass"},
+	}
+	req := httptest.NewRequest("POST", "/ui/actions/shares/users/password", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from /ui/actions/shares/users/password, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "users-container") {
+		t.Fatalf("expected users-container in response, got %s", rr.Body.String())
+	}
+
+	// 2. Fix Share Permissions
+	fixReq := httptest.NewRequest("POST", "/ui/actions/shares/smb/fix-permissions?name=Media", nil)
+	fixRR := httptest.NewRecorder()
+	handler.ServeHTTP(fixRR, fixReq)
+	if fixRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from fix-permissions, got %d", fixRR.Code)
+	}
+	if !strings.Contains(fixRR.Body.String(), "shares-container") {
+		t.Fatalf("expected shares-container in response, got %s", fixRR.Body.String())
+	}
+}
+
+
 
 
 

@@ -645,9 +645,9 @@ func (s *Server) handleUIActionSaveSmb(w http.ResponseWriter, r *http.Request) {
 		}
 
 		isReadOnly := (access == "readonly")
-		opts := "rw,sync,no_subtree_check"
+		opts := "rw,sync,no_subtree_check,no_root_squash"
 		if isReadOnly {
-			opts = "ro,sync,no_subtree_check"
+			opts = "ro,sync,no_subtree_check,no_root_squash"
 		}
 		exp := &shares.NfsExport{
 			Path:           path,
@@ -770,6 +770,45 @@ func (s *Server) handleUIActionDeleteUser(w http.ResponseWriter, r *http.Request
 		s.setHXTrigger(w, fmt.Sprintf("Storage user '%s' deleted", username), "success", "userUpdate", "shareUpdate")
 	}
 	s.handleUIPartialUsers(w, r)
+}
+
+func (s *Server) handleUIActionSetUserPassword(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	username := strings.TrimSpace(r.FormValue("username"))
+	password := r.FormValue("password")
+
+	if username == "" || password == "" {
+		s.setHXTrigger(w, "Username and password are required", "error")
+		s.handleUIPartialUsers(w, r)
+		return
+	}
+
+	if err := s.shares.SetUserPassword(username, password); err != nil {
+		s.setHXTrigger(w, "Error updating password: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("SMB password for '%s' updated successfully", username), "success", "userUpdate")
+	}
+	s.handleUIPartialUsers(w, r)
+}
+
+func (s *Server) handleUIActionFixSharePermissions(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		_ = r.ParseForm()
+		name = strings.TrimSpace(r.FormValue("name"))
+	}
+	if name == "" {
+		s.setHXTrigger(w, "Share name is required", "error")
+		s.handleUIPartialShares(w, r)
+		return
+	}
+
+	if err := s.shares.FixSharePermissions(name); err != nil {
+		s.setHXTrigger(w, "Error repairing permissions: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Permissions for share '%s' repaired successfully", name), "success", "shareUpdate")
+	}
+	s.handleUIPartialShares(w, r)
 }
 
 func (s *Server) handleUIActionCreatePool(w http.ResponseWriter, r *http.Request) {
