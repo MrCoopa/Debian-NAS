@@ -9,7 +9,7 @@
         <label>Parent Pool / Dataset</label>
         <select name="parent" required
                 hx-get="/ui/partials/modals/parent_datasets"
-                hx-trigger="poolUpdate from:body, datasetUpdate from:body"
+                hx-trigger="poolUpdate from:body, datasetUpdate from:body, refreshParentDatasets from:body"
                 hx-target="this"
                 hx-swap="innerHTML">
           {{template "partials/parent_datasets_options.html" .}}

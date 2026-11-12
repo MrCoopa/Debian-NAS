@@ -4,21 +4,18 @@
       <h3>Create New ZFS Dataset</h3>
       <button type="button" class="modal-close" @click="openCreateDatasetModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/zfs/datasets" hx-target="#datasets-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el) { const res = window.nasTriggerHasError ? window.nasTriggerHasError(event.detail.xhr) : { hasError: false }; if (event.detail.successful && !res.hasError) { openCreateDatasetModal = false; $el.reset(); } }">
+    <form hx-post="/ui/actions/zfs/datasets" hx-target="#datasets-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el) { const res = window.nasTriggerHasError ? window.nasTriggerHasError(event.detail.xhr) : { hasError: false }; if (event.detail.successful && !res.hasError) { openCreateDatasetModal = false; datasetParent = ''; const nameInput = $el.querySelector('input[name=name]'); if (nameInput) nameInput.value = ''; const quotaInput = $el.querySelector('input[name=quota]'); if (quotaInput) quotaInput.value = 'none'; } }">
       <div class="form-group">
         <label>Parent Pool / Dataset</label>
-        <div x-show="datasetParent">
-          <input type="text" name="parent" :value="datasetParent" :disabled="!datasetParent" readonly class="font-mono" style="background: rgba(15,23,42,0.6);">
-        </div>
-        <div x-show="!datasetParent">
-          <select name="parent" :disabled="!!datasetParent" :required="!datasetParent"
-                  hx-get="/ui/partials/modals/parent_datasets"
-                  hx-trigger="poolUpdate from:body, datasetUpdate from:body"
-                  hx-target="this"
-                  hx-swap="innerHTML">
-            {{template "partials/parent_datasets_options.html" .}}
-          </select>
-        </div>
+        <input type="text" name="parent" x-show="datasetParent" x-model="datasetParent" :disabled="!datasetParent" readonly class="font-mono" style="width: 100%; box-sizing: border-box; background: rgba(15,23,42,0.6);">
+        <select id="create-dataset-parent-select" name="parent" x-show="!datasetParent" :disabled="!!datasetParent" :required="!datasetParent"
+                hx-get="/ui/partials/modals/parent_datasets"
+                hx-trigger="poolUpdate from:body, datasetUpdate from:body, refreshParentDatasets from:body"
+                hx-target="this"
+                hx-swap="innerHTML"
+                style="width: 100%; box-sizing: border-box;">
+          {{template "partials/parent_datasets_options.html" .}}
+        </select>
       </div>
 
       <div class="form-group">

@@ -285,8 +285,8 @@ func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
 		},
 		{
 			file:    "templates/modals/create_dataset.html",
-			want:    []string{`hx-swap="outerHTML"`, `nasTriggerHasError`},
-			notWant: []string{`hx-swap="morph"`},
+			want:    []string{`hx-swap="outerHTML"`, `nasTriggerHasError`, `x-model="datasetParent"`, `refreshParentDatasets from:body`, `width: 100%`},
+			notWant: []string{`hx-swap="morph"`, `$el.reset()`},
 		},
 		{
 			file:    "templates/modals/create_zvol.html",
