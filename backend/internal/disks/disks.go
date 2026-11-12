@@ -706,32 +706,44 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 	return disks, nil
 }
 
-// checkStandbySafe runs 'hdparm -C' to query drive status without spinning it up
+// checkStandbySafe queries drive status without spinning up sleeping HDDs.
+// It prioritizes smartctl with '-n standby' because 'hdparm -C' sends ATA CHECK POWER MODE,
+// which causes a mandatory spin-up on Western Digital and SAS drive firmwares.
 func (m *Manager) checkStandbySafe(devPath string) DiskState {
+	sCtx, sCancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer sCancel()
+	smartCmd := exec.CommandContext(sCtx, "smartctl", "-n", "standby", "-i", devPath)
+	smartOut, smartErr := smartCmd.CombinedOutput()
+	if smartCmd.ProcessState != nil && smartCmd.ProcessState.ExitCode() == 2 {
+		return StateStandby
+	}
+	smartLower := strings.ToLower(string(smartOut))
+	if strings.Contains(smartLower, "standby") {
+		return StateStandby
+	}
+	if strings.Contains(smartLower, "sleep") {
+		return StateSleep
+	}
+	if smartErr == nil {
+		return StateActive
+	}
+
+	// Fallback to hdparm -C if smartctl is not installed or returned an unexpected exit code
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "hdparm", "-C", devPath)
 	out, err := cmd.Output()
-	if err != nil {
-		// Fallback check: smartctl with -n standby
-		sCtx, sCancel := context.WithTimeout(context.Background(), 4*time.Second)
-		defer sCancel()
-		smartCmd := exec.CommandContext(sCtx, "smartctl", "-n", "standby", "-i", devPath)
-		_ = smartCmd.Run()
-		if smartCmd.ProcessState != nil && smartCmd.ProcessState.ExitCode() == 2 {
+	if err == nil {
+		outStr := strings.ToLower(string(out))
+		if strings.Contains(outStr, "standby") {
 			return StateStandby
 		}
-		return StateUnknown
-	}
-	outStr := strings.ToLower(string(out))
-	if strings.Contains(outStr, "standby") {
-		return StateStandby
-	}
-	if strings.Contains(outStr, "sleeping") {
-		return StateSleep
-	}
-	if strings.Contains(outStr, "active") || strings.Contains(outStr, "idle") {
-		return StateActive
+		if strings.Contains(outStr, "sleeping") {
+			return StateSleep
+		}
+		if strings.Contains(outStr, "active") || strings.Contains(outStr, "idle") {
+			return StateActive
+		}
 	}
 	return StateUnknown
 }
