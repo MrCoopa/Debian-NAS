@@ -696,13 +696,13 @@ func (m *Manager) SaveNfs(e *NfsExport) error {
 		}
 	}
 
-	// Normalise options and enforce ReadOnly consistency and root_squash
+	// Normalise options and enforce ReadOnly consistency and no_root_squash for Proxmox/Linux
 	options := e.Options
 	if options == "" {
 		if e.ReadOnly {
-			options = "ro,sync,no_subtree_check,root_squash"
+			options = "ro,sync,no_subtree_check,no_root_squash"
 		} else {
-			options = "rw,sync,no_subtree_check,root_squash"
+			options = "rw,sync,no_subtree_check,no_root_squash"
 		}
 	} else if e.ReadOnly {
 		options = strings.ReplaceAll(options, "rw,", "ro,")
@@ -721,9 +721,29 @@ func (m *Manager) SaveNfs(e *NfsExport) error {
 		return nil
 	}
 
-	// Ensure folder exists
+	// Ensure folder exists and permissions are open for Proxmox/NFS clients
 	if _, err := os.Stat(e.Path); os.IsNotExist(err) {
-		_ = os.MkdirAll(e.Path, 0775)
+		_ = os.MkdirAll(e.Path, 0777)
+	}
+	_ = os.Chmod(e.Path, 0777)
+
+	for p := e.Path; strings.HasPrefix(filepath.ToSlash(p), "/mnt"); p = filepath.Dir(p) {
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			_ = os.Chmod(p, 0755)
+		}
+	}
+	_ = os.Chmod("/mnt", 0755)
+
+	cleanPath := filepath.ToSlash(e.Path)
+	if strings.HasPrefix(cleanPath, "/mnt/") {
+		rel := strings.TrimPrefix(cleanPath, "/mnt/")
+		parts := strings.Split(rel, "/")
+		if len(parts) > 0 && parts[0] != "" {
+			poolName := parts[0]
+			_, _ = m.execCmd(5*time.Second, "zfs", "set", "acltype=posix", poolName)
+			_, _ = m.execCmd(5*time.Second, "zfs", "set", "aclmode=discard", poolName)
+			_, _ = m.execCmd(5*time.Second, "zfs", "set", "aclinherit=passthrough", poolName)
+		}
 	}
 
 	return m.writeNfsExportsLocked()
