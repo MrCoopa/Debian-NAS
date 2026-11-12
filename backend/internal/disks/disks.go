@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -149,6 +150,7 @@ func NewManager(mockMode bool, hdIdleConfig string) *Manager {
 		m.mu.Lock()
 		m.loadSavedDiskConfigLocked()
 		_, _ = m.scanLinuxDisks()
+		m.syncHdIdleConfigLocked()
 		toApply := m.snapshotSavedApplyTargetsLocked()
 		m.mu.Unlock()
 		m.applyDiskConfigsToHardware(toApply)
@@ -1594,9 +1596,7 @@ func (m *Manager) snapshotSavedApplyTargetsLocked() []diskApplyTarget {
 }
 
 func (m *Manager) applyDiskConfigsToHardware(targets []diskApplyTarget) {
-	hasAnySaved := false
 	for _, t := range targets {
-		hasAnySaved = true
 		if t.state == StateStandby || t.state == StateSleep {
 			continue
 		}
@@ -1609,11 +1609,9 @@ func (m *Manager) applyDiskConfigsToHardware(targets []diskApplyTarget) {
 			_ = applyHardwareSpindown(t.path, *t.spindownSec)
 		}
 	}
-	if hasAnySaved {
-		m.mu.Lock()
-		m.syncHdIdleConfigLocked()
-		m.mu.Unlock()
-	}
+	m.mu.Lock()
+	m.syncHdIdleConfigLocked()
+	m.mu.Unlock()
 }
 
 func applyHardwareSpindown(devPath string, seconds int) error {
@@ -1720,12 +1718,17 @@ func (m *Manager) syncHdIdleConfigLocked() {
 	if existing, err := os.ReadFile(m.hdIdleConfig); err == nil && string(existing) == content {
 		return
 	}
-	if err := os.WriteFile(m.hdIdleConfig, []byte(content), 0644); err == nil && !m.mockMode {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = exec.CommandContext(ctx, "systemctl", "try-restart", "hd-idle").Run()
-		}()
+	if err := os.WriteFile(m.hdIdleConfig, []byte(content), 0644); err == nil {
+		log.Printf("[INFO] Synchronized hd-idle config (%s): %s", m.hdIdleConfig, strings.Join(opts, " "))
+		if !m.mockMode {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = exec.CommandContext(ctx, "systemctl", "try-restart", "hd-idle").Run()
+			}()
+		}
+	} else if err != nil {
+		log.Printf("[WARN] Failed to write hd-idle config (%s): %v", m.hdIdleConfig, err)
 	}
 }
 
