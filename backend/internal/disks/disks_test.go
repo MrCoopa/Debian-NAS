@@ -171,6 +171,25 @@ func TestDiskPowerSettings_NormalizationPersistenceAndHdIdle(t *testing.T) {
 		t.Errorf("unexpected hd-idle config: %s", hdStr)
 	}
 
+	// Disks without /dev/disk/by-id/... symlink (e.g. VM/QEMU disks) must emit bare kernel name ("sde", not "/dev/sde")
+	m.mu.Lock()
+	m.cachedDisks["sde"] = &DiskInfo{
+		Name:            "sde",
+		Path:            "/dev/sde",
+		ByIDPath:        "/dev/sde",
+		IsRotational:    true,
+		SpindownSeconds: 1200,
+	}
+	m.syncHdIdleConfigLocked()
+	m.mu.Unlock()
+	hdDataFallback, err := os.ReadFile(hdIdlePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(hdDataFallback), "-a sde -i 1200") || strings.Contains(string(hdDataFallback), "-a /dev/sde") {
+		t.Errorf("expected bare kernel device fallback '-a sde -i 1200' without '/dev/', got: %s", string(hdDataFallback))
+	}
+
 	// Reload in a brand new Manager (simulates nasd restart / scan)
 	m2 := NewManager(true, hdIdlePath)
 	m2.SetConfigPath(cfgPath)

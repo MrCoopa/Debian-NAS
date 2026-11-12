@@ -1269,6 +1269,22 @@ func TestUI_DiskPowerSettingsDoNotRevertAcrossRenders(t *testing.T) {
 		t.Fatalf("GET /ui/partials/disks failed: %d", pollRR.Code)
 	}
 	body := pollRR.Body.String()
+	// Both inline table row (#row-disk-sdc) and expandable detail row (#row-disk-detail-sdc) expose editable controls and persist selections.
+	mainRowIdx := strings.Index(body, `id="row-disk-sdc"`)
+	if mainRowIdx < 0 {
+		t.Fatalf("missing sdc main row")
+	}
+	mainRowSection := body[mainRowIdx:]
+	if trEnd := strings.Index(mainRowSection, `</tr>`); trEnd > 0 {
+		mainRowSection = mainRowSection[:trEnd]
+	}
+	if !strings.Contains(mainRowSection, `name="timeout_minutes"`) || !strings.Contains(mainRowSection, `name="level"`) || !strings.Contains(mainRowSection, `/ui/actions/disks/standby`) {
+		t.Fatalf("expected inline standby/APM/standby-now controls in #row-disk-sdc, got: %s", mainRowSection)
+	}
+	if !strings.Contains(mainRowSection, `<option value="0" selected>Always On</option>`) || !strings.Contains(mainRowSection, `<option value="Disabled" selected>Disabled`) {
+		t.Fatalf("expected inline row selects to keep Always On + Disabled selected, got: %s", mainRowSection)
+	}
+
 	rowIdx := strings.Index(body, `id="row-disk-detail-sdc"`)
 	if rowIdx < 0 {
 		t.Fatalf("missing sdc detail row")

@@ -1,3 +1,31 @@
+{{define "disk_spindown_options"}}
+<option value="0" {{if eq .SpindownSeconds 0}}selected{{end}}>Always On</option>
+<option value="5" {{if eq .SpindownSeconds 300}}selected{{end}}>5 Minutes</option>
+<option value="10" {{if eq .SpindownSeconds 600}}selected{{end}}>10 Minutes</option>
+<option value="15" {{if eq .SpindownSeconds 900}}selected{{end}}>15 Minutes</option>
+<option value="20" {{if eq .SpindownSeconds 1200}}selected{{end}}>20 Minutes</option>
+<option value="30" {{if eq .SpindownSeconds 1800}}selected{{end}}>30 Minutes</option>
+<option value="60" {{if eq .SpindownSeconds 3600}}selected{{end}}>1 Hour</option>
+<option value="120" {{if eq .SpindownSeconds 7200}}selected{{end}}>2 Hours</option>
+<option value="300" {{if eq .SpindownSeconds 18000}}selected{{end}}>5 Hours</option>
+{{if .SpindownSeconds}}{{if and (gt .SpindownSeconds 0) (ne .SpindownSeconds 300) (ne .SpindownSeconds 600) (ne .SpindownSeconds 900) (ne .SpindownSeconds 1200) (ne .SpindownSeconds 1800) (ne .SpindownSeconds 3600) (ne .SpindownSeconds 7200) (ne .SpindownSeconds 18000)}}
+<option value="{{div .SpindownSeconds 60}}" selected>{{div .SpindownSeconds 60}} Minutes (Custom)</option>
+{{end}}{{end}}
+{{end}}
+
+{{define "disk_apm_options"}}
+<option value="Disabled" {{if or (not .AdvPowerManagement) (eq .AdvPowerManagement "Disabled") (eq .AdvPowerManagement "255")}}selected{{end}}>Disabled (Max Performance)</option>
+<option value="1" {{if eq .AdvPowerManagement "1"}}selected{{end}}>1 - Min Power (Standby)</option>
+<option value="64" {{if eq .AdvPowerManagement "64"}}selected{{end}}>64 - Low Power (Standby)</option>
+<option value="127" {{if eq .AdvPowerManagement "127"}}selected{{end}}>127 - Medium (Standby)</option>
+<option value="128" {{if eq .AdvPowerManagement "128"}}selected{{end}}>128 - Min Power (No Standby)</option>
+<option value="192" {{if eq .AdvPowerManagement "192"}}selected{{end}}>192 - Medium (No Standby)</option>
+<option value="254" {{if eq .AdvPowerManagement "254"}}selected{{end}}>254 - Max Performance</option>
+{{if and .AdvPowerManagement (ne .AdvPowerManagement "Disabled") (ne .AdvPowerManagement "255") (ne .AdvPowerManagement "1") (ne .AdvPowerManagement "64") (ne .AdvPowerManagement "127") (ne .AdvPowerManagement "128") (ne .AdvPowerManagement "192") (ne .AdvPowerManagement "254")}}
+<option value="{{.AdvPowerManagement}}" selected>{{.AdvPowerManagement}} (Custom)</option>
+{{end}}
+{{end}}
+
 <div id="disks-container" hx-get="/ui/partials/disks" hx-trigger="every 10s [currentTab === 'disks' && !document.hidden], diskUpdate from:body, poolUpdate from:body" hx-swap="outerHTML">
   <!-- Disks Table View (TrueNAS Schema) -->
   <div class="table-card" style="background: #141414; border: 1px solid #262626; border-radius: 4px; overflow: hidden;">
@@ -25,7 +53,10 @@
               <input type="checkbox" class="disk-checkbox" value="{{$d.Name}}" x-model="selectedDisks">
             </td>
             <td style="padding: 0.75rem 1rem;">
-              <span class="font-mono text-white" style="cursor: pointer; font-weight: 600;" @click="toggleDisk('{{$d.Name}}')">{{$d.Name}}</span>
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span class="font-mono text-white" style="cursor: pointer; font-weight: 600;" @click="toggleDisk('{{$d.Name}}')">{{$d.Name}}</span>
+                <span class="badge-status {{if or (eq $d.State "STANDBY") (eq $d.State "SLEEP")}}slate{{else if eq $d.State "ACTIVE"}}green{{else}}amber{{end}}" style="font-size: 0.65rem; padding: 0.1rem 0.4rem;">{{$d.State}}</span>
+              </div>
             </td>
             <td style="padding: 0.75rem 1rem;">
               <span class="font-mono text-dim" style="font-size: 0.78rem;">{{if $d.Serial}}{{$d.Serial}}{{else}}--{{end}}</span>
@@ -36,21 +67,33 @@
             <td style="padding: 0.75rem 1rem;">
               <span class="font-mono text-dim">{{if $d.ZfsPool}}{{$d.ZfsPool}}{{else if $d.IsSystemDisk}}boot-pool{{else}}--{{end}}</span>
             </td>
-            <td style="padding: 0.75rem 1rem;">
-              <span class="text-dim" style="font-style: italic;">
-                {{if not $d.SpindownSeconds}}
-                  Always On
-                {{else if ge $d.SpindownSeconds 60}}
-                  {{div $d.SpindownSeconds 60}} min
-                {{else}}
-                  {{$d.SpindownSeconds}} s
-                {{end}}
-              </span>
+            <td style="padding: 0.5rem 1rem;" @click.stop>
+              <div style="display: flex; align-items: center; gap: 0.4rem;">
+                <form hx-post="/ui/actions/disks/spindown" hx-target="#disks-container" hx-swap="outerHTML" style="margin: 0;">
+                  <input type="hidden" name="path" value="{{$d.Path}}">
+                  <select name="timeout_minutes" aria-label="HDD Standby for {{$d.Name}}"
+                          style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #1a1a1a; border: 1px solid #333; color: #fff; border-radius: 4px; min-width: 120px;"
+                          onchange="this.form.requestSubmit()">
+                    {{template "disk_spindown_options" $d}}
+                  </select>
+                </form>
+                <button type="button" class="btn btn-secondary btn-sm"
+                        title="Force Standby (0W) now"
+                        {{if or (eq $d.State "STANDBY") (eq $d.State "SLEEP")}}disabled{{end}}
+                        hx-post="/ui/actions/disks/standby" hx-vals='{"path": "{{$d.Path}}"}' hx-target="#disks-container" hx-swap="outerHTML">
+                  Standby
+                </button>
+              </div>
             </td>
-            <td style="padding: 0.75rem 1rem;">
-              <span class="font-mono text-dim" style="cursor: pointer;" @click="toggleDisk('{{$d.Name}}')" title="Click to configure APM">
-                {{if $d.AdvPowerManagement}}{{$d.AdvPowerManagement}}{{else}}Disabled{{end}}
-              </span>
+            <td style="padding: 0.5rem 1rem;" @click.stop>
+              <form hx-post="/ui/actions/disks/apm" hx-target="#disks-container" hx-swap="outerHTML" style="margin: 0;">
+                <input type="hidden" name="path" value="{{$d.Path}}">
+                <select name="level" aria-label="APM for {{$d.Name}}"
+                        style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #1a1a1a; border: 1px solid #333; color: #fff; border-radius: 4px; min-width: 165px;"
+                        onchange="this.form.requestSubmit()">
+                  {{template "disk_apm_options" $d}}
+                </select>
+              </form>
             </td>
             <td style="padding: 0.75rem 1rem; text-align: right;">
               <button type="button" class="btn-chevron"
@@ -113,18 +156,7 @@
                     <input type="hidden" name="path" value="{{$d.Path}}">
                     <select name="timeout_minutes" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #1a1a1a; border: 1px solid #333; color: #fff; border-radius: 4px; width: 100%;"
                             onchange="this.form.requestSubmit()">
-                      <option value="0" {{if eq $d.SpindownSeconds 0}}selected{{end}}>Always On</option>
-                      <option value="5" {{if eq $d.SpindownSeconds 300}}selected{{end}}>5 Minutes</option>
-                      <option value="10" {{if eq $d.SpindownSeconds 600}}selected{{end}}>10 Minutes</option>
-                      <option value="15" {{if eq $d.SpindownSeconds 900}}selected{{end}}>15 Minutes</option>
-                      <option value="20" {{if eq $d.SpindownSeconds 1200}}selected{{end}}>20 Minutes</option>
-                      <option value="30" {{if eq $d.SpindownSeconds 1800}}selected{{end}}>30 Minutes</option>
-                      <option value="60" {{if eq $d.SpindownSeconds 3600}}selected{{end}}>1 Hour</option>
-                      <option value="120" {{if eq $d.SpindownSeconds 7200}}selected{{end}}>2 Hours</option>
-                      <option value="300" {{if eq $d.SpindownSeconds 18000}}selected{{end}}>5 Hours</option>
-                      {{if $d.SpindownSeconds}}{{if and (gt $d.SpindownSeconds 0) (ne $d.SpindownSeconds 300) (ne $d.SpindownSeconds 600) (ne $d.SpindownSeconds 900) (ne $d.SpindownSeconds 1200) (ne $d.SpindownSeconds 1800) (ne $d.SpindownSeconds 3600) (ne $d.SpindownSeconds 7200) (ne $d.SpindownSeconds 18000)}}
-                        <option value="{{div $d.SpindownSeconds 60}}" selected>{{div $d.SpindownSeconds 60}} Minutes (Custom)</option>
-                      {{end}}{{end}}
+                      {{template "disk_spindown_options" $d}}
                     </select>
                   </form>
                 </div>
@@ -134,16 +166,7 @@
                     <input type="hidden" name="path" value="{{$d.Path}}">
                     <select name="level" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #1a1a1a; border: 1px solid #333; color: #fff; border-radius: 4px; width: 100%;"
                             onchange="this.form.requestSubmit()">
-                      <option value="Disabled" {{if or (not $d.AdvPowerManagement) (eq $d.AdvPowerManagement "Disabled") (eq $d.AdvPowerManagement "255")}}selected{{end}}>Disabled (Max Performance)</option>
-                      <option value="1" {{if eq $d.AdvPowerManagement "1"}}selected{{end}}>1 - Min Power (Standby)</option>
-                      <option value="64" {{if eq $d.AdvPowerManagement "64"}}selected{{end}}>64 - Low Power (Standby)</option>
-                      <option value="127" {{if eq $d.AdvPowerManagement "127"}}selected{{end}}>127 - Medium (Standby)</option>
-                      <option value="128" {{if eq $d.AdvPowerManagement "128"}}selected{{end}}>128 - Min Power (No Standby)</option>
-                      <option value="192" {{if eq $d.AdvPowerManagement "192"}}selected{{end}}>192 - Medium (No Standby)</option>
-                      <option value="254" {{if eq $d.AdvPowerManagement "254"}}selected{{end}}>254 - Max Performance</option>
-                      {{if and $d.AdvPowerManagement (ne $d.AdvPowerManagement "Disabled") (ne $d.AdvPowerManagement "255") (ne $d.AdvPowerManagement "1") (ne $d.AdvPowerManagement "64") (ne $d.AdvPowerManagement "127") (ne $d.AdvPowerManagement "128") (ne $d.AdvPowerManagement "192") (ne $d.AdvPowerManagement "254")}}
-                        <option value="{{$d.AdvPowerManagement}}" selected>{{$d.AdvPowerManagement}} (Custom)</option>
-                      {{end}}
+                      {{template "disk_apm_options" $d}}
                     </select>
                   </form>
                 </div>
