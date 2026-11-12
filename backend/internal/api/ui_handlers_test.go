@@ -1329,14 +1329,32 @@ func TestUI_SnapshotsGroupedByPoolAndPagination(t *testing.T) {
 	if !strings.Contains(body, `Pool: <strong class="text-blue">SSD-MIRROR</strong>`) {
 		t.Fatalf("expected pool SSD-MIRROR table in body: %s", body)
 	}
-	if !strings.Contains(body, "isSnapRowVisible") {
-		t.Fatalf("expected isSnapRowVisible in body: %s", body)
-	}
 	if !strings.Contains(body, "table-pagination") {
 		t.Fatalf("expected table-pagination container in body: %s", body)
 	}
-	if !strings.Contains(body, "Page <span class=\"text-white\" x-text=\"getSnapPage('DATA')\">1</span> of <span class=\"text-white\">2</span>") {
+	if !strings.Contains(body, `Page <span class="text-white">1</span> of <span class="text-white">2</span>`) {
 		t.Fatalf("expected page 1 of 2 in body: %s", body)
+	}
+	if !strings.Contains(body, `Showing <span class="font-mono text-white">1</span> - <span class="font-mono text-white">10</span> of <span class="font-mono text-white">16</span> snapshots`) {
+		t.Fatalf("expected showing 1 - 10 of 16 in body: %s", body)
+	}
+	if !strings.Contains(body, `hx-get="/ui/partials/snapshots?pool=DATA&page=2"`) {
+		t.Fatalf("expected next page link in body: %s", body)
+	}
+
+	// Verify Page 2 via query params
+	req2 := httptest.NewRequest("GET", "/ui/partials/snapshots?pool=DATA&page=2", nil)
+	rr2 := httptest.NewRecorder()
+	handler.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from page 2, got %d", rr2.Code)
+	}
+	body2 := rr2.Body.String()
+	if !strings.Contains(body2, `Showing <span class="font-mono text-white">11</span> - <span class="font-mono text-white">16</span> of <span class="font-mono text-white">16</span> snapshots`) {
+		t.Fatalf("expected showing 11 - 16 of 16 on page 2: %s", body2)
+	}
+	if !strings.Contains(body2, `Page <span class="text-white">2</span> of <span class="text-white">2</span>`) {
+		t.Fatalf("expected page 2 of 2 in body: %s", body2)
 	}
 }
 

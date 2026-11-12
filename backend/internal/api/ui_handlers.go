@@ -17,11 +17,19 @@ import (
 )
 
 type PoolSnapshotsGroup struct {
-	PoolName   string
-	Health     string
-	TotalCount int
-	TotalPages int
-	Snapshots  []*zfs.Snapshot
+	PoolName    string
+	Health      string
+	TotalCount  int
+	TotalPages  int
+	CurrentPage int
+	PrevPage    int
+	NextPage    int
+	HasPrev     bool
+	HasNext     bool
+	StartIdx    int
+	EndIdx      int
+	Filter      string
+	Snapshots   []*zfs.Snapshot
 }
 
 // ViewData is passed to the root layout and all partials
@@ -143,6 +151,30 @@ func (s *Server) buildPartialViewData(mask viewFetchMask, req ...*http.Request) 
 
 		sort.Strings(poolOrder)
 
+		// Check query parameters for pool-specific pagination / search
+		if len(req) > 0 && req[0] != nil {
+			qPool := req[0].URL.Query().Get("pool")
+			qPage := req[0].URL.Query().Get("page")
+			qFilter := req[0].URL.Query().Get("q")
+			clearFilter := req[0].URL.Query().Get("clear_filter")
+
+			s.snapPageMu.Lock()
+			if qPool != "" && qPage != "" {
+				if pNum, err := strconv.Atoi(qPage); err == nil && pNum >= 1 {
+					s.snapPages[qPool] = pNum
+				}
+			}
+			if qPool != "" && clearFilter == "true" {
+				delete(s.snapFilters, qPool)
+				s.snapPages[qPool] = 1
+			} else if qPool != "" && qFilter != "" {
+				s.snapFilters[qPool] = strings.TrimSpace(qFilter)
+				s.snapPages[qPool] = 1
+			}
+			s.snapPageMu.Unlock()
+		}
+
+		s.snapPageMu.RLock()
 		for _, pName := range poolOrder {
 			health := "ONLINE"
 			for _, p := range pools {
@@ -151,20 +183,68 @@ func (s *Server) buildPartialViewData(mask viewFetchMask, req ...*http.Request) 
 					break
 				}
 			}
-			snaps := poolMap[pName]
-			totCount := len(snaps)
+
+			allSnaps := poolMap[pName]
+			filterVal := s.snapFilters[pName]
+
+			var filteredSnaps []*zfs.Snapshot
+			if filterVal != "" {
+				lowFilter := strings.ToLower(filterVal)
+				for _, snap := range allSnaps {
+					if strings.Contains(strings.ToLower(snap.Name), lowFilter) || strings.Contains(strings.ToLower(snap.Dataset), lowFilter) {
+						filteredSnaps = append(filteredSnaps, snap)
+					}
+				}
+			} else {
+				filteredSnaps = allSnaps
+			}
+
+			totCount := len(filteredSnaps)
 			totPages := (totCount + 9) / 10
 			if totPages < 1 {
 				totPages = 1
 			}
+
+			curPage := s.snapPages[pName]
+			if curPage < 1 {
+				curPage = 1
+			} else if curPage > totPages {
+				curPage = totPages
+			}
+
+			start := (curPage - 1) * 10
+			end := start + 10
+			if start > totCount {
+				start = totCount
+			}
+			if end > totCount {
+				end = totCount
+			}
+
+			startIdx := 0
+			if totCount > 0 {
+				startIdx = start + 1
+			}
+
+			pagedSnaps := filteredSnaps[start:end]
+
 			snapshotsByPool = append(snapshotsByPool, PoolSnapshotsGroup{
-				PoolName:   pName,
-				Health:     health,
-				TotalCount: totCount,
-				TotalPages: totPages,
-				Snapshots:  snaps,
+				PoolName:    pName,
+				Health:      health,
+				TotalCount:  totCount,
+				TotalPages:  totPages,
+				CurrentPage: curPage,
+				PrevPage:    curPage - 1,
+				NextPage:    curPage + 1,
+				HasPrev:     curPage > 1,
+				HasNext:     curPage < totPages,
+				StartIdx:    startIdx,
+				EndIdx:      end,
+				Filter:      filterVal,
+				Snapshots:   pagedSnaps,
 			})
 		}
+		s.snapPageMu.RUnlock()
 	}
 
 	var snapTasks []*zfs.SnapshotTask
@@ -406,7 +486,7 @@ func (s *Server) handleUIPartialSnapshots(w http.ResponseWriter, r *http.Request
 	s.renderUIPartial(w, "partials/snapshots_list.html", s.buildPartialViewData(viewFetchMask{
 		snapshots: true,
 		pools:     true,
-	}))
+	}, r))
 }
 
 func (s *Server) handleUIPartialNetwork(w http.ResponseWriter, r *http.Request) {

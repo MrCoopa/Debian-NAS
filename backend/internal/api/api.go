@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"debian-nas/internal/cloudsync"
@@ -22,15 +23,18 @@ import (
 )
 
 type Server struct {
-	cfg       *config.Config
-	sys       *system.Collector
-	disks     *disks.Manager
-	zfs       *zfs.Manager
-	shares    *shares.Manager
-	cloudsync *cloudsync.Manager
-	staticFS  fs.FS
-	web       *web.Engine
-	startTime time.Time
+	cfg         *config.Config
+	sys         *system.Collector
+	disks       *disks.Manager
+	zfs         *zfs.Manager
+	shares      *shares.Manager
+	cloudsync   *cloudsync.Manager
+	staticFS    fs.FS
+	web         *web.Engine
+	startTime   time.Time
+	snapPageMu  sync.RWMutex
+	snapPages   map[string]int
+	snapFilters map[string]string
 }
 
 func NewServer(
@@ -53,10 +57,12 @@ func NewServer(
 		disks:     dm,
 		zfs:       zm,
 		shares:    sm,
-		cloudsync: cm,
-		staticFS:  staticFS,
-		web:       webEngine,
-		startTime: time.Now(),
+		cloudsync:   cm,
+		staticFS:    staticFS,
+		web:         webEngine,
+		startTime:   time.Now(),
+		snapPages:   make(map[string]int),
+		snapFilters: make(map[string]string),
 	}
 }
 

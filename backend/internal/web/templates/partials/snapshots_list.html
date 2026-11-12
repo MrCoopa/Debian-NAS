@@ -10,7 +10,21 @@
           <span class="badge-status" style="font-size: 0.68rem; background: #262626; color: #a0a0a0;">{{$grp.TotalCount}} Snapshots</span>
         </div>
         <div class="toolbar-actions" style="display: flex; align-items: center; gap: 0.5rem;">
-          <input type="text" :value="getSnapFilter('{{$grp.PoolName}}')" @input="setSnapFilter('{{$grp.PoolName}}', $event.target.value)" placeholder="Filter {{$grp.PoolName}}..." style="padding: 0.28rem 0.6rem; font-size: 0.78rem; width: 170px; background: #141414; border: 1px solid var(--fn-border-main, #333); border-radius: 3px; color: var(--fn-text-primary, #fff);">
+          <form style="display: inline-flex; align-items: center; gap: 0.3rem; margin: 0;"
+                hx-get="/ui/partials/snapshots"
+                hx-target="#snapshots-container"
+                hx-swap="outerHTML">
+            <input type="hidden" name="pool" value="{{$grp.PoolName}}">
+            <input type="text" name="q" value="{{$grp.Filter}}" placeholder="Filter {{$grp.PoolName}}..."
+                   style="padding: 0.28rem 0.6rem; font-size: 0.78rem; width: 170px; background: #141414; border: 1px solid var(--fn-border-main, #333); border-radius: 3px; color: var(--fn-text-primary, #fff);">
+            {{if $grp.Filter}}
+              <button type="button" class="btn btn-secondary btn-sm"
+                      hx-get="/ui/partials/snapshots?pool={{$grp.PoolName}}&clear_filter=true"
+                      hx-target="#snapshots-container"
+                      hx-swap="outerHTML"
+                      title="Clear Filter">&times;</button>
+            {{end}}
+          </form>
           <button type="button" class="btn btn-primary btn-sm" @click.stop="openCreateSnap('{{$grp.PoolName}}')">+ Take Manual Snapshot</button>
         </div>
       </div>
@@ -31,12 +45,16 @@
             {{if not $grp.Snapshots}}
               <tr>
                 <td colspan="6" class="text-dim" style="text-align: center; padding: 1.5rem;">
-                  No snapshots found for pool '{{$grp.PoolName}}'. Snapshots take 0 additional space until data is modified.
+                  {{if $grp.Filter}}
+                    No snapshots match filter '{{$grp.Filter}}' in pool '{{$grp.PoolName}}'.
+                  {{else}}
+                    No snapshots found for pool '{{$grp.PoolName}}'. Snapshots take 0 additional space until data is modified.
+                  {{end}}
                 </td>
               </tr>
             {{else}}
-              {{range $idx, $s := $grp.Snapshots}}
-                <tr id="row-snap-{{domId $s.Name}}" x-show="isSnapRowVisible('{{$grp.PoolName}}', {{$idx}}, '{{$s.Name}}', '{{$s.Dataset}}')">
+              {{range $s := $grp.Snapshots}}
+                <tr id="row-snap-{{domId $s.Name}}">
                   <td><strong class="font-mono text-blue">{{$s.Name}}</strong></td>
                   <td><span class="font-mono text-dim">{{$s.Dataset}}</span></td>
                   <td class="font-mono">{{formatBytes $s.ReferencedBytes}}</td>
@@ -62,20 +80,29 @@
       {{if gt $grp.TotalCount 0}}
         <div class="table-pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 1rem; border-top: 1px solid var(--fn-border-main, #262626); background: rgba(0,0,0,0.15); font-size: 0.8rem;">
           <div class="text-dim">
-            <span x-show="!getSnapFilter('{{$grp.PoolName}}')">
-              Showing <span class="font-mono text-white" x-text="((getSnapPage('{{$grp.PoolName}}') - 1) * 10) + 1">1</span> - <span class="font-mono text-white" x-text="Math.min(getSnapPage('{{$grp.PoolName}}') * 10, {{$grp.TotalCount}})">{{if gt $grp.TotalCount 10}}10{{else}}{{$grp.TotalCount}}{{end}}</span> of <span class="font-mono text-white">{{$grp.TotalCount}}</span> snapshots
-            </span>
-            <span x-show="getSnapFilter('{{$grp.PoolName}}')">
-              Filter active for "<span class="font-mono text-white" x-text="getSnapFilter('{{$grp.PoolName}}')"></span>"
-            </span>
+            Showing <span class="font-mono text-white">{{$grp.StartIdx}}</span> - <span class="font-mono text-white">{{$grp.EndIdx}}</span> of <span class="font-mono text-white">{{$grp.TotalCount}}</span> snapshots
           </div>
           {{if gt $grp.TotalPages 1}}
-            <div style="display: flex; gap: 0.5rem; align-items: center;" x-show="!getSnapFilter('{{$grp.PoolName}}')">
-              <button type="button" class="btn btn-secondary btn-sm" :disabled="getSnapPage('{{$grp.PoolName}}') <= 1" @click="snapPrevPage('{{$grp.PoolName}}')">‹ Previous</button>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              {{if $grp.HasPrev}}
+                <button type="button" class="btn btn-secondary btn-sm"
+                        hx-get="/ui/partials/snapshots?pool={{$grp.PoolName}}&page={{$grp.PrevPage}}"
+                        hx-target="#snapshots-container"
+                        hx-swap="outerHTML">‹ Previous</button>
+              {{else}}
+                <button type="button" class="btn btn-secondary btn-sm" disabled>‹ Previous</button>
+              {{end}}
               <span class="font-mono" style="font-size: 0.78rem; color: #a0a0a0;">
-                Page <span class="text-white" x-text="getSnapPage('{{$grp.PoolName}}')">1</span> of <span class="text-white">{{$grp.TotalPages}}</span>
+                Page <span class="text-white">{{$grp.CurrentPage}}</span> of <span class="text-white">{{$grp.TotalPages}}</span>
               </span>
-              <button type="button" class="btn btn-secondary btn-sm" :disabled="getSnapPage('{{$grp.PoolName}}') >= {{$grp.TotalPages}}" @click="snapNextPage('{{$grp.PoolName}}', {{$grp.TotalPages}})">Next ›</button>
+              {{if $grp.HasNext}}
+                <button type="button" class="btn btn-secondary btn-sm"
+                        hx-get="/ui/partials/snapshots?pool={{$grp.PoolName}}&page={{$grp.NextPage}}"
+                        hx-target="#snapshots-container"
+                        hx-swap="outerHTML">Next ›</button>
+              {{else}}
+                <button type="button" class="btn btn-secondary btn-sm" disabled>Next ›</button>
+              {{end}}
             </div>
           {{end}}
         </div>
