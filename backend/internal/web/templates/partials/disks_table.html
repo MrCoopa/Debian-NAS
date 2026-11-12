@@ -1,14 +1,4 @@
-<div id="disks-container" hx-get="/ui/partials/disks" hx-trigger="every 10s [currentTab === 'disks' && !document.hidden], diskUpdate from:body" hx-ext="morph" hx-swap="morph"
-     x-data="{
-       selectedDisks: [],
-       toggleAll(e) {
-         if (e.target.checked) {
-           this.selectedDisks = [{{range $i, $d := .Disks}}{{if $i}},{{end}}'{{$d.Name}}'{{end}}];
-         } else {
-           this.selectedDisks = [];
-         }
-       }
-     }">
+<div id="disks-container" hx-get="/ui/partials/disks" hx-trigger="every 10s [currentTab === 'disks' && !document.hidden], diskUpdate from:body, poolUpdate from:body" hx-swap="outerHTML">
   <!-- Disks Table View (TrueNAS Schema) -->
   <div class="table-card" style="background: #141414; border: 1px solid #262626; border-radius: 4px; overflow: hidden;">
     <div class="table-responsive">
@@ -16,7 +6,7 @@
       <thead>
         <tr style="border-bottom: 1px solid #262626; font-size: 0.78rem; color: #a0a0a0; text-align: left;">
           <th style="width: 44px; padding: 0.75rem 1rem;">
-            <input type="checkbox" class="disk-checkbox" @change="toggleAll($event)">
+            <input type="checkbox" class="disk-checkbox" @change="toggleAllDisks($event.target.checked, [{{range $i, $d := .Disks}}{{if $i}},{{end}}'{{$d.Name}}'{{end}}])">
           </th>
           <th style="padding: 0.75rem 1rem; font-weight: 600;">Name</th>
           <th style="padding: 0.75rem 1rem; font-weight: 600;">Serial</th>
@@ -117,7 +107,7 @@
                 </div>
                 <div>
                   <div class="text-dim" style="font-size: 0.72rem; margin-bottom: 0.2rem;">HDD Standby:</div>
-                  <form hx-post="/ui/actions/disks/spindown" hx-target="#disks-container" hx-swap="morph" style="margin: 0;">
+                  <form hx-post="/ui/actions/disks/spindown" hx-target="#disks-container" hx-swap="outerHTML" style="margin: 0;">
                     <input type="hidden" name="path" value="{{$d.Path}}">
                     <select name="timeout_minutes" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #1a1a1a; border: 1px solid #333; color: #fff; border-radius: 4px; width: 100%;"
                             onchange="this.form.requestSubmit()">
@@ -133,7 +123,7 @@
                 </div>
                 <div>
                   <div class="text-dim" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Adv. Power Management:</div>
-                  <form hx-post="/ui/actions/disks/apm" hx-target="#disks-container" hx-swap="morph" style="margin: 0;">
+                  <form hx-post="/ui/actions/disks/apm" hx-target="#disks-container" hx-swap="outerHTML" style="margin: 0;">
                     <input type="hidden" name="path" value="{{$d.Path}}">
                     <select name="level" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #1a1a1a; border: 1px solid #333; color: #fff; border-radius: 4px; width: 100%;"
                             onchange="this.form.requestSubmit()">
@@ -151,29 +141,29 @@
 
               <!-- Quick Action Toolbar inside expanded row -->
               <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.25rem; padding-top: 0.75rem; border-top: 1px solid rgba(255, 255, 255, 0.08); align-items: center; justify-content: flex-end;">
-                <button class="btn btn-secondary btn-sm"
+                <button type="button" class="btn btn-secondary btn-sm"
                         {{if eq $d.State "STANDBY"}}disabled title="Disk is sleeping"{{end}}
-                        hx-post="/ui/actions/disks/smart-test" hx-vals='{"path": "{{$d.Path}}", "type": "short"}' hx-target="#disks-container" hx-swap="morph">
+                        hx-post="/ui/actions/disks/smart-test" hx-vals='{"path": "{{$d.Path}}", "type": "short"}' hx-target="#disks-container" hx-swap="outerHTML">
                   SMART Short Test
                 </button>
-                <button class="btn btn-secondary btn-sm"
+                <button type="button" class="btn btn-secondary btn-sm"
                         {{if eq $d.State "STANDBY"}}disabled title="Disk is sleeping"{{end}}
-                        hx-post="/ui/actions/disks/smart-test" hx-vals='{"path": "{{$d.Path}}", "type": "long"}' hx-target="#disks-container" hx-swap="morph">
+                        hx-post="/ui/actions/disks/smart-test" hx-vals='{"path": "{{$d.Path}}", "type": "long"}' hx-target="#disks-container" hx-swap="outerHTML">
                   SMART Long Test
                 </button>
-                <button class="btn btn-secondary btn-sm"
-                        hx-post="/ui/actions/disks/standby" hx-vals='{"path": "{{$d.Path}}"}' hx-target="#disks-container" hx-swap="morph">
+                <button type="button" class="btn btn-secondary btn-sm"
+                        hx-post="/ui/actions/disks/standby" hx-vals='{"path": "{{$d.Path}}"}' hx-target="#disks-container" hx-swap="outerHTML">
                   Force Standby (0W)
                 </button>
-                <button class="btn btn-secondary btn-sm"
-                        hx-post="/ui/actions/disks/locate" hx-vals='{"path": "{{$d.Path}}"}' hx-target="#disks-container" hx-swap="morph">
+                <button type="button" class="btn btn-secondary btn-sm"
+                        hx-post="/ui/actions/disks/locate" hx-vals='{"path": "{{$d.Path}}"}' hx-target="#disks-container" hx-swap="outerHTML">
                   Toggle Locate LED
                 </button>
-                <button class="btn btn-danger btn-sm"
+                <button type="button" class="btn btn-danger btn-sm"
                         {{if or $d.IsSystemDisk $d.ZfsPool}}disabled title="Cannot wipe system or active pool disk"{{end}}
                         hx-post="/ui/actions/disks/wipe" hx-vals='{"path": "{{$d.Path}}", "confirm_wipe": "true"}'
                         hx-confirm="WARNING: Completely wipe disk {{$d.Name}} (Wipe ZFS labels &amp; GPT partition table)?"
-                        hx-target="#disks-container" hx-swap="morph">
+                        hx-target="#disks-container" hx-swap="outerHTML">
                   Wipe Disk
                 </button>
               </div>

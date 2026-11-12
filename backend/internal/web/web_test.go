@@ -300,18 +300,59 @@ func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
 		},
 		{
 			file:    "templates/layout.html",
-			want:    []string{`snapSearch:`, `matchesSnap(`, `datasetSearch:`, `toggleDataset(`, `isDatasetVisible(`, `nextToastId:`, `@show-toast.window`},
-			notWant: []string{`@show-toast.camel.window`},
+			want:    []string{`window.currentTab = tab`, `snapSearch:`, `matchesSnap(`, `datasetSearch:`, `toggleDataset(`, `isDatasetVisible(`, `nextToastId:`, `@show-toast.window`, `selectedDisks:`, `toggleAllDisks(`, `openSnapTaskMenuId:`, `openCloudMenuId:`},
+			notWant: []string{`@show-toast.camel.window`, `hx-ext="morph"`, `idiomorph`},
 		},
 		{
-			file: "templates/partials/system_metrics.html",
-			want: []string{`currentTab === 'dashboard' && !document.hidden`, `expandedDisks[$el.dataset.disk] = true`, `table-responsive`},
-			notWant: []string{`expandedDisk =`},
+			file:    "templates/partials/system_metrics.html",
+			want:    []string{`hx-swap="outerHTML"`, `every 4s [currentTab === 'dashboard' && !document.hidden]`, `expandedDisks[$el.dataset.disk] = true`, `table-responsive`},
+			notWant: []string{`expandedDisk =`, `hx-swap="morph"`, `hx-ext="morph"`},
+		},
+		{
+			file:    "templates/partials/disks_table.html",
+			want:    []string{`hx-swap="outerHTML"`, `every 10s [currentTab === 'disks' && !document.hidden]`, `toggleAllDisks(`},
+			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`, `x-data=`},
+		},
+		{
+			file:    "templates/partials/pools_list.html",
+			want:    []string{`hx-swap="outerHTML"`, `every 5s [currentTab === 'pools' && !document.hidden]`, `type="button"`, `@click.stop="openCreatePool()`, `@click.stop="openAddVdev(`, `@click.stop="openDangerConfirm(`},
+			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`, `x-data=`},
+		},
+		{
+			file:    "templates/partials/network_list.html",
+			want:    []string{`hx-swap="outerHTML"`, `every 5s [currentTab === 'system' && !document.hidden]`},
+			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`},
+		},
+		{
+			file:    "templates/partials/users_list.html",
+			want:    []string{`hx-swap="outerHTML"`, `every 10s [currentTab === 'users' && !document.hidden]`, `type="button"`, `@click.stop="openCreateUserModal = true"`},
+			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`, `x-data=`},
+		},
+		{
+			file:    "templates/partials/snapshot_tasks.html",
+			want:    []string{`hx-swap="outerHTML"`, `every 10s [currentTab === 'protection' && !document.hidden]`, `openSnapTaskMenuId`, `@click.stop="openCreateSnapTask()`},
+			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`, `x-data=`},
+		},
+		{
+			file:    "templates/partials/cloudsync_tasks.html",
+			want:    []string{`hx-swap="outerHTML"`, `every 10s [currentTab === 'protection' && !document.hidden]`, `openCloudMenuId`, `@click.stop="openCreateCloudSync()`},
+			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`, `x-data=`},
+		},
+		{
+			file:    "static/app.js",
+			want:    []string{`window.currentTab`, `nasCanBackgroundPoll`, `visibilitychange`, `window.nasRefreshTab`},
+			notWant: []string{`idiomorph`},
 		},
 	}
 
 	for _, c := range checks {
-		raw, err := templateFiles.ReadFile(c.file)
+		var raw []byte
+		var err error
+		if strings.HasPrefix(c.file, "static/") {
+			raw, err = staticFiles.ReadFile(c.file)
+		} else {
+			raw, err = templateFiles.ReadFile(c.file)
+		}
 		if err != nil {
 			t.Fatalf("failed reading %s: %v", c.file, err)
 		}
@@ -326,6 +367,27 @@ func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
 				t.Errorf("%s still contains stale/buggy markup %q", c.file, nw)
 			}
 		}
+	}
+
+	// Ensure no template anywhere uses idiomorph / hx-swap="morph"
+	err := fs.WalkDir(templateFiles, "templates", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".html") {
+			return err
+		}
+		raw, readErr := templateFiles.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		text := string(raw)
+		for _, banned := range []string{`hx-swap="morph"`, `hx-ext="morph"`, `idiomorph`} {
+			if strings.Contains(text, banned) {
+				t.Errorf("%s still contains %q (must use outerHTML)", path, banned)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed walking templates: %v", err)
 	}
 }
 

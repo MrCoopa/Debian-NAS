@@ -97,7 +97,7 @@ func TestUI_RootAndPartials(t *testing.T) {
 		t.Fatalf("GET / (authenticated) returned status %d, expected 200. Body: %s", rr.Code, rr.Body.String())
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, "Debian") || !strings.Contains(body, "hx-ext=\"morph\"") {
+	if !strings.Contains(body, "Debian") || !strings.Contains(body, "/static/htmx.min.js") || !strings.Contains(body, "/static/alpine.min.js") || strings.Contains(body, `hx-ext="morph"`) {
 		t.Errorf("GET / missing expected markup: %s", body[:min(len(body), 500)])
 	}
 

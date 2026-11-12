@@ -1,4 +1,4 @@
-<div id="network-container" hx-get="/ui/partials/network" hx-trigger="every 5s [currentTab === 'system' && !document.hidden], nasRefresh" hx-ext="morph" hx-swap="morph">
+<div id="network-container" hx-get="/ui/partials/network" hx-trigger="every 5s [currentTab === 'system' && !document.hidden], nasRefresh" hx-swap="outerHTML">
   <div class="table-card">
     <div class="table-toolbar">
       <span class="toolbar-title">Physical &amp; Virtual Network Interfaces</span>

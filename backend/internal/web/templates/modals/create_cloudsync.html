@@ -4,7 +4,7 @@
       <h3 x-text="isEditingCloudSync ? 'Edit Cloud Sync Task' : 'Add Cloud Sync Task'">Add Cloud Sync Task</h3>
       <button type="button" class="modal-close" @click="openCloudSyncModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/cloudsync/save" hx-target="#cloudsync-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el && event.detail.successful) openCloudSyncModal = false">
+    <form hx-post="/ui/actions/cloudsync/save" hx-target="#cloudsync-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el) { const res = window.nasTriggerHasError ? window.nasTriggerHasError(event.detail.xhr) : { hasError: false }; if (event.detail.successful && !res.hasError) openCloudSyncModal = false; }">
       <input type="hidden" name="id" :value="cloudSyncForm.id">
 
       <div class="form-group">

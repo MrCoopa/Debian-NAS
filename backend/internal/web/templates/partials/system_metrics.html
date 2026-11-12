@@ -1,4 +1,4 @@
-<div class="omv-dashboard-grid" id="system-metrics-container" hx-get="/ui/partials/system" hx-trigger="every 4s [currentTab === 'dashboard' && !document.hidden], nasRefresh" hx-ext="morph" hx-swap="morph">
+<div class="omv-dashboard-grid" id="system-metrics-container" hx-get="/ui/partials/system" hx-trigger="every 4s [currentTab === 'dashboard' && !document.hidden], nasRefresh, poolUpdate from:body, diskUpdate from:body, shareUpdate from:body, datasetUpdate from:body, snapshotUpdate from:body" hx-swap="outerHTML">
 
   <!-- =========================================================================
        COLUMN 1: CPU RRD, CPU UTILIZATION DONUT, FILE SYSTEMS

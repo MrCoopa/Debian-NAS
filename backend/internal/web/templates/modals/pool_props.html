@@ -4,7 +4,7 @@
       <h3>Pool Properties: <span class="text-blue font-mono" x-text="poolProps.pool"></span></h3>
       <button type="button" class="modal-close" @click="openPoolPropsModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/zfs/pools/property" hx-target="#pools-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openPoolPropsModal = false">
+    <form hx-post="/ui/actions/zfs/pools/property" hx-target="#pools-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el) { const res = window.nasTriggerHasError ? window.nasTriggerHasError(event.detail.xhr) : { hasError: false }; if (event.detail.successful && !res.hasError) openPoolPropsModal = false; }">
       <input type="hidden" name="pool" :value="poolProps.pool">
 
       <div class="form-group">

@@ -3,6 +3,7 @@ console.log("Debian Storage Appliance: Go + HTMX + Alpine.js initialized.");
 
 (function () {
   var lastActionSwap = {};
+  window.currentTab = window.currentTab || "dashboard";
 
   var TAB_CONTAINER_MAP = {
     dashboard: { id: "system-metrics-container", event: "nasRefresh" },
@@ -50,7 +51,36 @@ console.log("Debian Storage Appliance: Go + HTMX + Alpine.js initialized.");
     return true;
   };
 
+  window.nasCanBackgroundPoll = function (containerEl) {
+    if (document.hidden || !containerEl) {
+      return false;
+    }
+    var modals = document.querySelectorAll(".modal-backdrop");
+    for (var i = 0; i < modals.length; i++) {
+      if (window.getComputedStyle(modals[i]).display !== "none") {
+        return false;
+      }
+    }
+    var menus = containerEl.querySelectorAll("[data-nas-row-menu='true']");
+    for (var j = 0; j < menus.length; j++) {
+      if (window.getComputedStyle(menus[j]).display !== "none") {
+        return false;
+      }
+    }
+    var active = document.activeElement;
+    if (active && containerEl.contains(active)) {
+      var tag = (active.tagName || "").toUpperCase();
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") {
+        return false;
+      }
+    }
+    return true;
+  };
+
   window.nasRefreshTab = function (tabName) {
+    if (tabName) {
+      window.currentTab = tabName;
+    }
     var target = TAB_CONTAINER_MAP[tabName];
     if (target && window.htmx) {
       var el = document.getElementById(target.id);
@@ -92,6 +122,9 @@ console.log("Debian Storage Appliance: Go + HTMX + Alpine.js initialized.");
     }
     var trig = detail.requestConfig.triggeringEvent;
     if (trig && trig.type && trig.type.indexOf("every") === 0) {
+      if (!window.nasCanBackgroundPoll(elt)) {
+        event.preventDefault();
+      }
       return;
     }
     if (elt.dataset && elt.dataset.nasManualRefresh) {
@@ -147,6 +180,19 @@ console.log("Debian Storage Appliance: Go + HTMX + Alpine.js initialized.");
         window.Alpine.initTree(target);
       } catch (e) {}
     }
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden || !document.body) {
+      return;
+    }
+    try {
+      var stack = document.body._x_dataStack;
+      var currentTab = stack && stack[0] ? stack[0].currentTab : "";
+      if (currentTab && typeof window.nasRefreshTab === "function") {
+        window.nasRefreshTab(currentTab);
+      }
+    } catch (e) {}
   });
 
   document.addEventListener("htmx:responseError", function () {

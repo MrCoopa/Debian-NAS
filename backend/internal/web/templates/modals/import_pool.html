@@ -4,7 +4,7 @@
       <h3>Import Existing ZFS Pool</h3>
       <button type="button" class="modal-close" @click="openImportModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/zfs/pools/import" hx-target="#pools-container" hx-swap="morph" @htmx:after-request="if (event.detail.successful) openImportModal = false">
+    <form hx-post="/ui/actions/zfs/pools/import" hx-target="#pools-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el) { const res = window.nasTriggerHasError ? window.nasTriggerHasError(event.detail.xhr) : { hasError: false }; if (event.detail.successful && !res.hasError) { openImportModal = false; $el.reset(); } }">
       <div class="form-group">
         <label>Pool Name or Numeric ID</label>
         <input type="text" name="name_or_id" required placeholder="e.g. tank or 1234567890123456789">

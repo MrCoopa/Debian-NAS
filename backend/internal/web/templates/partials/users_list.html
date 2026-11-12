@@ -1,9 +1,9 @@
-<div id="users-container" hx-get="/ui/partials/users" hx-trigger="userUpdate from:body" hx-swap="outerHTML">
+<div id="users-container" hx-get="/ui/partials/users" hx-trigger="every 10s [currentTab === 'users' && !document.hidden], userUpdate from:body, shareUpdate from:body" hx-swap="outerHTML">
   <div class="table-card">
     <div class="table-toolbar">
       <span class="toolbar-title">Storage Users &amp; SMB Credentials</span>
       <div class="toolbar-actions">
-        <button class="btn btn-primary btn-sm" @click="openCreateUserModal = true">+ New Storage User</button>
+        <button type="button" class="btn btn-primary btn-sm" @click.stop="openCreateUserModal = true">+ New Storage User</button>
       </div>
     </div>
     <div class="table-responsive">

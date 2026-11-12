@@ -1,5 +1,5 @@
 {{define "partials/snapshot_tasks.html"}}
-<div id="snapshot-tasks-container" class="table-card" hx-get="/ui/partials/snapshot-tasks" hx-trigger="snapshotTaskUpdate from:body" hx-swap="outerHTML" style="margin-bottom: 1.5rem; background: #1e1e1e; border-color: #2f2f2f;">
+<div id="snapshot-tasks-container" class="table-card" hx-get="/ui/partials/snapshot-tasks" hx-trigger="every 10s [currentTab === 'protection' && !document.hidden], snapshotTaskUpdate from:body, datasetUpdate from:body, poolUpdate from:body" hx-swap="outerHTML" style="margin-bottom: 1.5rem; background: #1e1e1e; border-color: #2f2f2f;">
   <div class="table-header" style="padding: 1rem 1.25rem; border-bottom: 1px solid #2f2f2f; display: flex; justify-content: space-between; align-items: center;">
     <div style="display: flex; align-items: center; gap: 0.5rem;">
       <h3 style="margin: 0; font-size: 1.05rem; font-weight: 600; color: #f8fafc;">Periodic Snapshot Tasks</h3>
@@ -15,7 +15,7 @@
       </a>
     </div>
     <button type="button"
-            @click="openCreateSnapTask()"
+            @click.stop="openCreateSnapTask()"
             style="background: #383838; color: #f1f5f9; border: 1px solid #484848; padding: 0.45rem 1.15rem; font-size: 0.85rem; font-weight: 500; border-radius: 3px; cursor: pointer; transition: background 0.15s;"
             onmouseover="this.style.background='#474747'"
             onmouseout="this.style.background='#383838'">
@@ -76,9 +76,9 @@
           <td style="padding: 0.9rem 1rem;">
             <span class="truenas-state-pill {{.GetStateClass}}" title="{{.LastMessage}}">{{.GetStateLabel}}</span>
           </td>
-          <td style="padding: 0.9rem 1rem; text-align: right; position: relative;" x-data="{ open: false }" @click.outside="open = false">
+          <td style="padding: 0.9rem 1rem; text-align: right; position: relative;" @click.outside="if (openSnapTaskMenuId === '{{.ID}}') openSnapTaskMenuId = ''">
             <button type="button"
-                    @click="open = !open"
+                    @click.stop="openSnapTaskMenuId = (openSnapTaskMenuId === '{{.ID}}' ? '' : '{{.ID}}')"
                     title="Task Actions"
                     style="background: transparent; border: none; color: #cbd5e1; cursor: pointer; padding: 0.25rem 0.4rem; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center;">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -87,10 +87,10 @@
                 <circle cx="12" cy="19" r="2"></circle>
               </svg>
             </button>
-            <div x-show="open" x-cloak
+            <div x-show="openSnapTaskMenuId === '{{.ID}}'" data-nas-row-menu="true" x-cloak
                  style="position: absolute; right: 1.25rem; top: 2.6rem; z-index: 60; min-width: 155px; background: #262626; border: 1px solid #3f3f46; border-radius: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.55); padding: 0.35rem 0; text-align: left;">
               <button type="button"
-                      @click="open = false"
+                      @click="openSnapTaskMenuId = ''"
                       hx-post="/ui/actions/zfs/snapshot-tasks/run"
                       hx-vals='{"id": "{{.ID}}"}'
                       hx-target="#snapshot-tasks-container"
@@ -100,14 +100,14 @@
                 <span>▶ Run Now</span>
               </button>
               <button type="button"
-                      @click="open = false; openEditSnapTask('{{.ID}}', '{{.Dataset}}', {{.Recursive}}, {{.LifetimeValue}}, '{{.LifetimeUnit}}', '{{.NamingSchema}}', '{{.Schedule}}', '{{.FrequencyText}}', {{.Enabled}})"
+                      @click.stop="openSnapTaskMenuId = ''; openEditSnapTask('{{.ID}}', '{{.Dataset}}', {{.Recursive}}, {{.LifetimeValue}}, '{{.LifetimeUnit}}', '{{.NamingSchema}}', '{{.Schedule}}', '{{.FrequencyText}}', {{.Enabled}})"
                       style="display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.5rem 0.9rem; background: transparent; border: none; color: #e2e8f0; font-size: 0.83rem; cursor: pointer; text-align: left;"
                       onmouseover="this.style.background='#334155'" onmouseout="this.style.background='transparent'">
                 <span>✎ Edit</span>
               </button>
               <div style="height: 1px; background: #3f3f46; margin: 0.25rem 0;"></div>
               <button type="button"
-                      @click="open = false"
+                      @click="openSnapTaskMenuId = ''"
                       hx-post="/ui/actions/zfs/snapshot-tasks/delete"
                       hx-vals='{"id": "{{.ID}}"}'
                       hx-confirm="Delete periodic snapshot task for '{{.Dataset}}'?"

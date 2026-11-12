@@ -1,4 +1,4 @@
-<div id="shares-container" hx-get="/ui/partials/shares" hx-trigger="shareUpdate from:body" hx-swap="outerHTML">
+<div id="shares-container" hx-get="/ui/partials/shares" hx-trigger="every 8s [currentTab === 'shares' && !document.hidden], shareUpdate from:body, datasetUpdate from:body, poolUpdate from:body, userUpdate from:body" hx-swap="outerHTML">
 
   <!-- 1. SMB / CIFS Shares Table -->
   <div class="table-card" style="margin-bottom: 1.5rem;">

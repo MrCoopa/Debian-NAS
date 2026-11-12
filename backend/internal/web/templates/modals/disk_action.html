@@ -5,8 +5,8 @@
       <button type="button" class="modal-close" @click="openDiskActionModal = false">&times;</button>
     </div>
     <form hx-post="/ui/actions/zfs/pools/disk/action"
-          hx-target="#pools-container" hx-swap="morph"
-          @htmx:after-request="if (event.target === $el && event.detail.successful) openDiskActionModal = false">
+          hx-target="#pools-container" hx-swap="outerHTML"
+          @htmx:after-request="if (event.target === $el) { const res = window.nasTriggerHasError ? window.nasTriggerHasError(event.detail.xhr) : { hasError: false }; if (event.detail.successful && !res.hasError) openDiskActionModal = false; }">
       <input type="hidden" name="action_type" :value="diskAction.type">
       <input type="hidden" name="pool" :value="diskAction.pool">
       <input type="hidden" name="target_device" :value="diskAction.targetDevice">

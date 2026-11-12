@@ -4,7 +4,7 @@
       <h3>Add VDEV / Expand Pool: <span class="text-blue font-mono" x-text="addVdevPool"></span></h3>
       <button type="button" class="modal-close" @click="openAddVdevModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/zfs/pools/vdev" hx-target="#pools-container" hx-swap="morph" @htmx:after-request="if (event.target === $el && event.detail.successful) openAddVdevModal = false">
+    <form hx-post="/ui/actions/zfs/pools/vdev" hx-target="#pools-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el) { const res = window.nasTriggerHasError ? window.nasTriggerHasError(event.detail.xhr) : { hasError: false }; if (event.detail.successful && !res.hasError) openAddVdevModal = false; }">
       <input type="hidden" name="pool" :value="addVdevPool">
       <div class="form-group">
         <label>VDEV Role / Type</label>

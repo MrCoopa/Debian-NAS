@@ -13,11 +13,10 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/tailwind.css">
   <script src="/static/htmx.min.js"></script>
-  <script src="/static/idiomorph-ext.min.js"></script>
   <script defer src="/static/alpine.min.js"></script>
 </head>
 
-<body hx-ext="morph" x-data="{
+<body x-data="{
         currentTab: 'dashboard',
         sidebarOpen: false,
         sidebarCollapsed: false,
@@ -28,6 +27,7 @@
         shareForm: { name: '', origName: '', path: '', origPath: '', proto: 'smb', access: 'restricted', allowed_clients: '*', users: [] },
         setTab(tab) {
           this.currentTab = tab;
+          window.currentTab = tab;
           this.sidebarOpen = false;
           this.$nextTick(() => {
             if (window.nasRefreshTab) window.nasRefreshTab(tab);
@@ -138,6 +138,12 @@
           };
           this.openCloudSyncModal = true;
         },
+        selectedDisks: [],
+        toggleAllDisks(checked, names) {
+          this.selectedDisks = checked ? (names || []) : [];
+        },
+        openSnapTaskMenuId: '',
+        openCloudMenuId: '',
         expandedDisks: {},
         toggleDisk(name) {
           this.expandedDisks[name] = !this.expandedDisks[name];
@@ -450,8 +456,8 @@
               <h1>Native OpenZFS Storage Pools</h1>
             </div>
             <div class="page-actions" style="display: flex; gap: 0.5rem;">
-              <button class="btn btn-secondary btn-sm" @click="openImportModal = true">Import Pool</button>
-              <button class="btn btn-primary btn-sm" @click="openCreatePool()">+ Create Pool</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click.stop="openImportModal = true">Import Pool</button>
+              <button type="button" class="btn btn-primary btn-sm" @click.stop="openCreatePool()">+ Create Pool</button>
             </div>
           </div>
 
@@ -498,7 +504,7 @@
               <h1>User Management &amp; Permissions</h1>
             </div>
             <div class="page-actions" style="display: flex; gap: 0.5rem;">
-              <button class="btn btn-primary btn-sm" @click="openCreateUserModal = true">+ Add Storage User</button>
+              <button type="button" class="btn btn-primary btn-sm" @click.stop="openCreateUserModal = true">+ Add Storage User</button>
             </div>
           </div>
 
@@ -513,7 +519,7 @@
               <h1>Data Protection (Snapshots &amp; Scrub)</h1>
             </div>
             <div class="page-actions">
-              <button class="btn btn-primary btn-sm" @click="openCreateSnap('')">+ Create Snapshot</button>
+              <button type="button" class="btn btn-primary btn-sm" @click.stop="openCreateSnap('')">+ Create Snapshot</button>
             </div>
           </div>
 
