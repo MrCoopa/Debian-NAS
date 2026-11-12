@@ -1,0 +1,79 @@
+{{$arc := .System.ZfsArc}}
+<div id="arc-settings-container" class="table-card" style="background: var(--fn-bg-card); border: 1px solid var(--fn-border-main); border-radius: 4px; overflow: hidden;">
+  <div class="table-toolbar" style="flex-wrap: wrap; gap: 0.5rem;">
+    <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
+      <span class="toolbar-title">OpenZFS ARC Memory Cache (zfs_arc_max / zfs_arc_min)</span>
+      <span class="text-dim" style="font-size: 0.75rem;">Applies live to kernel &amp; persists in /etc/modprobe.d/zfs.conf</span>
+    </div>
+    <div class="toolbar-actions">
+      <button type="button" class="btn btn-secondary btn-sm"
+              hx-post="/ui/actions/system/arc"
+              hx-vals='{"action":"reset"}'
+              hx-target="#arc-settings-container"
+              hx-swap="outerHTML">Reset to Auto</button>
+    </div>
+  </div>
+
+  {{template "partials/arc_stats.html" .}}
+
+  <form hx-post="/ui/actions/system/arc" hx-target="#arc-settings-container" hx-swap="outerHTML" style="padding: 1.1rem 1.25rem;">
+    <div style="display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-bottom: 1rem;">
+      <span class="text-dim" style="font-size: 0.75rem; margin-right: 0.25rem;">Quick Presets (Max):</span>
+      <button type="button" class="btn btn-secondary btn-sm" @click="applyArcPreset($el, '0', 'GiB')">Auto (50% RAM)</button>
+      <button type="button" class="btn btn-secondary btn-sm" @click="applyArcPreset($el, '512', 'MiB')">512 MiB</button>
+      <button type="button" class="btn btn-secondary btn-sm" @click="applyArcPreset($el, '1', 'GiB')">1 GiB</button>
+      <button type="button" class="btn btn-secondary btn-sm" @click="applyArcPreset($el, '2', 'GiB')">2 GiB</button>
+      <button type="button" class="btn btn-secondary btn-sm" @click="applyArcPreset($el, '4', 'GiB')">4 GiB</button>
+      {{if or (not $arc) (ge $arc.TotalRamBytes 7158278826)}}
+        <button type="button" class="btn btn-secondary btn-sm" @click="applyArcPreset($el, '6', 'GiB')">6 GiB</button>
+      {{end}}
+      {{if or (not $arc) (ge $arc.TotalRamBytes 9663676416)}}
+        <button type="button" class="btn btn-secondary btn-sm" @click="applyArcPreset($el, '8', 'GiB')">8 GiB</button>
+      {{end}}
+      {{if and $arc (ge $arc.TotalRamBytes 19327352832)}}
+        <button type="button" class="btn btn-secondary btn-sm" @click="applyArcPreset($el, '16', 'GiB')">16 GiB</button>
+      {{end}}
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; align-items: end;">
+      <div>
+        <label style="display: block; font-size: 0.78rem; font-weight: 600; margin-bottom: 0.35rem; color: #e2e8f0;">
+          Maximum ARC Size (zfs_arc_max)
+        </label>
+        <div style="display: flex; gap: 0.4rem;">
+          <input type="text" name="max_value"
+                 value="{{if $arc}}{{$arc.MaxInputValue}}{{end}}"
+                 placeholder="0 = Auto (OpenZFS Default)"
+                 style="flex: 1; min-width: 0; padding: 0.45rem 0.65rem; background: #141414; border: 1px solid var(--fn-border-main); border-radius: 4px; color: #f8fafc; font-family: var(--fn-font-mono); font-size: 0.85rem;">
+          <select name="max_unit" style="width: 82px; padding: 0.45rem 0.5rem; background: #141414; border: 1px solid var(--fn-border-main); border-radius: 4px; color: #f8fafc; font-size: 0.85rem;">
+            <option value="GiB" {{if or (not $arc) (ne $arc.MaxInputUnit "MiB")}}selected{{end}}>GiB</option>
+            <option value="MiB" {{if and $arc (eq $arc.MaxInputUnit "MiB")}}selected{{end}}>MiB</option>
+          </select>
+        </div>
+        <span class="text-dim" style="display: block; font-size: 0.7rem; margin-top: 0.3rem;">Leave empty or 0 for automatic (~50% of RAM). Minimum 64 MiB, max 90% RAM.</span>
+      </div>
+
+      <div>
+        <label style="display: block; font-size: 0.78rem; font-weight: 600; margin-bottom: 0.35rem; color: #e2e8f0;">
+          Minimum ARC Size (zfs_arc_min)
+        </label>
+        <div style="display: flex; gap: 0.4rem;">
+          <input type="text" name="min_value"
+                 value="{{if $arc}}{{$arc.MinInputValue}}{{end}}"
+                 placeholder="0 = Auto"
+                 style="flex: 1; min-width: 0; padding: 0.45rem 0.65rem; background: #141414; border: 1px solid var(--fn-border-main); border-radius: 4px; color: #f8fafc; font-family: var(--fn-font-mono); font-size: 0.85rem;">
+          <select name="min_unit" style="width: 82px; padding: 0.45rem 0.5rem; background: #141414; border: 1px solid var(--fn-border-main); border-radius: 4px; color: #f8fafc; font-size: 0.85rem;">
+            <option value="GiB" {{if or (not $arc) (ne $arc.MinInputUnit "MiB")}}selected{{end}}>GiB</option>
+            <option value="MiB" {{if and $arc (eq $arc.MinInputUnit "MiB")}}selected{{end}}>MiB</option>
+          </select>
+        </div>
+        <span class="text-dim" style="display: block; font-size: 0.7rem; margin-top: 0.3rem;">Optional floor when system is under memory pressure. Must be &le; Max ARC Size.</span>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; align-items: center; padding-bottom: 1.05rem;">
+        <button type="submit" class="btn btn-primary btn-sm">Apply &amp; Save ARC Limit</button>
+      </div>
+    </div>
+  </form>
+</div>
+

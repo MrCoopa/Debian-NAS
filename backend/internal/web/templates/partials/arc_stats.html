@@ -1,0 +1,64 @@
+{{$arc := .System.ZfsArc}}
+<div id="arc-telemetry-strip" hx-get="/ui/partials/arc-stats" hx-trigger="every 5s [currentTab === 'system' && !document.hidden], arcUpdate from:body, nasRefresh from:body" hx-swap="outerHTML" style="padding: 1rem 1.25rem; border-bottom: 1px solid var(--fn-border-main); background: rgba(0, 0, 0, 0.16);">
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 1rem; margin-bottom: 0.9rem;">
+    <div>
+      <span class="text-dim" style="display: block; font-size: 0.72rem; margin-bottom: 0.2rem;">Active ARC Usage</span>
+      <strong class="font-mono text-blue" style="font-size: 1rem;">{{if $arc}}{{formatBytes $arc.CurrentBytes}}{{else}}{{formatBytes .System.Memory.ZfsArcBytes}}{{end}}</strong>
+      {{if and $arc (gt $arc.HitRatioPercent 0)}}
+        <span class="badge-status green" style="font-size: 0.68rem; margin-left: 0.35rem;">{{formatPercent $arc.HitRatioPercent}}% Hit</span>
+      {{end}}
+    </div>
+    <div>
+      <span class="text-dim" style="display: block; font-size: 0.72rem; margin-bottom: 0.2rem;">Configured Max (zfs_arc_max)</span>
+      <strong class="font-mono" style="font-size: 0.95rem;">
+        {{if and $arc (not $arc.IsAutoMax)}}
+          {{formatBytes $arc.MaxBytes}}
+        {{else if and $arc (gt $arc.EffectiveMaxBytes 0)}}
+          Auto ({{formatBytes $arc.EffectiveMaxBytes}})
+        {{else}}
+          Auto (50% RAM)
+        {{end}}
+      </strong>
+    </div>
+    <div>
+      <span class="text-dim" style="display: block; font-size: 0.72rem; margin-bottom: 0.2rem;">Configured Min (zfs_arc_min)</span>
+      <strong class="font-mono" style="font-size: 0.95rem;">
+        {{if and $arc (not $arc.IsAutoMin)}}
+          {{formatBytes $arc.MinBytes}}
+        {{else if and $arc (gt $arc.EffectiveMinBytes 0)}}
+          Auto ({{formatBytes $arc.EffectiveMinBytes}})
+        {{else}}
+          Auto
+        {{end}}
+      </strong>
+    </div>
+    <div>
+      <span class="text-dim" style="display: block; font-size: 0.72rem; margin-bottom: 0.2rem;">System RAM &amp; Persistence</span>
+      <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+        <span class="font-mono" style="font-size: 0.85rem;">{{if and $arc (gt $arc.TotalRamBytes 0)}}{{formatBytes $arc.TotalRamBytes}}{{else}}{{formatBytes .System.Memory.TotalBytes}}{{end}}</span>
+        {{if and $arc $arc.Persisted}}
+          <span class="badge-status green" style="font-size: 0.68rem;">Persisted</span>
+        {{else}}
+          <span class="badge-status slate" style="font-size: 0.68rem;">Kernel Default</span>
+        {{end}}
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div style="display: flex; justify-content: space-between; font-size: 0.72rem; margin-bottom: 0.3rem;">
+      <span class="text-dim">ARC Fill vs. Effective Limit</span>
+      <span class="font-mono text-dim">
+        {{if and $arc (gt $arc.EffectiveMaxBytes 0)}}
+          {{formatBytes $arc.CurrentBytes}} / {{formatBytes $arc.EffectiveMaxBytes}} ({{formatPercent $arc.UsedOfMaxPercent}}%)
+        {{else}}
+          {{formatBytes .System.Memory.ZfsArcBytes}}
+        {{end}}
+      </span>
+    </div>
+    <div style="width: 100%; height: 7px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden;">
+      <div style="height: 100%; background: #008be5; width: {{if $arc}}{{formatPercent $arc.UsedOfMaxPercent}}{{else}}0{{end}}%; transition: width 0.25s ease;"></div>
+    </div>
+  </div>
+</div>
+

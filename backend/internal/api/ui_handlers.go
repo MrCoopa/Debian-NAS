@@ -355,6 +355,51 @@ func (s *Server) handleUIPartialNetwork(w http.ResponseWriter, r *http.Request) 
 	}))
 }
 
+func (s *Server) handleUIPartialArc(w http.ResponseWriter, r *http.Request) {
+	s.renderUIPartial(w, "partials/arc_settings.html", s.buildPartialViewData(viewFetchMask{
+		system: true,
+	}))
+}
+
+func (s *Server) handleUIPartialArcStats(w http.ResponseWriter, r *http.Request) {
+	s.renderUIPartial(w, "partials/arc_stats.html", s.buildPartialViewData(viewFetchMask{
+		system: true,
+	}))
+}
+
+func (s *Server) handleUIActionSetArc(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	action := strings.TrimSpace(r.FormValue("action"))
+	var maxBytes, minBytes uint64
+	if action != "reset" {
+		var err error
+		maxBytes, err = system.ParseArcSizeInput(r.FormValue("max_value"), r.FormValue("max_unit"))
+		if err != nil {
+			s.setHXTrigger(w, err.Error(), "error")
+			s.handleUIPartialArc(w, r)
+			return
+		}
+		minBytes, err = system.ParseArcSizeInput(r.FormValue("min_value"), r.FormValue("min_unit"))
+		if err != nil {
+			s.setHXTrigger(w, err.Error(), "error")
+			s.handleUIPartialArc(w, r)
+			return
+		}
+	}
+
+	updated, err := s.sys.SetArcConfig(maxBytes, minBytes)
+	if err != nil {
+		s.setHXTrigger(w, err.Error(), "error")
+	} else {
+		msg := fmt.Sprintf("ZFS ARC cache updated (Max: %s)", updated.MaxHuman)
+		if updated.IsAutoMax && updated.IsAutoMin {
+			msg = "ZFS ARC cache reset to Auto (OpenZFS default)"
+		}
+		s.setHXTrigger(w, msg, "success", "arcUpdate", "nasRefresh")
+	}
+	s.handleUIPartialArc(w, r)
+}
+
 func (s *Server) handleUIPartialServices(w http.ResponseWriter, r *http.Request) {
 	s.renderUIPartial(w, "partials/services_list.html", s.buildPartialViewData(viewFetchMask{
 		system: true,

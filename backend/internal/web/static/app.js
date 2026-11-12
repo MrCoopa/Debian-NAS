@@ -122,6 +122,14 @@ console.log("Debian Storage Appliance: Go + HTMX + Alpine.js initialized.");
         window.htmx.trigger(cloud, "cloudSyncUpdate");
       }
     }
+    if (tabName === "system" && window.htmx) {
+      var arcStrip = document.getElementById("arc-telemetry-strip");
+      if (arcStrip) {
+        delete lastActionSwap["arc-telemetry-strip"];
+        arcStrip.dataset.nasManualRefresh = String(Date.now());
+        window.htmx.trigger(arcStrip, "arcUpdate");
+      }
+    }
   };
 
   // Deduplicate immediate self-triggered partial GETs right after an action response already updated the same container.

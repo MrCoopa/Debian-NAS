@@ -40,6 +40,7 @@ type SystemStatus struct {
 	Network      []NetworkInfo   `json:"network"`
 	NetworkIO    NetworkIOInfo   `json:"network_io"`
 	DiskIO       DiskIOInfo      `json:"disk_io"`
+	ZfsArc       ZfsArcConfig    `json:"zfs_arc"`
 	Services     []ServiceStatus `json:"services"`
 	LastUpdated  time.Time       `json:"last_updated"`
 }
@@ -142,6 +143,14 @@ type Collector struct {
 	// History buffer for Network I/O
 	netRxHistory []float64
 	netTxHistory []float64
+
+	// OpenZFS ARC paths & mock overrides
+	arcStatsPath    string
+	arcParamsDir    string
+	arcModprobePath string
+	memInfoPath     string
+	mockArcMax      uint64
+	mockArcMin      uint64
 }
 
 type cpuStatSnapshot struct {
@@ -163,9 +172,14 @@ func NewCollector(mockMode bool) *Collector {
 		lastLinuxDisks:  make(map[string]linuxDiskSnapshot),
 		netRxHistory:    make([]float64, 0, 30),
 		netTxHistory:    make([]float64, 0, 30),
+		arcStatsPath:    defaultArcStatsPath,
+		arcParamsDir:    defaultArcParamsDir,
+		arcModprobePath: defaultArcModprobePath,
+		memInfoPath:     defaultMemInfoPath,
 	}
 	// Initial reading to prime delta counters
 	if !c.mockMode {
+		_ = c.ApplyPersistedArcOnStartup()
 		c.lastCPUStat = c.readCPUStatSnapshot()
 		c.lastNetStat = c.readNetStatSnapshot()
 	}
@@ -214,6 +228,7 @@ func (c *Collector) getLinuxStatus(daemonMB float64) *SystemStatus {
 
 	// 4. Memory & ZFS ARC
 	memInfo := c.readMemInfo()
+	arcCfg := c.readArcConfigLocked(memInfo.TotalBytes)
 
 	// 5. Network
 	currNet := c.readNetStatSnapshot()
@@ -259,6 +274,7 @@ func (c *Collector) getLinuxStatus(daemonMB float64) *SystemStatus {
 			History:   c.ioHistory,
 			Devices:   devMap,
 		},
+		ZfsArc:      arcCfg,
 		Services:    c.collectServices(),
 		LastUpdated: now,
 	}
@@ -280,6 +296,17 @@ func (c *Collector) getMockStatus(daemonMB float64) *SystemStatus {
 	txBps := (155.0 + float64((nowSec*13)%120) + 40.0*math.Cos(float64(nowSec)*0.15)) * 1024
 	netIO := c.buildNetworkIO(rxBps, txBps)
 
+	arcCfg := c.readArcConfigLocked(mockTotalRamBytes)
+	memUsed := uint64(15891398656)
+	if mockDefaultArcBytes > arcCfg.CurrentBytes {
+		diff := mockDefaultArcBytes - arcCfg.CurrentBytes
+		if memUsed > diff {
+			memUsed -= diff
+		}
+	}
+	memFree := mockTotalRamBytes - memUsed
+	memUsedPct := float64(memUsed) / float64(mockTotalRamBytes) * 100.0
+
 	return &SystemStatus{
 		Hostname:    "truenas",
 		OS:          "Debian GNU/Linux 13 (Trixie)",
@@ -298,16 +325,16 @@ func (c *Collector) getMockStatus(daemonMB float64) *SystemStatus {
 			LoadAvg:      []float64{0.14, 0.22, 0.18},
 		},
 		Memory: MemoryInfo{
-			TotalBytes:    16750372454,
-			TotalHuman:    "15.6 GiB",
-			UsedBytes:     15891398656,
-			UsedHuman:     "14.8 GiB",
-			UsedPercent:   94.8,
-			FreeBytes:     858993459,
-			FreeHuman:     "0.8 GiB",
-			ZfsArcBytes:   13314398617,
-			ZfsArcHuman:   "12.4 GiB",
-			ZfsArcPercent: 79.5,
+			TotalBytes:    mockTotalRamBytes,
+			TotalHuman:    formatBytes(mockTotalRamBytes),
+			UsedBytes:     memUsed,
+			UsedHuman:     formatBytes(memUsed),
+			UsedPercent:   memUsedPct,
+			FreeBytes:     memFree,
+			FreeHuman:     formatBytes(memFree),
+			ZfsArcBytes:   arcCfg.CurrentBytes,
+			ZfsArcHuman:   arcCfg.CurrentHuman,
+			ZfsArcPercent: float64(arcCfg.CurrentBytes) / float64(mockTotalRamBytes) * 100.0,
 			ServicesHuman: "2.4 GiB",
 		},
 		Network: []NetworkInfo{
@@ -333,6 +360,7 @@ func (c *Collector) getMockStatus(daemonMB float64) *SystemStatus {
 			WriteIOPS: 0,
 			History:   []float64{0, 0, 0},
 		},
+		ZfsArc:      arcCfg,
 		Services:    c.collectServices(),
 		LastUpdated: time.Now(),
 	}
@@ -707,8 +735,9 @@ func (c *Collector) readCPUTemperature() int {
 }
 
 func (c *Collector) readMemInfo() MemoryInfo {
+	c.ensureArcPathsLocked()
 	var total, avail uint64
-	f, err := os.Open("/proc/meminfo")
+	f, err := os.Open(c.memInfoPath)
 	if err == nil {
 		defer f.Close()
 		scanner := bufio.NewScanner(f)
@@ -739,20 +768,8 @@ func (c *Collector) readMemInfo() MemoryInfo {
 	usedPct := float64(used) / float64(total) * 100.0
 
 	// Read ZFS ARC stats if OpenZFS is loaded
-	var arcBytes uint64
-	arcFile, err := os.Open("/proc/spl/kstat/zfs/arcstats")
-	if err == nil {
-		defer arcFile.Close()
-		scanner := bufio.NewScanner(arcFile)
-		for scanner.Scan() {
-			line := scanner.Text()
-			fields := strings.Fields(line)
-			if len(fields) >= 3 && fields[0] == "size" {
-				arcBytes, _ = strconv.ParseUint(fields[2], 10, 64)
-				break
-			}
-		}
-	}
+	stats := readArcStatsFile(c.arcStatsPath)
+	arcBytes := stats.size
 
 	arcPct := float64(arcBytes) / float64(total) * 100.0
 	servicesBytes := uint64(0)

@@ -209,8 +209,9 @@
               <span class="omv-stat-sub font-mono">{{formatPercent (sub 100 .System.Memory.UsedPercent)}}% Free</span>
             </div>
           </div>
-          <div class="omv-donut-stat-row" style="margin-top: 0.25rem;">
-            <span class="omv-stat-sub">ZFS ARC Cache: <strong class="text-blue font-mono">{{formatBytes .System.Memory.ZfsArcBytes}}</strong></span>
+          <div class="omv-donut-stat-row" style="margin-top: 0.25rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <span class="omv-stat-sub">ZFS ARC Cache: <strong class="text-blue font-mono">{{formatBytes .System.Memory.ZfsArcBytes}}</strong>{{if and .System.ZfsArc (not .System.ZfsArc.IsAutoMax)}} <span class="text-dim font-mono">/ {{formatBytes .System.ZfsArc.MaxBytes}}</span>{{else if and .System.ZfsArc (gt .System.ZfsArc.EffectiveMaxBytes 0)}} <span class="text-dim font-mono">/ {{formatBytes .System.ZfsArc.EffectiveMaxBytes}} (Auto)</span>{{end}}</span>
+            <button type="button" class="btn btn-secondary btn-sm" style="padding: 1px 6px; font-size: 0.68rem;" @click="setTab('system')">Tune</button>
           </div>
         </div>
       </div>

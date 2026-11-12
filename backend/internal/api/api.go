@@ -70,6 +70,8 @@ func (s *Server) Routes() http.Handler {
 
 	// 1. System Telemetry
 	mux.HandleFunc("GET /api/v1/system", s.handleSystemStatus)
+	mux.HandleFunc("GET /api/v1/system/arc", s.handleGetArcConfig)
+	mux.HandleFunc("POST /api/v1/system/arc", s.handleSetArcConfig)
 
 	// 2. Disks & Standby Control (45Drives Houston Chassis & SMART)
 	mux.HandleFunc("GET /api/v1/disks", s.handleListDisks)
@@ -146,6 +148,8 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("GET /ui/partials/snapshots", s.handleUIPartialSnapshots)
 		mux.HandleFunc("GET /ui/partials/snapshot-tasks", s.handleUIPartialSnapshotTasks)
 		mux.HandleFunc("GET /ui/partials/network", s.handleUIPartialNetwork)
+		mux.HandleFunc("GET /ui/partials/arc", s.handleUIPartialArc)
+		mux.HandleFunc("GET /ui/partials/arc-stats", s.handleUIPartialArcStats)
 		mux.HandleFunc("GET /ui/partials/services", s.handleUIPartialServices)
 		mux.HandleFunc("GET /ui/partials/cloudsync", s.handleUIPartialCloudSync)
 		mux.HandleFunc("GET /ui/partials/modals/create_share", s.handleUIPartialCreateShareModal)
@@ -158,6 +162,7 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("GET /ui/partials/modals/importable_pools", s.handleUIPartialModalImportablePools)
 		mux.HandleFunc("GET /ui/partials/modals/cloudsync_sources", s.handleUIPartialModalCloudSyncSources)
 
+		mux.HandleFunc("POST /ui/actions/system/arc", s.handleUIActionSetArc)
 		mux.HandleFunc("POST /ui/actions/zfs/snapshot-tasks/save", s.handleUIActionSaveSnapshotTask)
 		mux.HandleFunc("POST /ui/actions/zfs/snapshot-tasks/toggle", s.handleUIActionToggleSnapshotTask)
 		mux.HandleFunc("POST /ui/actions/zfs/snapshot-tasks/run", s.handleUIActionRunSnapshotTask)
@@ -397,10 +402,62 @@ func (s *Server) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 		},
 		"cpu":     status.CPU,
 		"memory":  status.Memory,
+		"zfs_arc": status.ZfsArc,
 		"network": status.Network,
 		"disk_io": status.DiskIO,
 	}
 	s.jsonResponse(w, http.StatusOK, res)
+}
+
+func (s *Server) handleGetArcConfig(w http.ResponseWriter, r *http.Request) {
+	s.jsonResponse(w, http.StatusOK, s.sys.GetArcConfig())
+}
+
+func (s *Server) handleSetArcConfig(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		MaxBytes  *uint64 `json:"max_bytes"`
+		MinBytes  *uint64 `json:"min_bytes"`
+		MaxValue  string  `json:"max_value"`
+		MaxUnit   string  `json:"max_unit"`
+		MinValue  string  `json:"min_value"`
+		MinUnit   string  `json:"min_unit"`
+		ResetAuto bool    `json:"reset_auto"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	var maxBytes, minBytes uint64
+	if !req.ResetAuto {
+		if req.MaxBytes != nil {
+			maxBytes = *req.MaxBytes
+		} else {
+			parsed, err := system.ParseArcSizeInput(req.MaxValue, req.MaxUnit)
+			if err != nil {
+				s.errorResponse(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			maxBytes = parsed
+		}
+		if req.MinBytes != nil {
+			minBytes = *req.MinBytes
+		} else {
+			parsed, err := system.ParseArcSizeInput(req.MinValue, req.MinUnit)
+			if err != nil {
+				s.errorResponse(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			minBytes = parsed
+		}
+	}
+
+	updated, err := s.sys.SetArcConfig(maxBytes, minBytes)
+	if err != nil {
+		s.errorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, updated)
 }
 
 // ---------------- 2. Disks & Standby Handlers ----------------

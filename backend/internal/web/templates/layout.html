@@ -173,6 +173,18 @@
             this.$nextTick(() => window.htmx.trigger(document.body, eventName));
           }
         },
+        applyArcPreset(btnEl, maxVal, maxUnit) {
+          const form = btnEl && btnEl.closest ? btnEl.closest('form') : null;
+          if (!form || !form.elements) return;
+          const maxInput = form.elements['max_value'];
+          const unitSel = form.elements['max_unit'];
+          if (maxInput) maxInput.value = maxVal === '0' ? '' : maxVal;
+          if (unitSel && maxUnit) unitSel.value = maxUnit;
+          if (maxVal === '0') {
+            const minInput = form.elements['min_value'];
+            if (minInput) minInput.value = '';
+          }
+        },
         toggleDisk(name) {
           this.expandedDisks[name] = !this.expandedDisks[name];
         },
@@ -697,6 +709,10 @@
               </tbody>
             </table>
             </div>
+          </div>
+
+          <div style="margin-top: 1.5rem;">
+            {{template "partials/arc_settings.html" .}}
           </div>
 
           <div style="margin-top: 1.5rem;">

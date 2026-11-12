@@ -1169,4 +1169,63 @@ func TestUI_LiveUsedDisplayAndPollingWiring(t *testing.T) {
 	}
 }
 
+func TestUI_ZfsArcConfigurationLifecycle(t *testing.T) {
+	srv := createTestServer(t)
+	handler := srv.Routes()
+
+	// 1. UI partial endpoints render cleanly
+	for _, ep := range []string{"/ui/partials/arc", "/ui/partials/arc-stats"} {
+		req := httptest.NewRequest("GET", ep, nil)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK || rr.Body.Len() == 0 {
+			t.Fatalf("GET %s failed: %d", ep, rr.Code)
+		}
+	}
+
+	// 2. Invalid ARC size (too small) returns error toast cleanly
+	badReq := httptest.NewRequest("POST", "/ui/actions/system/arc", strings.NewReader(url.Values{
+		"max_value": {"16"},
+		"max_unit":  {"MiB"},
+	}.Encode()))
+	badReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	badRR := httptest.NewRecorder()
+	handler.ServeHTTP(badRR, badReq)
+	if !strings.Contains(badRR.Header().Get("HX-Trigger"), `"type":"error"`) {
+		t.Fatalf("expected error toast for max < 64 MiB, got: %s", badRR.Header().Get("HX-Trigger"))
+	}
+
+	// 3. Valid ARC tuning via UI action persists, returns arcUpdate + nasRefresh, and shows on JSON API & Dashboard
+	setReq := httptest.NewRequest("POST", "/ui/actions/system/arc", strings.NewReader(url.Values{
+		"max_value": {"4"},
+		"max_unit":  {"GiB"},
+		"min_value": {"512"},
+		"min_unit":  {"MiB"},
+	}.Encode()))
+	setReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	setRR := httptest.NewRecorder()
+	handler.ServeHTTP(setRR, setReq)
+	trig := setRR.Header().Get("HX-Trigger")
+	if setRR.Code != http.StatusOK || !strings.Contains(trig, "arcUpdate") || !strings.Contains(trig, "nasRefresh") || !strings.Contains(setRR.Body.String(), "4 GiB") {
+		t.Fatalf("POST /ui/actions/system/arc failed: code=%d trig=%s", setRR.Code, trig)
+	}
+
+	apiGetReq := httptest.NewRequest("GET", "/api/v1/system/arc", nil)
+	apiGetRR := httptest.NewRecorder()
+	handler.ServeHTTP(apiGetRR, apiGetReq)
+	if apiGetRR.Code != http.StatusOK || !strings.Contains(apiGetRR.Body.String(), `"max_input_value":"4"`) {
+		t.Fatalf("GET /api/v1/system/arc mismatch: %d %s", apiGetRR.Code, apiGetRR.Body.String())
+	}
+
+	// 4. Reset to Auto restores Auto defaults
+	rstReq := httptest.NewRequest("POST", "/ui/actions/system/arc", strings.NewReader(url.Values{"action": {"reset"}}.Encode()))
+	rstReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rstRR := httptest.NewRecorder()
+	handler.ServeHTTP(rstRR, rstReq)
+	if rstRR.Code != http.StatusOK || !strings.Contains(rstRR.Body.String(), "Auto") {
+		t.Fatalf("reset ARC failed: %d", rstRR.Code)
+	}
+}
+
+
 
