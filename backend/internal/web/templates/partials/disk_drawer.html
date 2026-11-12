@@ -22,11 +22,6 @@
               @click="runDrawerDiskAction('/ui/actions/disks/standby', { path: activeDisk.path })">
         Force Standby (0W)
       </button>
-      <button type="button" class="btn btn-secondary btn-sm"
-              :disabled="!activeDisk.path"
-              @click="runDrawerDiskAction('/ui/actions/disks/locate', { path: activeDisk.path })">
-        Toggle Locate LED
-      </button>
       <button type="button" class="btn btn-danger btn-sm"
               :disabled="!activeDisk.path || activeDisk.is_system_disk || Boolean(activeDisk.zfs_pool)"
               @click="if (confirm('WARNING: Completely wipe disk ' + activeDisk.name + ' (Wipe ZFS labels & GPT)?')) { runDrawerDiskAction('/ui/actions/disks/wipe', { path: activeDisk.path, confirm_wipe: 'true' }); }">

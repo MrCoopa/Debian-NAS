@@ -341,7 +341,7 @@ func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
 		{
 			file:    "templates/partials/disks_table.html",
 			want:    []string{`hx-swap="outerHTML"`, `every 10s [currentTab === 'disks' && !document.hidden]`, `toggleAllDisks(`},
-			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`, `x-data=`},
+			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`, `x-data=`, `Toggle Locate LED`},
 		},
 		{
 			file:    "templates/partials/pools_list.html",

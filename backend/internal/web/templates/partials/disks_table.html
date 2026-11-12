@@ -188,10 +188,6 @@
                         hx-post="/ui/actions/disks/standby" hx-vals='{"path": "{{$d.Path}}"}' hx-target="#disks-container" hx-swap="outerHTML">
                   Force Standby (0W)
                 </button>
-                <button type="button" class="btn btn-secondary btn-sm"
-                        hx-post="/ui/actions/disks/locate" hx-vals='{"path": "{{$d.Path}}"}' hx-target="#disks-container" hx-swap="outerHTML">
-                  Toggle Locate LED
-                </button>
                 <button type="button" class="btn btn-danger btn-sm"
                         {{if or $d.IsSystemDisk $d.ZfsPool}}disabled title="Cannot wipe system or active pool disk"{{end}}
                         hx-post="/ui/actions/disks/wipe" hx-vals='{"path": "{{$d.Path}}", "confirm_wipe": "true"}'
