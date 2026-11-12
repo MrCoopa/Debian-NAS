@@ -4,21 +4,38 @@
       <h3>Import Existing ZFS Pool</h3>
       <button type="button" class="modal-close" @click="openImportModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/zfs/pools/import" hx-target="#pools-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el) { const res = window.nasTriggerHasError ? window.nasTriggerHasError(event.detail.xhr) : { hasError: false }; if (event.detail.successful && !res.hasError) { openImportModal = false; $el.reset(); } }">
+    <div class="form-group" style="margin-bottom: 1rem;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.45rem;">
+        <label style="margin: 0;">Detected Exported Pools</label>
+        <button type="button" class="btn btn-secondary btn-sm"
+                hx-get="/ui/partials/modals/importable_pools"
+                hx-target="#importable-pools-list"
+                hx-swap="innerHTML">Rescan</button>
+      </div>
+      <div id="importable-pools-list"
+           hx-get="/ui/partials/modals/importable_pools"
+           hx-trigger="poolUpdate from:body, diskUpdate from:body, refreshImportablePools from:body"
+           hx-target="this"
+           hx-swap="innerHTML">
+        {{template "partials/importable_pools_list.html" .}}
+      </div>
+    </div>
+
+    <form hx-post="/ui/actions/zfs/pools/import" hx-target="#pools-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el) { const res = window.nasTriggerHasError ? window.nasTriggerHasError(event.detail.xhr) : { hasError: false }; if (event.detail.successful && !res.hasError) { openImportModal = false; importForm = { nameOrId: '', newName: '', force: false }; } }">
       <div class="form-group">
         <label>Pool Name or Numeric ID</label>
-        <input type="text" name="name_or_id" required placeholder="e.g. tank or 1234567890123456789">
-        <span class="text-dim" style="font-size: 0.72rem;">Name or GUID of the exported pool from this or another system.</span>
+        <input type="text" name="name_or_id" x-model="importForm.nameOrId" required placeholder="e.g. tank or 1234567890123456789">
+        <span class="text-dim" style="font-size: 0.72rem;">Click a detected pool above or enter the name/GUID manually.</span>
       </div>
 
       <div class="form-group">
         <label>New Pool Name (Optional)</label>
-        <input type="text" name="new_name" placeholder="Leave blank to preserve existing name" pattern="[a-zA-Z0-9_\-\.]+">
+        <input type="text" name="new_name" x-model="importForm.newName" placeholder="Leave blank to preserve existing name" pattern="[a-zA-Z0-9_\-\.]+">
       </div>
 
       <div class="form-group">
         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.82rem;">
-          <input type="checkbox" name="force" value="true">
+          <input type="checkbox" name="force" value="true" x-model="importForm.force">
           <span><strong>Force Import (-f)</strong> &ndash; Force import even if pool was previously connected to another host</span>
         </label>
       </div>

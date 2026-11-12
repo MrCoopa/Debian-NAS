@@ -1,0 +1,34 @@
+{{if eq (len .ImportablePools) 0}}
+  <div style="padding: 0.75rem; background: rgba(15,23,42,0.45); border: 1px dashed var(--fn-border-main); border-radius: 4px; color: var(--pf-text-secondary); font-size: 0.78rem;">
+    No exported ZFS pools detected on attached disks yet. Click <strong>Rescan</strong> or enter a pool name / numeric GUID manually below.
+  </div>
+{{else}}
+  <div style="display: flex; flex-direction: column; gap: 0.45rem; max-height: 185px; overflow-y: auto;">
+    {{range $p := .ImportablePools}}
+      <button type="button"
+              data-pool-name="{{$p.Name}}"
+              data-pool-id="{{$p.ID}}"
+              @click.stop="importForm.nameOrId = $el.dataset.poolName || $el.dataset.poolId"
+              :style="(importForm.nameOrId === '{{$p.Name}}' || ($el.dataset.poolId && importForm.nameOrId === $el.dataset.poolId)) ? 'border-color: #008be5; background: rgba(0, 139, 229, 0.16);' : 'border-color: var(--fn-border-main); background: rgba(15,23,42,0.55);'"
+              style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--fn-border-main); border-radius: 4px; color: #f8fafc; cursor: pointer; text-align: left;">
+        <div style="min-width: 0; flex: 1;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <strong class="font-mono text-blue" style="font-size: 0.86rem;">{{$p.Name}}</strong>
+            <span class="badge-status {{if eq $p.State "ONLINE"}}green{{else if eq $p.State "DEGRADED"}}amber{{else}}red{{end}}" style="font-size: 0.68rem;">{{$p.State}}</span>
+          </div>
+          {{if $p.ID}}
+            <div class="font-mono text-dim" style="font-size: 0.72rem; margin-top: 0.15rem;">ID: {{$p.ID}}</div>
+          {{end}}
+          {{if $p.Config}}
+            <div class="font-mono text-dim" style="font-size: 0.72rem; margin-top: 0.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{$p.Config}}</div>
+          {{end}}
+          {{if $p.Action}}
+            <div class="text-dim" style="font-size: 0.71rem; margin-top: 0.15rem;">{{$p.Action}}</div>
+          {{end}}
+        </div>
+        <span class="btn btn-secondary btn-sm" style="pointer-events: none; flex-shrink: 0;">Select</span>
+      </button>
+    {{end}}
+  </div>
+{{end}}
+

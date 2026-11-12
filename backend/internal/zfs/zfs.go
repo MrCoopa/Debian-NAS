@@ -2205,10 +2205,18 @@ func (m *Manager) FindImportablePools() ([]*ImportablePool, error) {
 	}
 
 	out, _ := runCommandOutput(fastZfsTimeout, "zpool", "import")
-	if len(out) == 0 {
-		out, _ = runCommandOutput(fastZfsTimeout, "zpool", "import", "-d", "/dev/disk/by-id")
+	pools := parseImportablePools(out)
+	if len(pools) == 0 {
+		if outByID, _ := runCommandOutput(fastZfsTimeout, "zpool", "import", "-d", "/dev/disk/by-id"); len(outByID) > 0 {
+			pools = parseImportablePools(outByID)
+		}
 	}
-	return parseImportablePools(out), nil
+	if len(pools) == 0 {
+		if outDev, _ := runCommandOutput(fastZfsTimeout, "zpool", "import", "-d", "/dev"); len(outDev) > 0 {
+			pools = parseImportablePools(outDev)
+		}
+	}
+	return pools, nil
 }
 
 func parseImportablePools(out []byte) []*ImportablePool {
@@ -2375,20 +2383,22 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
 
 	out, err := runCommand(defaultZfsTimeout, "zpool", args...)
 	if err != nil {
-		// Fallback with -d /dev/disk/by-id
-		byIdArgs := []string{"import", "-d", "/dev/disk/by-id"}
-		if force {
-			byIdArgs = append(byIdArgs, "-f")
-		}
-		byIdArgs = append(byIdArgs, nameOrID)
-		if newName != "" {
-			byIdArgs = append(byIdArgs, newName)
-		}
-		if out2, err2 := runCommand(defaultZfsTimeout, "zpool", byIdArgs...); err2 == nil {
-			return nil
-		} else {
-			out = out2
-			err = err2
+		// Fallback with -d /dev/disk/by-id and then -d /dev
+		for _, devDir := range []string{"/dev/disk/by-id", "/dev"} {
+			dirArgs := []string{"import", "-d", devDir}
+			if force {
+				dirArgs = append(dirArgs, "-f")
+			}
+			dirArgs = append(dirArgs, nameOrID)
+			if newName != "" {
+				dirArgs = append(dirArgs, newName)
+			}
+			if out2, err2 := runCommand(defaultZfsTimeout, "zpool", dirArgs...); err2 == nil {
+				return nil
+			} else {
+				out = out2
+				err = err2
+			}
 		}
 		return fmt.Errorf("zpool import failed: %v (%s)", err, strings.TrimSpace(string(out)))
 	}

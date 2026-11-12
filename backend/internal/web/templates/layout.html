@@ -89,6 +89,14 @@
         openDangerConfirmModal: false,
         dangerConfirm: { type: 'pool', targetName: '', inputName: '', error: '' },
         openImportModal: false,
+        importForm: { nameOrId: '', newName: '', force: false },
+        openImportPool() {
+          this.importForm = { nameOrId: '', newName: '', force: false };
+          this.openImportModal = true;
+          if (window.htmx) {
+            this.$nextTick(() => window.htmx.trigger(document.body, 'refreshImportablePools'));
+          }
+        },
         openCloudSyncModal: false,
         isEditingCloudSync: false,
         openSnapTaskModal: false,
@@ -459,7 +467,7 @@
               <h1>Native OpenZFS Storage Pools</h1>
             </div>
             <div class="page-actions" style="display: flex; gap: 0.5rem;">
-              <button type="button" class="btn btn-secondary btn-sm" @click.stop="openImportModal = true">Import Pool</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click.stop="openImportPool()">Import Pool</button>
               <button type="button" class="btn btn-primary btn-sm" @click.stop="openCreatePool()">+ Create Pool</button>
             </div>
           </div>

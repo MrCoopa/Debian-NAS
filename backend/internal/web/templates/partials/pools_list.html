@@ -4,7 +4,7 @@
       <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--fn-text-secondary);">No active OpenZFS pools found</h3>
       <p class="text-dim" style="margin-bottom: 1.5rem;">Create a new redundant storage pool (Mirror, RAID-Z) or import an existing pool.</p>
       <div style="display: flex; gap: 0.75rem; justify-content: center;">
-        <button type="button" class="btn btn-secondary" @click.stop="openImportModal = true">Import Pool</button>
+        <button type="button" class="btn btn-secondary" @click.stop="openImportPool()">Import Pool</button>
         <button type="button" class="btn btn-primary" @click.stop="openCreatePool()">+ Create Pool</button>
       </div>
     </div>

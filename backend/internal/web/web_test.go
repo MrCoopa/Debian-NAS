@@ -110,6 +110,15 @@ func TestEngine_RenderAll(t *testing.T) {
 				},
 			},
 		},
+		"ImportablePools": []map[string]interface{}{
+			{
+				"Name":   "backup",
+				"ID":     "1234567890",
+				"State":  "ONLINE",
+				"Action": "The pool can be imported.",
+				"Config": "backup ONLINE",
+			},
+		},
 		"Datasets": []map[string]interface{}{
 			{
 				"Name":        "tank/data",
@@ -231,6 +240,7 @@ func TestEngine_RenderAll(t *testing.T) {
 		"partials/share_users_checkboxes.html",
 		"partials/snap_datasets_options.html",
 		"partials/pool_disks_checkboxes.html",
+		"partials/importable_pools_list.html",
 	}
 
 	for _, p := range partials {
@@ -337,6 +347,11 @@ func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
 			file:    "templates/partials/cloudsync_tasks.html",
 			want:    []string{`hx-swap="outerHTML"`, `every 10s [currentTab === 'protection' && !document.hidden]`, `openCloudMenuId`, `@click.stop="openCreateCloudSync()`},
 			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`, `x-data=`},
+		},
+		{
+			file:    "templates/modals/import_pool.html",
+			want:    []string{`/ui/partials/modals/importable_pools`, `refreshImportablePools from:body`, `x-model="importForm.nameOrId"`, `hx-swap="outerHTML"`},
+			notWant: []string{`hx-swap="morph"`, `$el.reset()`},
 		},
 		{
 			file:    "static/app.js",

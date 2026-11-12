@@ -154,6 +154,7 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("GET /ui/partials/modals/pool_disks", s.handleUIPartialModalPoolDisks)
 		mux.HandleFunc("GET /ui/partials/modals/share_datasets", s.handleUIPartialModalShareDatasets)
 		mux.HandleFunc("GET /ui/partials/modals/available_disks", s.handleUIPartialModalAvailableDisks)
+		mux.HandleFunc("GET /ui/partials/modals/importable_pools", s.handleUIPartialModalImportablePools)
 		mux.HandleFunc("GET /ui/partials/modals/cloudsync_sources", s.handleUIPartialModalCloudSyncSources)
 
 		mux.HandleFunc("POST /ui/actions/zfs/snapshot-tasks/save", s.handleUIActionSaveSnapshotTask)

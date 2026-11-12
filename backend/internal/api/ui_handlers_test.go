@@ -725,6 +725,7 @@ func TestUI_FreshShareCreateImmediatelyEditableAndModalsLiveRefresh(t *testing.T
 		"/ui/partials/modals/share_datasets",
 		"/ui/partials/modals/parent_datasets",
 		"/ui/partials/modals/available_disks",
+		"/ui/partials/modals/importable_pools",
 		"/ui/partials/modals/cloudsync_sources",
 		"/ui/partials/shares",
 	}
@@ -941,6 +942,50 @@ func TestSnapshotRollback_UI_LifecycleAndErrors(t *testing.T) {
 	}
 	if strings.Contains(rbBody, targetDS+"@rb-s2") {
 		t.Fatalf("expected newer snapshot rb-s2 to be removed immediately after rollback")
+	}
+}
+
+func TestUI_ExportedPoolAppearsInImportModalAndReimports(t *testing.T) {
+	srv := createTestServer(t)
+	handler := srv.Routes()
+
+	pools, _ := srv.zfs.ListPools()
+	if len(pools) == 0 {
+		t.Fatalf("expected mock pool to exist initially")
+	}
+	targetPool := pools[0].Name
+
+	// Export pool via UI action
+	expReq := httptest.NewRequest("POST", "/ui/actions/zfs/pools/export", strings.NewReader(url.Values{"pool": {targetPool}}.Encode()))
+	expReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	expRR := httptest.NewRecorder()
+	handler.ServeHTTP(expRR, expReq)
+	if expRR.Code != http.StatusOK || !strings.Contains(expRR.Header().Get("HX-Trigger"), "poolUpdate") {
+		t.Fatalf("export failed: %d %s", expRR.Code, expRR.Header().Get("HX-Trigger"))
+	}
+
+	// Verify exported pool immediately appears in /ui/partials/modals/importable_pools
+	impListReq := httptest.NewRequest("GET", "/ui/partials/modals/importable_pools", nil)
+	impListRR := httptest.NewRecorder()
+	handler.ServeHTTP(impListRR, impListReq)
+	if impListRR.Code != http.StatusOK || !strings.Contains(impListRR.Body.String(), targetPool) {
+		t.Fatalf("expected exported pool %q in importable_pools partial, got %d: %s", targetPool, impListRR.Code, impListRR.Body.String())
+	}
+
+	// Re-import via UI action and verify it disappears from importable_pools and returns to pools
+	impReq := httptest.NewRequest("POST", "/ui/actions/zfs/pools/import", strings.NewReader(url.Values{"name_or_id": {targetPool}}.Encode()))
+	impReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	impRR := httptest.NewRecorder()
+	handler.ServeHTTP(impRR, impReq)
+	if impRR.Code != http.StatusOK || !strings.Contains(impRR.Body.String(), targetPool) {
+		t.Fatalf("import failed or pool missing from response: %d %s", impRR.Code, impRR.Header().Get("HX-Trigger"))
+	}
+
+	afterReq := httptest.NewRequest("GET", "/ui/partials/modals/importable_pools", nil)
+	afterRR := httptest.NewRecorder()
+	handler.ServeHTTP(afterRR, afterReq)
+	if strings.Contains(afterRR.Body.String(), `data-pool-name="`+targetPool+`"`) {
+		t.Fatalf("did not expect re-imported pool %q to remain in importable_pools", targetPool)
 	}
 }
 

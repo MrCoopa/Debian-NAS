@@ -19,9 +19,10 @@ import (
 type ViewData struct {
 	CurrentUser   string
 	System        *system.SystemStatus
-	Disks         []*disks.DiskInfo
-	Pools         []*zfs.Pool
-	Datasets      []*zfs.Dataset
+	Disks           []*disks.DiskInfo
+	Pools           []*zfs.Pool
+	ImportablePools []*zfs.ImportablePool
+	Datasets        []*zfs.Dataset
 	SmbShares     []*shares.SmbShare
 	NfsExports    []*shares.NfsExport
 	Users         []shares.StorageUser
@@ -40,6 +41,7 @@ type ViewData struct {
 type viewFetchMask struct {
 	system        bool
 	pools         bool
+	importable    bool
 	disks         bool
 	datasets      bool
 	shares        bool
@@ -53,6 +55,7 @@ func (s *Server) buildViewData(req ...*http.Request) *ViewData {
 	return s.buildPartialViewData(viewFetchMask{
 		system:        true,
 		pools:         true,
+		importable:    true,
 		disks:         true,
 		datasets:      true,
 		shares:        true,
@@ -84,6 +87,11 @@ func (s *Server) buildPartialViewData(mask viewFetchMask, req ...*http.Request) 
 			_, _ = s.disks.ListDisks()
 			s.syncDiskPoolMembershipFromPools(pools)
 		}
+	}
+
+	var importablePools []*zfs.ImportablePool
+	if mask.importable && s.zfs != nil {
+		importablePools, _ = s.zfs.FindImportablePools()
 	}
 
 	var allDisks []*disks.DiskInfo
@@ -147,9 +155,10 @@ func (s *Server) buildPartialViewData(mask viewFetchMask, req ...*http.Request) 
 	return &ViewData{
 		CurrentUser:   currentUser,
 		System:        status,
-		Disks:         allDisks,
-		Pools:         pools,
-		Datasets:      datasets,
+		Disks:           allDisks,
+		Pools:           pools,
+		ImportablePools: importablePools,
+		Datasets:        datasets,
 		SmbShares:     smbShares,
 		NfsExports:    nfsExports,
 		Users:         users,
@@ -392,6 +401,12 @@ func (s *Server) handleUIPartialModalAvailableDisks(w http.ResponseWriter, r *ht
 	s.renderUIPartial(w, "partials/available_disks_options.html", s.buildPartialViewData(viewFetchMask{
 		pools: true, disks: true,
 	}))
+}
+
+func (s *Server) handleUIPartialModalImportablePools(w http.ResponseWriter, r *http.Request) {
+	s.renderUIPartial(w, "partials/importable_pools_list.html", s.buildPartialViewData(viewFetchMask{
+		importable: true,
+	}, r))
 }
 
 func (s *Server) handleUIPartialModalCloudSyncSources(w http.ResponseWriter, r *http.Request) {
