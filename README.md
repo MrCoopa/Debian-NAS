@@ -161,10 +161,17 @@ EOF
 # 3. Paketlisten aktualisieren
 sudo apt update
 
-# 4. Kernel-Headers & OpenZFS 2.4 gezielt aus Sid installieren
-sudo apt install -t sid -y linux-headers-amd64 zfs-dkms zfsutils-linux
+# 4. Kernel-Headers deines aktuellen Trixie-Kernels sicherstellen
+sudo apt install -y linux-headers-$(uname -r)
 
-# 5. NAS neu starten, um das neu kompilierte Kernel-Modul zu laden
+# 5. OpenZFS 2.4 gezielt aus Sid installieren (baut das Kernelmodul für deinen 6.12 Kernel)
+sudo apt install -t sid -y zfs-dkms zfsutils-linux
+
+# 6. Sid-Quelle wieder entfernen (System bleibt 100% Trixie)
+sudo rm -f /etc/apt/sources.list.d/sid.list /etc/apt/preferences.d/sid
+sudo apt update
+
+# 7. NAS neu starten, um das neu kompilierte Kernel-Modul zu laden
 sudo reboot
 ```
 
