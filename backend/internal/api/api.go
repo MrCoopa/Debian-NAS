@@ -795,6 +795,7 @@ func (s *Server) handleImportPool(w http.ResponseWriter, r *http.Request) {
 		NameOrID string `json:"name_or_id"`
 		NewName  string `json:"new_name"`
 		Force    bool   `json:"force"`
+		ReadOnly bool   `json:"readonly"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
@@ -805,7 +806,7 @@ func (s *Server) handleImportPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.zfs.ImportPool(req.NameOrID, req.NewName, req.Force); err != nil {
+	if err := s.zfs.ImportPool(req.NameOrID, req.NewName, req.Force, req.ReadOnly); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}

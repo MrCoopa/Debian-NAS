@@ -2653,7 +2653,7 @@ func parseImportablePools(out []byte) []*ImportablePool {
 }
 
 // ImportPool imports an existing storage pool
-func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
+func (m *Manager) ImportPool(nameOrID, newName string, force bool, readonly ...bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -2764,7 +2764,7 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool) error {
 		return nil
 	}
 
-	return executeZfsPoolImport(runCommand, collectTargetMounts, nameOrID, newName, force)
+	return executeZfsPoolImport(runCommand, collectTargetMounts, nameOrID, newName, force, readonly...)
 }
 
 type zfsMountpointProp struct {
@@ -2890,15 +2890,20 @@ func executeZfsPoolImport(
 	collectMounts func(string) []zfsMountEntry,
 	nameOrID, newName string,
 	force bool,
+	readonly ...bool,
 ) error {
 	nameOrID = strings.TrimSpace(nameOrID)
 	newName = strings.TrimSpace(newName)
+	isReadOnly := len(readonly) > 0 && readonly[0]
 
 	// Import with -N (do not mount yet) so foreign/TrueNAS mountpoints like /<pool>
 	// or OS paths can be normalized permanently under /mnt/<pool> before mounting.
 	args := []string{"import", "-N"}
 	if force {
 		args = append(args, "-f")
+	}
+	if isReadOnly {
+		args = append(args, "-o", "readonly=on")
 	}
 	args = append(args, nameOrID)
 	if newName != "" {
@@ -2914,6 +2919,9 @@ func executeZfsPoolImport(
 			if force {
 				dirArgs = append(dirArgs, "-f")
 			}
+			if isReadOnly {
+				dirArgs = append(dirArgs, "-o", "readonly=on")
+			}
 			dirArgs = append(dirArgs, nameOrID)
 			if newName != "" {
 				dirArgs = append(dirArgs, newName)
@@ -2927,7 +2935,11 @@ func executeZfsPoolImport(
 			}
 		}
 		if !imported {
-			return fmt.Errorf("zpool import failed: %v (%s)", err, strings.TrimSpace(string(out)))
+			outStr := strings.TrimSpace(string(out))
+			if strings.Contains(outStr, "All unsupported features are only required for writing") && !isReadOnly {
+				return fmt.Errorf("zpool import failed: pool contains newer ZFS features (e.g. from TrueNAS SCALE 24.10+ / OpenZFS 2.4). Enable 'Read-Only Import' or upgrade to OpenZFS 2.4: %s", outStr)
+			}
+			return fmt.Errorf("zpool import failed: %v (%s)", err, outStr)
 		}
 	}
 
@@ -2942,17 +2954,19 @@ func executeZfsPoolImport(
 	}
 
 	if targetPool != "" {
-		propsOut, propErr := runCmd(fastZfsTimeout, "zfs", "get", "-H", "-t", "filesystem", "-o", "name,value,source", "-r", "mountpoint", targetPool)
-		if propErr != nil {
-			return fmt.Errorf("pool '%s' imported without mounting, but failed to inspect mountpoints: %v (%s)", targetPool, propErr, strings.TrimSpace(string(propsOut)))
-		}
-		oldPoolName := ""
-		if newName != "" && validate.PoolName(nameOrID) == nil {
-			oldPoolName = nameOrID
-		}
-		for _, upd := range planImportMountpointUpdates(targetPool, oldPoolName, parseZfsMountpointProps(propsOut)) {
-			if setOut, setErr := runCmd(defaultZfsTimeout, "zfs", "set", "mountpoint="+upd.mountpoint, upd.dataset); setErr != nil {
-				return fmt.Errorf("pool '%s' imported without mounting, but failed to set mountpoint '%s' on '%s': %v (%s)", targetPool, upd.mountpoint, upd.dataset, setErr, strings.TrimSpace(string(setOut)))
+		// Only adjust mountpoint properties if the pool is writable
+		if !isReadOnly {
+			propsOut, propErr := runCmd(fastZfsTimeout, "zfs", "get", "-H", "-t", "filesystem", "-o", "name,value,source", "-r", "mountpoint", targetPool)
+			if propErr == nil {
+				oldPoolName := ""
+				if newName != "" && validate.PoolName(nameOrID) == nil {
+					oldPoolName = nameOrID
+				}
+				for _, upd := range planImportMountpointUpdates(targetPool, oldPoolName, parseZfsMountpointProps(propsOut)) {
+					if setOut, setErr := runCmd(defaultZfsTimeout, "zfs", "set", "mountpoint="+upd.mountpoint, upd.dataset); setErr != nil {
+						return fmt.Errorf("pool '%s' imported without mounting, but failed to set mountpoint '%s' on '%s': %v (%s)", targetPool, upd.mountpoint, upd.dataset, setErr, strings.TrimSpace(string(setOut)))
+					}
+				}
 			}
 		}
 		_ = ensureDatasetTreeMounted(runCmd, collectMounts, targetPool)

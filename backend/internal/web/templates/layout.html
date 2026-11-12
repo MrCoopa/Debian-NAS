@@ -124,9 +124,9 @@
         openDangerConfirmModal: false,
         dangerConfirm: { type: 'pool', targetName: '', inputName: '', error: '' },
         openImportModal: false,
-        importForm: { nameOrId: '', newName: '', force: false },
+        importForm: { nameOrId: '', newName: '', force: false, readonly: false },
         openImportPool() {
-          this.importForm = { nameOrId: '', newName: '', force: false };
+          this.importForm = { nameOrId: '', newName: '', force: false, readonly: false };
           this.openImportModal = true;
           if (window.htmx) {
             this.$nextTick(() => window.htmx.trigger(document.body, 'refreshImportablePools'));

@@ -805,6 +805,7 @@ func (s *Server) handleUIActionImportPool(w http.ResponseWriter, r *http.Request
 	nameOrID := strings.TrimSpace(r.FormValue("name_or_id"))
 	newName := strings.TrimSpace(r.FormValue("new_name"))
 	force := r.FormValue("force") == "true"
+	readonly := r.FormValue("readonly") == "true"
 
 	if nameOrID == "" {
 		s.setHXTrigger(w, "Pool name or ID is required", "error")
@@ -812,10 +813,14 @@ func (s *Server) handleUIActionImportPool(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := s.zfs.ImportPool(nameOrID, newName, force); err != nil {
+	if err := s.zfs.ImportPool(nameOrID, newName, force, readonly); err != nil {
 		s.setHXTrigger(w, "Error importing pool: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Pool '%s' successfully imported", nameOrID), "success", "poolUpdate", "datasetUpdate", "diskUpdate")
+		msg := fmt.Sprintf("Pool '%s' successfully imported", nameOrID)
+		if readonly {
+			msg += " (read-only mode)"
+		}
+		s.setHXTrigger(w, msg, "success", "poolUpdate", "datasetUpdate", "diskUpdate")
 	}
 	s.handleUIPartialPools(w, r)
 }

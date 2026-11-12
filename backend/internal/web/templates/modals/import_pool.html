@@ -40,6 +40,13 @@
         </label>
       </div>
 
+      <div class="form-group">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.82rem;">
+          <input type="checkbox" name="readonly" value="true" x-model="importForm.readonly">
+          <span><strong>Read-Only Import (-o readonly=on)</strong> &ndash; Required for TrueNAS SCALE pools with newer feature flags</span>
+        </label>
+      </div>
+
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" @click="openImportModal = false">Cancel</button>
         <button type="submit" class="btn btn-primary">Import Pool</button>

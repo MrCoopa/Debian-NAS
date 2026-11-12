@@ -117,8 +117,118 @@ http://<ip-deines-nas>:8080
 Wenn du Änderungen aus dem Git-Repository übernehmen möchtest, reicht ein Einzeiler auf dem NAS:
 
 ```bash
-cd /opt/debian-nas && git pull && cd backend && CGO_ENABLED=0 go build -ldflags="-s -w" -o /opt/debian-nas/bin/nasd ./cmd/nasd && sudo systemctl restart nasd.service
+cd /opt/debian-nas
+git fetch origin main
+git reset --hard origin/main
+systemctl stop nasd.service
+rm -f bin/nasd
+cd backend && CGO_ENABLED=0 go build -v -ldflags="-s -w" -o ../bin/nasd ./cmd/nasd
+cd /opt/debian-nas
+systemctl start nasd.service
 ```
+
+---
+
+## TrueNAS & OpenZFS Pool-Migration (Feature-Flags & Upgrade-Guide)
+
+Wenn ein ZFS-Pool von einem externen System (wie **TrueNAS SCALE ab Version 24.10 "Electric Eel"**) importiert werden soll, kann folgende Fehlermeldung auftreten:
+
+```text
+cannot import 'DATA': unsupported version or feature
+This pool uses the following feature(s) not supported by this system:
+com.truenas:block_cloning_endian (Fixes BRT ZAP endianness on new pools.)
+All unsupported features are only required for writing to the pool.
+The pool can be imported using '-o readonly=on'.
+```
+
+### Hintergrund
+TrueNAS SCALE 24.10 nutzt OpenZFS 2.4+, welches das Feature `com.truenas:block_cloning_endian` aktiviert hat. Debian 13 (Trixie) liefert standardmäßig OpenZFS 2.3.9 aus. Da ZFS-Feature-Flags eine Einbahnstraße sind, verweigert OpenZFS 2.3 den beschreibbaren Import, um Datenkorruption zu verhindern.
+
+### Weg A: Upgrade auf OpenZFS 2.4.4 (Vollständige Schreib- & Leserechte)
+In Debian **Sid (Unstable)** ist OpenZFS **2.4.4** bereits fertig paketiert. Über **APT-Pinning** wird sichergestellt, dass **ausschließlich OpenZFS** aus Sid bezogen wird, während das Restsystem zu 100% stabil auf Debian 13 (Trixie) verbleibt:
+
+```bash
+# 1. Sid-Repository eintragen
+echo "deb http://deb.debian.org/debian sid main contrib non-free-firmware" | sudo tee /etc/apt/sources.list.d/sid.list
+
+# 2. APT-Pinning einrichten (Priorität 100 = Sid-Pakete werden nie automatisch installiert)
+sudo tee /etc/apt/preferences.d/sid << 'EOF'
+Package: *
+Pin: release a=sid
+Pin-Priority: 100
+EOF
+
+# 3. Paketlisten aktualisieren
+sudo apt update
+
+# 4. Kernel-Headers & OpenZFS 2.4 gezielt aus Sid installieren
+sudo apt install -t sid -y linux-headers-amd64 zfs-dkms zfsutils-linux
+
+# 5. NAS neu starten, um das neu kompilierte Kernel-Modul zu laden
+sudo reboot
+```
+
+Nach dem Neustart unterstützt dein System alle TrueNAS 24.10+ Features und der Pool kann ganz normal mit Lese- und Schreibrechten importiert werden:
+```bash
+zpool import DATA
+```
+
+### Weg B: Schreibgeschützter Import & Daten-Migration (Empfehlung für Standard-Debian)
+Falls du dein System nicht mit Paketen aus Sid mischen möchtest:
+1. **Schreibgeschützt importieren:**
+   - In der WebUI: Beim Import-Dialog die Option **"Read-Only Import (-o readonly=on)"** anhaken.
+   - Per CLI:
+     ```bash
+     zpool import -f -o readonly=on DATA
+     zfs mount -a
+     ```
+2. **Daten auf den Hauptpool sichern:**
+   ```bash
+   rsync -avP /mnt/DATA/ /mnt/MEDIA-12TB/data/
+   ```
+3. **Pool zerstören und auf Debian neu anlegen:**
+   ```bash
+   zpool destroy DATA
+   ```
+   Danach in der WebUI unter **Storage Pools -> Create Pool** den Pool neu anlegen. Er ist dann 100% nativ mit Debian 13 kompatibel.
+
+---
+
+## HDD-Standby & Power Management Guide
+
+Debian NAS wurde von Grund auf dafür entwickelt, **echten, funktionierenden HDD-Standby** zu gewährleisten:
+
+1. **Non-intrusive Statusabfragen:**
+   Das System nutzt für Dashboard- und Disk-Status-Abfragen ausschließlich `smartctl -n standby -i <disk>` und `hdparm -C <disk>`. Diese Befehle lesen den Status aus dem Controller-Cache, **ohne** schlafende Spindeln aufzuwecken.
+2. **S.M.A.R.T.-Daemon Schutz (`smartd`):**
+   Der S.M.A.R.T.-Hintergrundüberwachungsdienst (`smartd`) wird in `/etc/smartd.conf` automatisch mit `-n standby` konfiguriert:
+   ```text
+   DEVICESCAN -d removable -n standby -m root -M exec /usr/share/smartmontools/smartd-runner
+   ```
+   Dadurch werden Festplatten nicht alle 30 Minuten für Telemetrie-Checks geweckt.
+3. **ZFS `atime=off`:**
+   Alle über die WebUI erstellten Datasets setzen standardmäßig `atime=off`. Dadurch führen reine Lesezugriffe nicht zu Schreiboperationen für Zugriffszeitstempel.
+4. **Spindown-Timer via `hd-idle`:**
+   In `/etc/default/hd-idle` wird der Spindown-Timer (z. B. 900 Sekunden = 15 Minuten) hinterlegt. Die WebUI erlaubt zusätzlich die granulare Steuerung pro Festplatte (Always On, 5 Min, 10 Min, 15 Min, 30 Min, 1 Std, 2 Std).
+
+---
+
+## Netzwerkdienste & Windows Discovery
+
+* **Windows 10/11 Explorer Network Discovery (`wsdd2`):**
+  Unter Debian 13 (Trixie) wurde das alte Python-Paket `wsdd` durch das native, ressourcensparende C-Paket `wsdd2` ersetzt. Es wird vom Installer automatisch eingerichtet und gestartet, sodass das NAS im Windows-Explorer unter „Netzwerk“ sofort erscheint.
+* **Samba (SMB) Freigaben:**
+  Konfiguriert über `/etc/samba/nas-shares.conf`. Unterstützt Gast-Zugriff, Benutzerbeschränkungen (Gruppe `nasusers`) und macOS Time Machine.
+* **NFS Kernel Server:**
+  Exports unter `/etc/exports.d/` für latenzarme Linux- und Proxmox-Verbindungen.
+
+---
+
+## ZFS Snapshot Management & Paginierung
+
+* **Pool-Gruppierung:** Snapshots werden automatisch nach Speicherpool gruppiert und in separaten Tabellen dargestellt.
+* **Server-Side Pagination:** Um bei Dutzenden oder Hunderten automatischen Snapshots den Browser nicht zu überlasten, liefert das Backend exakt **10 Snapshots pro Seite** aus.
+* **Live-Filter & Aktionen:** Snapshots lassen sich pro Pool in Echtzeit durchsuchen, auf Knopfdruck zurückrollen (`Rollback`), klonen (`Clone`) oder löschen (`Destroy`).
 
 ---
 
