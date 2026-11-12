@@ -290,7 +290,7 @@ func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
 		},
 		{
 			file:    "templates/partials/datasets_list.html",
-			want:    []string{`hx-swap="outerHTML"`, `type="button"`, `openCreateDataset($el.dataset.dataset)`, `datasetSearch`, `toggleDataset`, `isDatasetVisible`},
+			want:    []string{`hx-swap="outerHTML"`, `every 4s [currentTab === 'datasets' && !document.hidden]`, `type="button"`, `openCreateDataset($el.dataset.dataset)`, `datasetSearch`, `toggleDataset`, `isDatasetVisible`},
 			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`, `x-data=`},
 		},
 		{
@@ -310,7 +310,7 @@ func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
 		},
 		{
 			file:    "templates/layout.html",
-			want:    []string{`window.currentTab = tab`, `snapSearch:`, `matchesSnap(`, `datasetSearch:`, `toggleDataset(`, `isDatasetVisible(`, `nextToastId:`, `@show-toast.window`, `selectedDisks:`, `toggleAllDisks(`, `openSnapTaskMenuId:`, `openCloudMenuId:`},
+			want:    []string{`<script src="/static/app.js"></script>`, `window.currentTab = tab`, `snapSearch:`, `matchesSnap(`, `datasetSearch:`, `toggleDataset(`, `isDatasetVisible(`, `nextToastId:`, `@show-toast.window`, `selectedDisks:`, `toggleAllDisks(`, `openSnapTaskMenuId:`, `openCloudMenuId:`},
 			notWant: []string{`@show-toast.camel.window`, `hx-ext="morph"`, `idiomorph`},
 		},
 		{
@@ -325,7 +325,7 @@ func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
 		},
 		{
 			file:    "templates/partials/pools_list.html",
-			want:    []string{`hx-swap="outerHTML"`, `every 5s [currentTab === 'pools' && !document.hidden]`, `type="button"`, `@click.stop="openCreatePool()`, `@click.stop="openAddVdev(`, `@click.stop="openDangerConfirm(`},
+			want:    []string{`hx-swap="outerHTML"`, `every 5s [currentTab === 'pools' && !document.hidden]`, `datasetUpdate from:body`, `snapshotUpdate from:body`, `type="button"`, `@click.stop="openCreatePool()`, `@click.stop="openAddVdev(`, `@click.stop="openDangerConfirm(`},
 			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`, `x-data=`},
 		},
 		{

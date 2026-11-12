@@ -1,4 +1,4 @@
-<div id="datasets-container" hx-get="/ui/partials/datasets" hx-trigger="every 8s [currentTab === 'datasets' && !document.hidden], datasetUpdate from:body, poolUpdate from:body, snapshotUpdate from:body, shareUpdate from:body" hx-swap="outerHTML"
+<div id="datasets-container" hx-get="/ui/partials/datasets" hx-trigger="every 4s [currentTab === 'datasets' && !document.hidden], datasetUpdate from:body, poolUpdate from:body, snapshotUpdate from:body, shareUpdate from:body, diskUpdate from:body" hx-swap="outerHTML"
      data-default-selected="{{if gt (len .Datasets) 0}}{{(index .Datasets 0).Name}}{{end}}"
      x-init="if (!datasetSelected && $el.dataset.defaultSelected) datasetSelected = $el.dataset.defaultSelected">
 

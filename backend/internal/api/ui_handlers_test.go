@@ -1109,3 +1109,64 @@ func TestUI_AuditFixes_ServicesDiskDrawerDangerDestroyAndCloudSync(t *testing.T)
 	}
 }
 
+func TestUI_LiveUsedDisplayAndPollingWiring(t *testing.T) {
+	srv := createTestServer(t)
+	handler := srv.Routes()
+
+	// 1. Root page must load /static/app.js so window.currentTab & nasRefreshTab are active on first paint.
+	rootReq := httptest.NewRequest("GET", "/", nil)
+	rootReq.AddCookie(&http.Cookie{Name: "nas_user", Value: "root"})
+	rootRR := httptest.NewRecorder()
+	handler.ServeHTTP(rootRR, rootReq)
+	if rootRR.Code != http.StatusOK || !strings.Contains(rootRR.Body.String(), `<script src="/static/app.js"></script>`) {
+		t.Fatalf("GET / must serve layout with /static/app.js, got status=%d", rootRR.Code)
+	}
+
+	// 2. Dynamic Used updates on datasets/system partials reflect fresh ZFS state without caching.
+	if err := srv.zfs.CreateDataset("DATA/used-probe", "lz4", "128K"); err != nil {
+		t.Fatalf("CreateDataset failed: %v", err)
+	}
+	dsReq1 := httptest.NewRequest("GET", "/ui/partials/datasets", nil)
+	dsRR1 := httptest.NewRecorder()
+	handler.ServeHTTP(dsRR1, dsReq1)
+	if dsRR1.Code != http.StatusOK || !strings.Contains(dsRR1.Body.String(), "row-ds-DATA_used-probe") {
+		t.Fatalf("initial datasets partial missing new dataset: status=%d", dsRR1.Code)
+	}
+
+	sysReq1 := httptest.NewRequest("GET", "/ui/partials/system", nil)
+	sysRR1 := httptest.NewRecorder()
+	handler.ServeHTTP(sysRR1, sysReq1)
+	if sysRR1.Code != http.StatusOK || !strings.Contains(sysRR1.Body.String(), "DATA/used-probe") {
+		t.Fatalf("system metrics partial missing DATA/used-probe: status=%d", sysRR1.Code)
+	}
+
+	// 3. Snapshot create / rollback / destroy must broadcast datasetUpdate & poolUpdate for live Used refresh.
+	snapReq := httptest.NewRequest("POST", "/ui/actions/zfs/snapshots", strings.NewReader(url.Values{
+		"dataset":       {"DATA/used-probe"},
+		"snapshot_name": {"snap1"},
+	}.Encode()))
+	snapReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	snapRR := httptest.NewRecorder()
+	handler.ServeHTTP(snapRR, snapReq)
+	trig := snapRR.Header().Get("HX-Trigger")
+	for _, want := range []string{"snapshotUpdate", "datasetUpdate", "poolUpdate"} {
+		if !strings.Contains(trig, want) {
+			t.Fatalf("snapshot create HX-Trigger missing %q: %s", want, trig)
+		}
+	}
+
+	rbReq := httptest.NewRequest("POST", "/ui/actions/zfs/snapshots/rollback", strings.NewReader(url.Values{
+		"snapshot": {"DATA/used-probe@snap1"},
+	}.Encode()))
+	rbReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rbRR := httptest.NewRecorder()
+	handler.ServeHTTP(rbRR, rbReq)
+	rbTrig := rbRR.Header().Get("HX-Trigger")
+	for _, want := range []string{"snapshotUpdate", "datasetUpdate", "poolUpdate"} {
+		if !strings.Contains(rbTrig, want) {
+			t.Fatalf("snapshot rollback HX-Trigger missing %q: %s", want, rbTrig)
+		}
+	}
+}
+
+

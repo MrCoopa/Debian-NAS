@@ -945,7 +945,7 @@ func (s *Server) handleUIActionCreateSnapshot(w http.ResponseWriter, r *http.Req
 		if recursive {
 			msg = fmt.Sprintf("Recursive snapshot '%s@%s' created", dataset, snapName)
 		}
-		s.setHXTrigger(w, msg, "success", "snapshotUpdate", "datasetUpdate")
+		s.setHXTrigger(w, msg, "success", "snapshotUpdate", "datasetUpdate", "poolUpdate")
 	}
 	s.handleUIPartialSnapshots(w, r)
 }
@@ -971,7 +971,7 @@ func (s *Server) handleUIActionRollbackSnapshot(w http.ResponseWriter, r *http.R
 		} else if len(skippedChildren) > 0 {
 			msg = fmt.Sprintf("Dataset rolled back to '%s' (child datasets unchanged: %s)", snapshot, strings.Join(skippedChildren, ", "))
 		}
-		s.setHXTrigger(w, msg, toastType, "snapshotUpdate", "datasetUpdate")
+		s.setHXTrigger(w, msg, toastType, "snapshotUpdate", "datasetUpdate", "poolUpdate")
 	}
 	s.handleUIPartialSnapshots(w, r)
 }
@@ -1010,7 +1010,7 @@ func (s *Server) handleUIActionDestroySnapshot(w http.ResponseWriter, r *http.Re
 	if err := s.zfs.DestroySnapshot(name); err != nil {
 		s.setHXTrigger(w, "Destroy error: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Snapshot '%s' destroyed", name), "success", "snapshotUpdate", "datasetUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Snapshot '%s' destroyed", name), "success", "snapshotUpdate", "datasetUpdate", "poolUpdate")
 	}
 	s.handleUIPartialSnapshots(w, r)
 }
