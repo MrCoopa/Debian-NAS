@@ -146,6 +146,7 @@
           return !!this.expandedDisks[name];
         },
         toasts: [],
+        nextToastId: 1,
 
         openCreateShare(name, path, proto) {
           this.isEditingShare = false;
@@ -297,14 +298,15 @@
           this.drawerOpen = true;
         },
         showToast(message, type) {
-          const id = Date.now();
+          if (!message) return;
+          const id = this.nextToastId++;
           this.toasts.push({ id, message, type: type || 'info' });
           const durationMs = type === 'error' ? 9000 : 4500;
           setTimeout(() => {
             this.toasts = this.toasts.filter(t => t.id !== id);
           }, durationMs);
         }
-      }" @show-toast.camel.window="showToast($event.detail.message, $event.detail.type)" @show-toast.window="showToast($event.detail.message, $event.detail.type)">
+      }" @show-toast.window="showToast($event.detail && $event.detail.message, $event.detail && $event.detail.type)">
 
   <!-- Topbar Header (Split Brand & Blue Topbar) -->
   {{template "partials/topbar.html" .}}
@@ -481,8 +483,8 @@
               <h1>Network File Shares (SMB &amp; NFS)</h1>
             </div>
             <div class="page-actions" style="display: flex; gap: 0.5rem;">
-              <button class="btn btn-primary btn-sm" @click="openCreateShare('', '', 'smb')">+ Add SMB Share</button>
-              <button class="btn btn-secondary btn-sm" @click="openCreateShare('', '', 'nfs')">+ Add NFS Export</button>
+              <button type="button" class="btn btn-primary btn-sm" @click.stop="openCreateShare('', '', 'smb')">+ Add SMB Share</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click.stop="openCreateShare('', '', 'nfs')">+ Add NFS Export</button>
             </div>
           </div>
 

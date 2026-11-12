@@ -95,10 +95,10 @@
               <span style="color: #40c4ff;">&#10148;</span> Log Out
             </a>
             <div style="height: 1px; background: #333336; margin: 4px 0;"></div>
-            <button type="button" @click="powerMenu = false; toasts.push({id: Date.now(), message: 'Reboot initiated (Mock)', type: 'info'})" style="width: 100%; display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 1rem; color: #ffa726; background: none; border: none; font-size: 0.8rem; cursor: pointer;" class="dropdown-item">
+            <button type="button" @click="powerMenu = false; showToast('Reboot initiated (Mock)', 'info')" style="width: 100%; display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 1rem; color: #ffa726; background: none; border: none; font-size: 0.8rem; cursor: pointer;" class="dropdown-item">
               <span>↻</span> Reboot System
             </button>
-            <button type="button" @click="powerMenu = false; toasts.push({id: Date.now(), message: 'Shutdown initiated (Mock)', type: 'error'})" style="width: 100%; display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 1rem; color: #ef5350; background: none; border: none; font-size: 0.8rem; cursor: pointer;" class="dropdown-item">
+            <button type="button" @click="powerMenu = false; showToast('Shutdown initiated (Mock)', 'error')" style="width: 100%; display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 1rem; color: #ef5350; background: none; border: none; font-size: 0.8rem; cursor: pointer;" class="dropdown-item">
               <span>⏻</span> Shut Down
             </button>
           </div>

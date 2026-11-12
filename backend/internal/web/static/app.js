@@ -107,6 +107,17 @@ console.log("Debian Storage Appliance: Go + HTMX + Alpine.js initialized.");
     }
   });
 
+  document.addEventListener("htmx:beforeOnLoad", function (event) {
+    var detail = event.detail;
+    if (!detail || !detail.requestConfig || detail.requestConfig.verb === "get") {
+      return;
+    }
+    var target = detail.target;
+    if (target && target.id && detail.xhr && detail.xhr.status >= 200 && detail.xhr.status < 300) {
+      lastActionSwap[target.id] = Date.now();
+    }
+  });
+
   document.addEventListener("htmx:afterSwap", function (event) {
     var detail = event.detail;
     if (!detail) {
@@ -118,10 +129,12 @@ console.log("Debian Storage Appliance: Go + HTMX + Alpine.js initialized.");
     }
   });
 
-  // Ensure both HTMX and Alpine.js initialize newly swapped/morphed DOM elements
+  // Ensure both HTMX and Alpine.js initialize newly swapped/morphed live DOM elements
   document.addEventListener("htmx:afterSettle", function (event) {
-    var target = event.detail && event.detail.target;
-    if (!target) {
+    var target = (event.target && event.target !== document && event.target !== document.body && event.target.isConnected)
+      ? event.target
+      : (event.detail && event.detail.target);
+    if (!target || !target.isConnected) {
       return;
     }
     if (window.htmx && typeof window.htmx.process === "function") {

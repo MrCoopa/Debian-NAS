@@ -259,8 +259,9 @@ func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
 			want: []string{`omv-sidebar-backdrop`, `toggleSidebar()`, `setTab(`, `shareCustomPathMode`, `table-responsive`},
 		},
 		{
-			file: "templates/partials/shares_list.html",
-			want: []string{`hx-swap="outerHTML"`, `data-name="`, `openEditSmbShare($el.dataset.name`, `openEditNfsShare($el.dataset.path`, `table-responsive`},
+			file:    "templates/partials/shares_list.html",
+			want:    []string{`hx-swap="outerHTML"`, `type="button"`, `@click.stop="openCreateShare(`, `data-name="`, `openEditSmbShare($el.dataset.name`, `openEditNfsShare($el.dataset.path`, `table-responsive`},
+			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`},
 		},
 		{
 			file: "templates/partials/snapshots_list.html",
@@ -298,8 +299,9 @@ func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
 			notWant: []string{`hx-swap="morph"`},
 		},
 		{
-			file: "templates/layout.html",
-			want: []string{`snapSearch:`, `matchesSnap(`, `datasetSearch:`, `toggleDataset(`, `isDatasetVisible(`},
+			file:    "templates/layout.html",
+			want:    []string{`snapSearch:`, `matchesSnap(`, `datasetSearch:`, `toggleDataset(`, `isDatasetVisible(`, `nextToastId:`, `@show-toast.window`},
+			notWant: []string{`@show-toast.camel.window`},
 		},
 		{
 			file: "templates/partials/system_metrics.html",
