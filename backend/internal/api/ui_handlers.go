@@ -355,6 +355,12 @@ func (s *Server) handleUIPartialNetwork(w http.ResponseWriter, r *http.Request) 
 	}))
 }
 
+func (s *Server) handleUIPartialServices(w http.ResponseWriter, r *http.Request) {
+	s.renderUIPartial(w, "partials/services_list.html", s.buildPartialViewData(viewFetchMask{
+		system: true,
+	}))
+}
+
 func (s *Server) handleUIPartialCloudSync(w http.ResponseWriter, r *http.Request) {
 	s.renderUIPartial(w, "partials/cloudsync_tasks.html", s.buildPartialViewData(viewFetchMask{
 		cloud: true,
@@ -1015,9 +1021,17 @@ func (s *Server) handleUIActionDangerDestroy(w http.ResponseWriter, r *http.Requ
 	name := strings.TrimSpace(r.FormValue("name"))
 	deleteShares := r.FormValue("delete_shares") == "true"
 
+	renderTarget := func() {
+		if targetType == "pool" {
+			s.handleUIPartialPools(w, r)
+			return
+		}
+		s.handleUIPartialDatasets(w, r)
+	}
+
 	if name == "" {
 		s.setHXTrigger(w, "Target name is required", "error")
-		s.handleUIPartialPools(w, r)
+		renderTarget()
 		return
 	}
 
@@ -1038,10 +1052,10 @@ func (s *Server) handleUIActionDangerDestroy(w http.ResponseWriter, r *http.Requ
 		if err := s.zfs.DestroyDataset(name); err != nil {
 			s.setHXTrigger(w, "Error destroying dataset: "+err.Error(), "error")
 		} else {
-			s.setHXTrigger(w, fmt.Sprintf("Dataset '%s' destroyed", name), "success", "datasetUpdate", "snapshotUpdate", "shareUpdate")
+			s.setHXTrigger(w, fmt.Sprintf("Dataset '%s' destroyed", name), "success", "datasetUpdate", "poolUpdate", "snapshotUpdate", "shareUpdate")
 		}
 	}
-	s.handleUIPartialPools(w, r)
+	renderTarget()
 }
 
 func pathBelongsToTarget(sharePath, target string, mountpoints []string) bool {
@@ -1091,28 +1105,43 @@ func (s *Server) removeSharesForTarget(target string) {
 }
 
 // Disks
+func formDiskTarget(r *http.Request) string {
+	for _, key := range []string{"path", "device", "name"} {
+		if v := strings.TrimSpace(r.FormValue(key)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func (s *Server) handleUIActionSetSpindown(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
-	path := strings.TrimSpace(r.FormValue("path"))
-	mins, _ := strconv.Atoi(r.FormValue("timeout_minutes"))
+	path := formDiskTarget(r)
 	if path == "" {
 		s.setHXTrigger(w, "Device path is required", "error")
 		s.handleUIPartialDisks(w, r)
 		return
 	}
 
-	seconds := mins * 60
+	var seconds int
+	if secRaw := strings.TrimSpace(r.FormValue("seconds")); secRaw != "" {
+		seconds, _ = strconv.Atoi(secRaw)
+	} else {
+		mins, _ := strconv.Atoi(r.FormValue("timeout_minutes"))
+		seconds = mins * 60
+	}
+
 	if err := s.disks.SetSpindown(path, seconds); err != nil {
 		s.setHXTrigger(w, "Error setting spindown timeout: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Spindown for %s configured to %d minutes", path, mins), "success", "diskUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Spindown for %s configured to %d minutes", path, seconds/60), "success", "diskUpdate")
 	}
 	s.handleUIPartialDisks(w, r)
 }
 
 func (s *Server) handleUIActionSetAPM(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
-	path := strings.TrimSpace(r.FormValue("path"))
+	path := formDiskTarget(r)
 	level := strings.TrimSpace(r.FormValue("level"))
 	if path == "" {
 		s.setHXTrigger(w, "Device path is required", "error")
@@ -1133,7 +1162,7 @@ func (s *Server) handleUIActionSetAPM(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUIActionForceStandby(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
-	path := strings.TrimSpace(r.FormValue("path"))
+	path := formDiskTarget(r)
 	if path == "" {
 		s.setHXTrigger(w, "Device path is required", "error")
 		s.handleUIPartialDisks(w, r)
@@ -1150,7 +1179,7 @@ func (s *Server) handleUIActionForceStandby(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) handleUIActionToggleLocate(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
-	path := strings.TrimSpace(r.FormValue("path"))
+	path := formDiskTarget(r)
 	if path == "" {
 		s.setHXTrigger(w, "Device path is required", "error")
 		s.handleUIPartialDisks(w, r)
@@ -1172,7 +1201,7 @@ func (s *Server) handleUIActionToggleLocate(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) handleUIActionTriggerSmartTest(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
-	path := strings.TrimSpace(r.FormValue("path"))
+	path := formDiskTarget(r)
 	testType := r.FormValue("type")
 	if testType == "" {
 		testType = "short"
@@ -1193,7 +1222,7 @@ func (s *Server) handleUIActionTriggerSmartTest(w http.ResponseWriter, r *http.R
 
 func (s *Server) handleUIActionWipeDisk(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
-	path := strings.TrimSpace(r.FormValue("path"))
+	path := formDiskTarget(r)
 	confirm := r.FormValue("confirm_wipe")
 
 	if path == "" || confirm != "true" {
@@ -1299,7 +1328,7 @@ func (s *Server) handleUIActionSaveCloudSync(w http.ResponseWriter, r *http.Requ
 
 	schedule := strings.TrimSpace(r.FormValue("schedule"))
 	if schedule == "" {
-		schedule = "0 2 00 * *"
+		schedule = "0 2 * * *"
 	}
 	freqText := strings.TrimSpace(r.FormValue("frequency_text"))
 	bw := strings.TrimSpace(r.FormValue("bandwidth_limit"))

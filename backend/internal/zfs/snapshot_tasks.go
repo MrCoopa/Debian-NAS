@@ -8,10 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
+	"debian-nas/internal/cronutil"
 	"debian-nas/internal/validate"
 )
 
@@ -111,18 +111,7 @@ func namingSchemaPrefix(schema string) string {
 }
 
 func validateCronSchedule(schedule string) error {
-	fields := strings.Fields(strings.TrimSpace(schedule))
-	if len(fields) != 5 {
-		return fmt.Errorf("invalid schedule '%s': expected 5 cron fields (min hour dom mon dow)", schedule)
-	}
-	for _, f := range fields {
-		for _, r := range f {
-			if !(r >= '0' && r <= '9') && r != '*' && r != ',' && r != '-' && r != '/' {
-				return fmt.Errorf("invalid character '%c' in cron schedule '%s'", r, schedule)
-			}
-		}
-	}
-	return nil
+	return cronutil.Validate(schedule)
 }
 
 // GetKeepFor formats the retention period like TrueNAS SCALE ("2 week(s)").
@@ -143,129 +132,7 @@ func (t *SnapshotTask) GetFrequency() string {
 	if strings.TrimSpace(t.FrequencyText) != "" {
 		return t.FrequencyText
 	}
-	parts := strings.Fields(strings.TrimSpace(t.Schedule))
-	if len(parts) != 5 {
-		if t.Schedule == "" {
-			return "Every day"
-		}
-		return t.Schedule
-	}
-	minStr, hourStr, domStr, monStr, dowStr := parts[0], parts[1], parts[2], parts[3], parts[4]
-	if minStr == "*/15" && hourStr == "*" {
-		return "Every 15 minutes"
-	}
-	if minStr == "*/30" && hourStr == "*" {
-		return "Every 30 minutes"
-	}
-	if minStr == "0" && hourStr == "*" && domStr == "*" && monStr == "*" && dowStr == "*" {
-		return "Every hour (at :00)"
-	}
-	h, hErr := strconv.Atoi(hourStr)
-	m, mErr := strconv.Atoi(minStr)
-	if hErr == nil && mErr == nil {
-		period := "AM"
-		h12 := h
-		if h == 0 {
-			h12 = 12
-			period = "AM"
-		} else if h == 12 {
-			period = "PM"
-		} else if h > 12 {
-			h12 = h - 12
-			period = "PM"
-		}
-		timeLabel := fmt.Sprintf("At %02d:%02d (%d:%02d %s)", h, m, h12, m, period)
-		if h < 10 {
-			timeLabel = fmt.Sprintf("At %02d:%02d (%02d:%02d %s)", h, m, h12, m, period)
-		}
-		if domStr == "*" && monStr == "*" && dowStr == "*" {
-			return timeLabel + ", every day,..."
-		}
-		if domStr == "*" && monStr == "*" && dowStr != "*" {
-			return timeLabel + ", on " + dowName(dowStr)
-		}
-		if domStr != "*" && monStr == "*" {
-			return fmt.Sprintf("%s, on day %s of month", timeLabel, domStr)
-		}
-	}
-	return t.Schedule
-}
-
-func dowName(dow string) string {
-	switch dow {
-	case "0", "7":
-		return "Sunday"
-	case "1":
-		return "Monday"
-	case "2":
-		return "Tuesday"
-	case "3":
-		return "Wednesday"
-	case "4":
-		return "Thursday"
-	case "5":
-		return "Friday"
-	case "6":
-		return "Saturday"
-	default:
-		return "day " + dow
-	}
-}
-
-func formatRelativeFuture(d time.Duration) string {
-	if d <= 0 {
-		return "due now"
-	}
-	if d < time.Minute {
-		return "in less than a minute"
-	}
-	mins := int(d.Minutes() + 0.5)
-	if mins < 60 {
-		if mins == 1 {
-			return "in 1 minute"
-		}
-		return fmt.Sprintf("in %d minutes", mins)
-	}
-	hours := int(d.Hours() + 0.5)
-	if hours < 24 {
-		if hours == 1 {
-			return "in about 1 hour"
-		}
-		return fmt.Sprintf("in about %d hours", hours)
-	}
-	days := int(d.Hours()/24 + 0.5)
-	if days == 1 {
-		return "in 1 day"
-	}
-	return fmt.Sprintf("in %d days", days)
-}
-
-func formatRelativePast(d time.Duration) string {
-	if d < 0 {
-		d = 0
-	}
-	if d < time.Minute {
-		return "just now"
-	}
-	mins := int(d.Minutes() + 0.5)
-	if mins < 60 {
-		if mins == 1 {
-			return "1 minute ago"
-		}
-		return fmt.Sprintf("%d minutes ago", mins)
-	}
-	hours := int(d.Hours() + 0.5)
-	if hours < 24 {
-		if hours == 1 {
-			return "about 1 hour ago"
-		}
-		return fmt.Sprintf("about %d hours ago", hours)
-	}
-	days := int(d.Hours()/24 + 0.5)
-	if days == 1 {
-		return "1 day ago"
-	}
-	return fmt.Sprintf("%d days ago", days)
+	return cronutil.FormatFrequency(t.Schedule, "Every day")
 }
 
 // GetNextRun returns a human-readable estimate for the next scheduled run.
@@ -274,9 +141,9 @@ func (t *SnapshotTask) GetNextRun() string {
 		return "Disabled"
 	}
 	now := time.Now()
-	next := computeNextCronTime(t.Schedule, now)
+	next := cronutil.NextRun(t.Schedule, now)
 	if !next.IsZero() {
-		return formatRelativeFuture(next.Sub(now))
+		return cronutil.FormatRelativeFuture(next.Sub(now))
 	}
 	if strings.TrimSpace(t.NextRunText) != "" {
 		return t.NextRunText
@@ -292,7 +159,7 @@ func (t *SnapshotTask) GetLastRun() string {
 		}
 		return "Never"
 	}
-	return formatRelativePast(time.Since(t.LastRun))
+	return cronutil.FormatRelativePast(time.Since(t.LastRun))
 }
 
 // GetStateClass maps the task state to CSS class suffixes in style.css.
@@ -323,67 +190,12 @@ func (t *SnapshotTask) GetStateLabel() string {
 	}
 }
 
-func matchesCronField(expr string, val int) bool {
-	if expr == "*" {
-		return true
-	}
-	for _, part := range strings.Split(expr, ",") {
-		part = strings.TrimSpace(part)
-		if part == "*" {
-			return true
-		}
-		if strings.HasPrefix(part, "*/") {
-			step, err := strconv.Atoi(strings.TrimPrefix(part, "*/"))
-			if err == nil && step > 0 && val%step == 0 {
-				return true
-			}
-			continue
-		}
-		if strings.Contains(part, "-") {
-			bounds := strings.SplitN(part, "-", 2)
-			lo, err1 := strconv.Atoi(bounds[0])
-			hi, err2 := strconv.Atoi(bounds[1])
-			if err1 == nil && err2 == nil && val >= lo && val <= hi {
-				return true
-			}
-			continue
-		}
-		num, err := strconv.Atoi(part)
-		if err == nil && num == val {
-			return true
-		}
-	}
-	return false
-}
-
 func matchesCronSchedule(schedule string, tm time.Time) bool {
-	fields := strings.Fields(strings.TrimSpace(schedule))
-	if len(fields) != 5 {
-		return false
-	}
-	dow := int(tm.Weekday())
-	dowMatch := matchesCronField(fields[4], dow) || (dow == 0 && matchesCronField(fields[4], 7))
-	return matchesCronField(fields[0], tm.Minute()) &&
-		matchesCronField(fields[1], tm.Hour()) &&
-		matchesCronField(fields[2], tm.Day()) &&
-		matchesCronField(fields[3], int(tm.Month())) &&
-		dowMatch
+	return cronutil.Matches(schedule, tm)
 }
 
 func computeNextCronTime(schedule string, from time.Time) time.Time {
-	fields := strings.Fields(strings.TrimSpace(schedule))
-	if len(fields) != 5 {
-		return time.Time{}
-	}
-	candidate := from.Truncate(time.Minute).Add(time.Minute)
-	// Scan up to 8 days (11520 minutes) for fast, exact next occurrence calculation
-	for i := 0; i < 11520; i++ {
-		if matchesCronSchedule(schedule, candidate) {
-			return candidate
-		}
-		candidate = candidate.Add(time.Minute)
-	}
-	return time.Time{}
+	return cronutil.NextRun(schedule, from)
 }
 
 func (m *Manager) initSnapshotTasksLocked() {

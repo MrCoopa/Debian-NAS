@@ -13,7 +13,25 @@ console.log("Debian Storage Appliance: Go + HTMX + Alpine.js initialized.");
     shares: { id: "shares-container", event: "shareUpdate" },
     users: { id: "users-container", event: "userUpdate" },
     protection: { id: "snapshots-container", event: "snapshotUpdate" },
+    services: { id: "services-container", event: "nasRefresh" },
     system: { id: "network-container", event: "nasRefresh" }
+  };
+
+  window.nasEnsureSelectValue = function (selectEl, currentVal, onChange) {
+    if (!selectEl || !selectEl.options) return;
+    var hasCurrent = false;
+    var firstValid = "";
+    for (var i = 0; i < selectEl.options.length; i++) {
+      var opt = selectEl.options[i];
+      if (!opt.disabled && opt.value !== "") {
+        if (!firstValid) firstValid = opt.value;
+        if (opt.value === currentVal) hasCurrent = true;
+      }
+    }
+    if (!hasCurrent && firstValid) {
+      selectEl.value = firstValid;
+      if (typeof onChange === "function") onChange(firstValid);
+    }
   };
 
   window.nasTriggerHasError = function (xhr) {

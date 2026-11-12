@@ -431,3 +431,82 @@ func TestModals_NestedHxGetIsolatedFromParentForm(t *testing.T) {
 		}
 	}
 }
+
+func TestWeb_CoreFixesTemplateIntegrity(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatalf("NewEngine error: %v", err)
+	}
+
+	// 1. Verify exact username matching in users_list.html (hasString avoids 'al' matching 'alice')
+	var usersBuf bytes.Buffer
+	err = engine.Render(&usersBuf, "partials/users_list.html", map[string]interface{}{
+		"Users": []map[string]interface{}{
+			{"Username": "al"},
+			{"Username": "alice"},
+		},
+		"SmbShares": []map[string]interface{}{
+			{"Name": "private", "GuestOk": false, "ValidUsers": []string{"alice"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Render users_list failed: %v", err)
+	}
+	usersHTML := usersBuf.String()
+	alIdx := strings.Index(usersHTML, "👤 al<")
+	aliceIdx := strings.Index(usersHTML, "👤 alice<")
+	if alIdx < 0 || aliceIdx < 0 || alIdx >= aliceIdx {
+		t.Fatalf("expected both al and alice rendered in order, got:\n%s", usersHTML)
+	}
+	alRow := usersHTML[alIdx:aliceIdx]
+	if strings.Contains(alRow, "📁 private") {
+		t.Fatalf("user 'al' falsely matched share assigned only to 'alice':\n%s", alRow)
+	}
+
+	// 2. Verify disk_drawer uses runDrawerDiskAction with path & confirm_wipe and layout includes it
+	drawerRaw, err := templateFiles.ReadFile("templates/partials/disk_drawer.html")
+	if err != nil {
+		t.Fatalf("read disk_drawer.html: %v", err)
+	}
+	drawerStr := string(drawerRaw)
+	if strings.Contains(drawerStr, "device: activeDisk") || !strings.Contains(drawerStr, "runDrawerDiskAction('/ui/actions/disks/wipe', { path: activeDisk.path, confirm_wipe: 'true' })") {
+		t.Fatalf("disk_drawer.html missing fixed runDrawerDiskAction / confirm_wipe wiring")
+	}
+
+	layoutRaw, err := templateFiles.ReadFile("templates/layout.html")
+	if err != nil {
+		t.Fatalf("read layout.html: %v", err)
+	}
+	layoutStr := string(layoutRaw)
+	for _, want := range []string{`drawerOpen: false`, `activeDisk:`, `partials/disk_drawer.html`, `partials/services_list.html`, `runDrawerDiskAction(url, values)`} {
+		if !strings.Contains(layoutStr, want) {
+			t.Errorf("layout.html missing %q", want)
+		}
+	}
+
+	// 3. Verify danger_confirm targets #datasets-container for dataset destroy
+	dangerRaw, err := templateFiles.ReadFile("templates/modals/danger_confirm.html")
+	if err != nil {
+		t.Fatalf("read danger_confirm.html: %v", err)
+	}
+	if !strings.Contains(string(dangerRaw), `:hx-target="dangerConfirm.type === 'pool' ? '#pools-container' : '#datasets-container'"`) {
+		t.Fatalf("danger_confirm.html does not dynamically target #datasets-container for dataset destroy")
+	}
+
+	// 4. Verify create_cloudsync uses valid 5-field cron options
+	csRaw, err := templateFiles.ReadFile("templates/modals/create_cloudsync.html")
+	if err != nil {
+		t.Fatalf("read create_cloudsync.html: %v", err)
+	}
+	csStr := string(csRaw)
+	for _, bad := range []string{`0 3 45 * * 2`, `0 2 00 * *`, `0 0 00 * *`} {
+		if strings.Contains(csStr, bad) {
+			t.Errorf("create_cloudsync.html still contains invalid cron value %q", bad)
+		}
+	}
+	for _, good := range []string{`value="45 3 * * 2"`, `value="0 2 * * *"`, `value="0 0 * * *"`, `refreshCloudSyncSources from:body`} {
+		if !strings.Contains(csStr, good) {
+			t.Errorf("create_cloudsync.html missing %q", good)
+		}
+	}
+}

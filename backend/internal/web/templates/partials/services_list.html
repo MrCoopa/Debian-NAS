@@ -1,0 +1,36 @@
+<div id="services-container" hx-get="/ui/partials/services" hx-trigger="every 10s [currentTab === 'services' && !document.hidden], shareUpdate from:body, poolUpdate from:body" hx-swap="outerHTML">
+  <div class="table-card">
+    <div class="table-toolbar">
+      <span class="toolbar-title">Core System Services &amp; Daemons</span>
+    </div>
+    <div class="table-responsive">
+      <table class="pf-table">
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Daemon Unit</th>
+            <th>Port / Socket</th>
+            <th>Status</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $svc := .System.Services}}
+            <tr>
+              <td><strong class="text-blue">{{$svc.Name}}</strong></td>
+              <td class="font-mono text-dim">{{$svc.Unit}}</td>
+              <td class="font-mono">{{$svc.Port}}</td>
+              <td><span class="badge-status {{$svc.BadgeClass}}">{{$svc.StateLabel}}</span></td>
+              <td>{{$svc.Description}}</td>
+            </tr>
+          {{else}}
+            <tr>
+              <td colspan="5" class="text-dim" style="text-align: center; padding: 1.5rem;">Loading service statuses...</td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+

@@ -2,6 +2,7 @@ package system
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"math"
 	"net"
@@ -14,21 +15,33 @@ import (
 	"time"
 )
 
+type ServiceStatus struct {
+	Name        string `json:"name"`
+	Unit        string `json:"unit"`
+	Port        string `json:"port"`
+	Description string `json:"description"`
+	State       string `json:"state"`
+	StateLabel  string `json:"state_label"`
+	BadgeClass  string `json:"badge_class"`
+	Active      bool   `json:"active"`
+}
+
 type SystemStatus struct {
-	Hostname     string         `json:"hostname"`
-	OS           string         `json:"os"`
-	Kernel       string         `json:"kernel"`
-	Arch         string         `json:"arch"`
-	Uptime       string         `json:"uptime"`
-	UptimeSec    int64          `json:"uptime_sec"`
-	DaemonRamMB  float64        `json:"daemon_ram_mb"`
-	Goroutines   int            `json:"goroutines"`
-	CPU          CPUInfo        `json:"cpu"`
-	Memory       MemoryInfo     `json:"memory"`
-	Network      []NetworkInfo  `json:"network"`
-	NetworkIO    NetworkIOInfo  `json:"network_io"`
-	DiskIO       DiskIOInfo     `json:"disk_io"`
-	LastUpdated  time.Time      `json:"last_updated"`
+	Hostname     string          `json:"hostname"`
+	OS           string          `json:"os"`
+	Kernel       string          `json:"kernel"`
+	Arch         string          `json:"arch"`
+	Uptime       string          `json:"uptime"`
+	UptimeSec    int64           `json:"uptime_sec"`
+	DaemonRamMB  float64         `json:"daemon_ram_mb"`
+	Goroutines   int             `json:"goroutines"`
+	CPU          CPUInfo         `json:"cpu"`
+	Memory       MemoryInfo      `json:"memory"`
+	Network      []NetworkInfo   `json:"network"`
+	NetworkIO    NetworkIOInfo   `json:"network_io"`
+	DiskIO       DiskIOInfo      `json:"disk_io"`
+	Services     []ServiceStatus `json:"services"`
+	LastUpdated  time.Time       `json:"last_updated"`
 }
 
 type DeviceIOInfo struct {
@@ -246,6 +259,7 @@ func (c *Collector) getLinuxStatus(daemonMB float64) *SystemStatus {
 			History:   c.ioHistory,
 			Devices:   devMap,
 		},
+		Services:    c.collectServices(),
 		LastUpdated: now,
 	}
 
@@ -319,11 +333,112 @@ func (c *Collector) getMockStatus(daemonMB float64) *SystemStatus {
 			WriteIOPS: 0,
 			History:   []float64{0, 0, 0},
 		},
+		Services:    c.collectServices(),
 		LastUpdated: time.Now(),
 	}
 }
 
 // ---------------- Linux Helper Functions ----------------
+
+type serviceCatalogEntry struct {
+	Name        string
+	Unit        string
+	Port        string
+	Description string
+	ActiveLabel string
+}
+
+var coreServiceCatalog = []serviceCatalogEntry{
+	{Name: "Samba (SMB / CIFS)", Unit: "smbd.service", Port: "TCP 445, 139", Description: "Windows & macOS network file sharing with multi-user permissions", ActiveLabel: "Active (running)"},
+	{Name: "NFS Kernel Server", Unit: "nfs-kernel-server.service", Port: "TCP/UDP 2049", Description: "High-performance Unix/Linux storage exports and Proxmox VE mounts", ActiveLabel: "Active (running)"},
+	{Name: "WS-Discovery (WSDD)", Unit: "wsdd.service", Port: "TCP 5357, UDP 3702", Description: "Automatic zero-conf network discovery for Windows 10 & 11 Explorer", ActiveLabel: "Active (running)"},
+	{Name: "OpenZFS Storage Engine", Unit: "zfs.target", Port: "Kernel module", Description: "Native enterprise filesystem with LZ4/ZSTD compression and ARC cache", ActiveLabel: "Loaded (native core)"},
+	{Name: "SSH Remote Administration", Unit: "ssh.service", Port: "TCP 22", Description: "Secure shell CLI access and headless server control", ActiveLabel: "Active (running)"},
+	{Name: "HDD Spindown Manager", Unit: "hd-idle.service", Port: "Internal timer", Description: "True standby power management and spindle spin-down", ActiveLabel: "Active (0W standby)"},
+	{Name: "S.M.A.R.T. Drive Health Monitor", Unit: "smartmontools.service", Port: "smartctl -n standby", Description: "Drive telemetry and failure prediction without waking sleeping HDDs", ActiveLabel: "Active (non-intrusive)"},
+}
+
+func formatServiceState(state, activeLabel string) (label, badge string, active bool) {
+	s := strings.ToLower(strings.TrimSpace(state))
+	switch s {
+	case "active":
+		if activeLabel == "" {
+			activeLabel = "Active (running)"
+		}
+		return activeLabel, "green", true
+	case "activating":
+		return "Activating", "amber", false
+	case "reloading":
+		return "Reloading", "amber", false
+	case "failed":
+		return "Failed", "red", false
+	case "inactive", "dead", "deactivating":
+		return "Inactive (stopped)", "slate", false
+	default:
+		if s == "" || s == "unknown" {
+			return "Unknown / Not installed", "slate", false
+		}
+		return s, "slate", false
+	}
+}
+
+func buildServicesFromStates(states []string) []ServiceStatus {
+	out := make([]ServiceStatus, 0, len(coreServiceCatalog))
+	for i, item := range coreServiceCatalog {
+		rawState := "unknown"
+		if i < len(states) {
+			rawState = strings.TrimSpace(states[i])
+		}
+		label, badge, active := formatServiceState(rawState, item.ActiveLabel)
+		out = append(out, ServiceStatus{
+			Name:        item.Name,
+			Unit:        item.Unit,
+			Port:        item.Port,
+			Description: item.Description,
+			State:       rawState,
+			StateLabel:  label,
+			BadgeClass:  badge,
+			Active:      active,
+		})
+	}
+	return out
+}
+
+func (c *Collector) collectServices() []ServiceStatus {
+	if c.mockMode || runtime.GOOS != "linux" {
+		states := make([]string, len(coreServiceCatalog))
+		for i := range states {
+			states[i] = "active"
+		}
+		return buildServicesFromStates(states)
+	}
+
+	units := make([]string, len(coreServiceCatalog))
+	for i, item := range coreServiceCatalog {
+		units[i] = item.Unit
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	// systemctl is-active prints one status line per unit in argument order (even with non-zero exit when any is inactive).
+	out, _ := exec.CommandContext(ctx, "systemctl", append([]string{"is-active"}, units...)...).Output()
+	lines := strings.Split(strings.TrimRight(string(out), "\r\n"), "\n")
+	if len(out) == 0 {
+		lines = nil
+	}
+	services := buildServicesFromStates(lines)
+	// Fallback: if /sys/module/zfs exists while zfs.target reports inactive/unknown, show ZFS kernel module loaded.
+	for i := range services {
+		if services[i].Unit == "zfs.target" && !services[i].Active {
+			if _, err := os.Stat("/sys/module/zfs"); err == nil {
+				services[i].State = "active"
+				services[i].StateLabel = "Loaded (native core)"
+				services[i].BadgeClass = "green"
+				services[i].Active = true
+			}
+		}
+	}
+	return services
+}
 
 func (c *Collector) readLinuxDiskIO(deltaSec float64) (float64, float64, int, int, map[string]*DeviceIOInfo) {
 	devMap := make(map[string]*DeviceIOInfo)

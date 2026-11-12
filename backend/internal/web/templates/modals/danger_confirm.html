@@ -7,7 +7,7 @@
       </h3>
       <button type="button" class="modal-close" @click="openDangerConfirmModal = false">&times;</button>
     </div>
-    <form hx-post="/ui/actions/zfs/destroy" hx-target="#pools-container" hx-swap="outerHTML"
+    <form hx-post="/ui/actions/zfs/destroy" :hx-target="dangerConfirm.type === 'pool' ? '#pools-container' : '#datasets-container'" hx-swap="outerHTML"
           @htmx:before-request="dangerConfirm.error = ''"
           @htmx:after-request="handleDangerDestroyResult($event)">
       <input type="hidden" name="type" :value="dangerConfirm.type">

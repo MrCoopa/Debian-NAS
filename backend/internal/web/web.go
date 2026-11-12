@@ -305,6 +305,17 @@ func funcMap() template.FuncMap {
 		"join":      strings.Join,
 		"hasPrefix": strings.HasPrefix,
 		"contains":  strings.Contains,
+		"hasString": func(slice interface{}, target string) bool {
+			found := false
+			iterateSlice(slice, func(item interface{}) bool {
+				if fmt.Sprint(item) == target {
+					found = true
+					return false
+				}
+				return true
+			})
+			return found
+		},
 		"domId": func(s string) string {
 			var b strings.Builder
 			for _, r := range s {

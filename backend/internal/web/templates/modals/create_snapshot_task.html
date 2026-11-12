@@ -18,9 +18,10 @@
                 x-model="snapTaskForm.dataset"
                 required
                 hx-get="/ui/partials/modals/snap_datasets"
-                hx-trigger="poolUpdate from:body, datasetUpdate from:body"
+                hx-trigger="poolUpdate from:body, datasetUpdate from:body, refreshSnapDatasets from:body"
                 hx-target="this"
-                hx-swap="innerHTML">
+                hx-swap="innerHTML"
+                @htmx:after-swap="window.nasEnsureSelectValue && window.nasEnsureSelectValue($el, snapTaskForm.dataset, v => snapTaskForm.dataset = v)">
           {{template "partials/snap_datasets_options.html" .}}
         </select>
         <span class="text-dim" style="font-size: 0.72rem;">Target ZFS pool, filesystem dataset, or Zvol for scheduled snapshots.</span>

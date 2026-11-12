@@ -108,12 +108,13 @@
           const firstDataset = sel && sel.options.length > 0 ? sel.options[0].value : '';
           this.snapTaskForm = { id: '', dataset: firstDataset, recursive: true, lifetime_value: 2, lifetime_unit: 'week(s)', naming_schema: 'auto-%Y-%m-%d_%H-%M', schedule: '0 0 * * *', frequency_text: '', enabled: true };
           this.openSnapTaskModal = true;
+          this.triggerHtmxRefresh('refreshSnapDatasets');
         },
         openEditSnapTask(id, dataset, recursive, lifetimeVal, lifetimeUnit, namingSchema, schedule, frequencyText, enabled) {
           this.isEditingSnapTask = true;
           this.snapTaskForm = {
             id: id,
-            dataset: dataset || 'DATA',
+            dataset: dataset || '',
             recursive: Boolean(recursive),
             lifetime_value: lifetimeVal || 2,
             lifetime_unit: lifetimeUnit || 'week(s)',
@@ -123,14 +124,24 @@
             enabled: Boolean(enabled)
           };
           this.openSnapTaskModal = true;
+          this.triggerHtmxRefresh('refreshSnapDatasets');
         },
-        cloudSyncForm: { id: '', name: '', description: '', source_path: '', remote_target: '', direction: 'PUSH', schedule: '0 2 00 * *', frequency_text: '', bandwidth_limit: '50M', enabled: true },
+        cloudSyncForm: { id: '', name: '', description: '', source_path: '', remote_target: '', direction: 'PUSH', schedule: '0 2 * * *', frequency_text: '', bandwidth_limit: '50M', enabled: true },
+        normalizeCloudSchedule(s) {
+          if (s === '0 3 45 * * 2') return '45 3 * * 2';
+          if (s === '0 2 00 * *') return '0 2 * * *';
+          if (s === '0 0 00 * *') return '0 0 * * *';
+          return s || '0 2 * * *';
+        },
         openCreateCloudSync() {
           this.isEditingCloudSync = false;
-          this.cloudSyncForm = { id: '', name: '', description: '', source_path: '/mnt/DATA', remote_target: 'hetzner_storagebox:backup/DATA', direction: 'PUSH', schedule: '0 2 00 * *', frequency_text: '', bandwidth_limit: '50M', enabled: true };
+          const sel = document.getElementById('cloudsync-source-select');
+          const firstSrc = sel && sel.options.length > 0 ? sel.options[0].value : '';
+          this.cloudSyncForm = { id: '', name: '', description: '', source_path: firstSrc, remote_target: 'hetzner_storagebox:backup/DATA', direction: 'PUSH', schedule: '0 2 * * *', frequency_text: '', bandwidth_limit: '50M', enabled: true };
           this.openCloudSyncModal = true;
+          this.triggerHtmxRefresh('refreshCloudSyncSources');
         },
-        openEditCloudSync(id, name, desc, src, target, dir, sched, bw, enabled) {
+        openEditCloudSync(id, name, desc, src, target, dir, sched, bw, enabled, freqText) {
           this.isEditingCloudSync = true;
           this.cloudSyncForm = {
             id: id,
@@ -139,12 +150,13 @@
             source_path: src,
             remote_target: target,
             direction: dir || 'PUSH',
-            schedule: sched || '0 2 00 * *',
-            frequency_text: '',
+            schedule: this.normalizeCloudSchedule(sched),
+            frequency_text: freqText || '',
             bandwidth_limit: bw || '50M',
-            enabled: enabled
+            enabled: Boolean(enabled)
           };
           this.openCloudSyncModal = true;
+          this.triggerHtmxRefresh('refreshCloudSyncSources');
         },
         selectedDisks: [],
         toggleAllDisks(checked, names) {
@@ -153,6 +165,13 @@
         openSnapTaskMenuId: '',
         openCloudMenuId: '',
         expandedDisks: {},
+        drawerOpen: false,
+        activeDisk: { name: '', path: '', by_id_path: '', zfs_pool: '', vdev_type: '', power_on_hours: 0, smart_last_test: '', smart_status: '', spindown_seconds: 900, state: '', is_system_disk: false },
+        triggerHtmxRefresh(eventName) {
+          if (window.htmx) {
+            this.$nextTick(() => window.htmx.trigger(document.body, eventName));
+          }
+        },
         toggleDisk(name) {
           this.expandedDisks[name] = !this.expandedDisks[name];
         },
@@ -168,6 +187,8 @@
           const targetPath = path || '';
           this.shareForm = { name: name || '', origName: '', path: targetPath, origPath: '', proto: proto || 'smb', access: 'restricted', allowed_clients: '*', users: [] };
           this.openShareModal = true;
+          this.triggerHtmxRefresh('refreshShareDatasets');
+          this.triggerHtmxRefresh('refreshShareUsers');
           this.$nextTick(() => {
             const cbs = document.querySelectorAll('#share-modal-users input[name=valid_users]');
             cbs.forEach(cb => { cb.checked = false; });
@@ -198,6 +219,8 @@
             users: u
           };
           this.openShareModal = true;
+          this.triggerHtmxRefresh('refreshShareDatasets');
+          this.triggerHtmxRefresh('refreshShareUsers');
           this.$nextTick(() => {
             const cbs = document.querySelectorAll('#share-modal-users input[name=valid_users]');
             cbs.forEach(cb => { cb.checked = u.includes(cb.value); });
@@ -218,6 +241,7 @@
             users: []
           };
           this.openShareModal = true;
+          this.triggerHtmxRefresh('refreshShareDatasets');
           this.$nextTick(() => {
             this.shareCustomPathMode = window.nasSyncSharePathMode ? window.nasSyncSharePathMode(path) : false;
           });
@@ -227,16 +251,17 @@
         },
         openCreatePool() {
           this.openCreatePoolModal = true;
-          if (window.htmx) htmx.trigger(document.body, 'refreshCreatePoolDisks');
+          this.triggerHtmxRefresh('refreshCreatePoolDisks');
         },
         openAddVdev(pool) {
           this.addVdevPool = pool;
           this.openAddVdevModal = true;
-          if (window.htmx) htmx.trigger(document.body, 'refreshAddVdevDisks');
+          this.triggerHtmxRefresh('refreshAddVdevDisks');
         },
         openDiskAction(type, pool, targetDevice) {
           this.diskAction = { type: type, pool: pool, targetDevice: targetDevice };
           this.openDiskActionModal = true;
+          this.triggerHtmxRefresh('refreshAvailableDisks');
         },
         openPoolProps(pool, autotrim, autoexpand) {
           this.poolProps = { pool: pool, autotrim: autotrim || 'off', autoexpand: autoexpand || 'on' };
@@ -257,8 +282,8 @@
         openCreateDataset(parent) {
           this.datasetParent = parent || '';
           this.openCreateDatasetModal = true;
-          if (!this.datasetParent && window.htmx) {
-            this.$nextTick(() => window.htmx.trigger(document.body, 'refreshParentDatasets'));
+          if (!this.datasetParent) {
+            this.triggerHtmxRefresh('refreshParentDatasets');
           }
         },
         openCreateSnap(dataset) {
@@ -266,6 +291,9 @@
           this.snapName = '';
           this.snapRecursive = false;
           this.openCreateSnapModal = true;
+          if (!this.snapDataset) {
+            this.triggerHtmxRefresh('refreshSnapDatasets');
+          }
         },
         openCloneSnap(snapshot) {
           this.cloneSnapSource = snapshot || '';
@@ -310,9 +338,65 @@
           this.dangerConfirm.error = '';
           this.openDangerConfirmModal = false;
         },
-        openDiskDrawer(disk) {
-          this.activeDisk = disk;
+        async refreshActiveDisk(key) {
+          const targetKey = key || (this.activeDisk && (this.activeDisk.name || this.activeDisk.path));
+          if (!targetKey) return;
+          try {
+            const resp = await fetch('/api/v1/disks', { headers: { 'Accept': 'application/json' } });
+            if (!resp.ok) return;
+            const list = await resp.json();
+            if (!Array.isArray(list)) return;
+            const match = list.find(d =>
+              d.name === targetKey ||
+              d.device === targetKey ||
+              d.path === targetKey ||
+              d.by_id_path === targetKey ||
+              (d.by_id_path && d.by_id_path.endsWith('/' + targetKey))
+            );
+            if (match) {
+              this.activeDisk = Object.assign({ spindown_seconds: 900, smart_last_test: '', smart_status: 'PASSED' }, match);
+            }
+          } catch (_) {}
+        },
+        openDiskDrawer(diskOrName) {
+          if (diskOrName && typeof diskOrName === 'object') {
+            this.activeDisk = Object.assign({ spindown_seconds: 900 }, diskOrName);
+            this.drawerOpen = true;
+            this.refreshActiveDisk(diskOrName.name || diskOrName.path);
+            return;
+          }
+          const key = String(diskOrName || '').trim();
+          if (!key) return;
+          const fallbackPath = key.startsWith('/dev/') ? key : ('/dev/' + key.replace(/-part\d+$/, ''));
+          this.activeDisk = {
+            name: key,
+            path: fallbackPath,
+            by_id_path: '',
+            zfs_pool: '',
+            vdev_type: '',
+            power_on_hours: 0,
+            smart_last_test: '',
+            smart_status: '',
+            spindown_seconds: 900,
+            state: 'ACTIVE',
+            is_system_disk: false
+          };
           this.drawerOpen = true;
+          this.refreshActiveDisk(key);
+        },
+        runDrawerDiskAction(url, values) {
+          if (!window.htmx || !values || !values.path) return;
+          const p = window.htmx.ajax('POST', url, {
+            target: '#disks-container',
+            swap: 'outerHTML',
+            values: values
+          });
+          if (p && typeof p.then === 'function') {
+            p.then(() => {
+              this.refreshActiveDisk(this.activeDisk.name || values.path);
+              this.triggerHtmxRefresh('poolUpdate');
+            });
+          }
         },
         showToast(message, type) {
           if (!message) return;
@@ -473,6 +557,8 @@
           </div>
 
           {{template "partials/pools_list.html" .}}
+
+          {{template "partials/disk_drawer.html" .}}
         </section>
 
         <!-- 4. DATASET (ZFS DATASETS & VOLUMES) -->
@@ -550,75 +636,7 @@
             </div>
           </div>
 
-          <div class="table-card">
-            <div class="table-toolbar">
-              <span class="toolbar-title">Active Core Services</span>
-            </div>
-            <div class="table-responsive">
-            <table class="pf-table">
-              <thead>
-                <tr>
-                  <th>Service</th>
-                  <th>Daemon Unit</th>
-                  <th>Port / Socket</th>
-                  <th>Status</th>
-                  <th>Description</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><strong class="text-blue">Samba (SMB / CIFS)</strong></td>
-                  <td class="font-mono text-dim">smbd.service</td>
-                  <td class="font-mono">TCP 445, 139</td>
-                  <td><span class="badge-status green">Active (running)</span></td>
-                  <td>Windows &amp; macOS network file sharing with multi-user permissions</td>
-                </tr>
-                <tr>
-                  <td><strong class="text-blue">NFS Kernel Server</strong></td>
-                  <td class="font-mono text-dim">nfs-kernel-server.service</td>
-                  <td class="font-mono">TCP/UDP 2049</td>
-                  <td><span class="badge-status green">Active (running)</span></td>
-                  <td>High-performance Unix/Linux storage exports and Proxmox VE mounts</td>
-                </tr>
-                <tr>
-                  <td><strong class="text-blue">WS-Discovery (WSDD)</strong></td>
-                  <td class="font-mono text-dim">wsdd.service</td>
-                  <td class="font-mono">TCP 5357, UDP 3702</td>
-                  <td><span class="badge-status green">Active (running)</span></td>
-                  <td>Automatic zero-conf network discovery for Windows 10 &amp; 11 Explorer</td>
-                </tr>
-                <tr>
-                  <td><strong class="text-blue">OpenZFS Storage Engine</strong></td>
-                  <td class="font-mono text-dim">zfs.target</td>
-                  <td class="font-mono">Kernel 6.12 module</td>
-                  <td><span class="badge-status green">Loaded (native core)</span></td>
-                  <td>Native enterprise filesystem with LZ4/ZSTD compression and ARC cache</td>
-                </tr>
-                <tr>
-                  <td><strong class="text-blue">SSH Remote Administration</strong></td>
-                  <td class="font-mono text-dim">ssh.service</td>
-                  <td class="font-mono">TCP 22</td>
-                  <td><span class="badge-status green">Active (running)</span></td>
-                  <td>Secure shell CLI access and headless server control</td>
-                </tr>
-                <tr>
-                  <td><strong class="text-blue">HDD Spindown Manager</strong></td>
-                  <td class="font-mono text-dim">hd-idle.service</td>
-                  <td class="font-mono">Internal timer</td>
-                  <td><span class="badge-status green">Active (0W standby)</span></td>
-                  <td>True standby power management and spindle spin-down</td>
-                </tr>
-                <tr>
-                  <td><strong class="text-blue">S.M.A.R.T. Drive Health Monitor</strong></td>
-                  <td class="font-mono text-dim">smartmontools.service</td>
-                  <td class="font-mono">smartctl -n standby</td>
-                  <td><span class="badge-status green">Active (non-intrusive)</span></td>
-                  <td>Drive telemetry and failure prediction without waking sleeping HDDs</td>
-                </tr>
-              </tbody>
-            </table>
-            </div>
-          </div>
+          {{template "partials/services_list.html" .}}
         </section>
 
         <!-- 9. SYSTEM & NETWORK -->
@@ -664,17 +682,17 @@
                     (Core Engine)</td>
                 </tr>
                 <tr>
-                  <td style="font-weight: 600;">Runtime Service (systemd)</td>
-                  <td><span class="badge-status green">nasd.service active (running)</span></td>
+                  <td style="font-weight: 600;">Runtime Daemon</td>
+                  <td><span class="badge-status green">nasd active (running)</span></td>
                 </tr>
-                <tr>
-                  <td style="font-weight: 600;">Samba Daemon</td>
-                  <td><span class="badge-status green">smbd.service active</span></td>
-                </tr>
-                <tr>
-                  <td style="font-weight: 600;">NFS Server Daemon</td>
-                  <td><span class="badge-status green">nfs-kernel-server active</span></td>
-                </tr>
+                {{range $svc := .System.Services}}
+                  {{if or (eq $svc.Unit "smbd.service") (eq $svc.Unit "nfs-kernel-server.service")}}
+                  <tr>
+                    <td style="font-weight: 600;">{{$svc.Name}}</td>
+                    <td><span class="badge-status {{$svc.BadgeClass}}">{{$svc.Unit}} {{$svc.StateLabel}}</span></td>
+                  </tr>
+                  {{end}}
+                {{end}}
               </tbody>
             </table>
             </div>

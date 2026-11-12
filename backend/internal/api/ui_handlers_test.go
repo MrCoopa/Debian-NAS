@@ -1041,3 +1041,71 @@ func min(a, b int) int {
 	return b
 }
 
+func TestUI_AuditFixes_ServicesDiskDrawerDangerDestroyAndCloudSync(t *testing.T) {
+	srv := createTestServer(t)
+	handler := srv.Routes()
+
+	// 1. Services partial renders real service rows
+	svcReq := httptest.NewRequest("GET", "/ui/partials/services", nil)
+	svcRR := httptest.NewRecorder()
+	handler.ServeHTTP(svcRR, svcReq)
+	if svcRR.Code != http.StatusOK || !strings.Contains(svcRR.Body.String(), "smbd.service") || !strings.Contains(svcRR.Body.String(), "nfs-kernel-server.service") {
+		t.Fatalf("GET /ui/partials/services failed: code=%d body=%s", svcRR.Code, svcRR.Body.String())
+	}
+
+	// 2. Disk drawer actions work with both 'device'/'seconds' and 'path'/'timeout_minutes'
+	allDisks, _ := srv.disks.ListDisks()
+	if len(allDisks) == 0 {
+		t.Fatalf("expected mock disks")
+	}
+	targetDisk := allDisks[0]
+	for _, tc := range []struct {
+		endpoint string
+		form     url.Values
+	}{
+		{"/ui/actions/disks/spindown", url.Values{"device": {targetDisk.Path}, "seconds": {"1800"}}},
+		{"/ui/actions/disks/apm", url.Values{"device": {targetDisk.Path}, "level": {"127"}}},
+		{"/ui/actions/disks/locate", url.Values{"device": {targetDisk.Path}}},
+		{"/ui/actions/disks/smart-test", url.Values{"device": {targetDisk.Path}, "type": {"short"}}},
+		{"/ui/actions/disks/standby", url.Values{"device": {targetDisk.Path}}},
+	} {
+		req := httptest.NewRequest("POST", tc.endpoint, strings.NewReader(tc.form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK || strings.Contains(rr.Header().Get("HX-Trigger"), `"type":"error"`) {
+			t.Fatalf("POST %s failed: code=%d trig=%s", tc.endpoint, rr.Code, rr.Header().Get("HX-Trigger"))
+		}
+	}
+
+	// 3. Danger destroy with type=dataset returns #datasets-container (not #pools-container)
+	_ = srv.zfs.CreateDataset("DATA/audit-del", "lz4", "128K")
+	delReq := httptest.NewRequest("POST", "/ui/actions/zfs/destroy", strings.NewReader(url.Values{
+		"type": {"dataset"},
+		"name": {"DATA/audit-del"},
+	}.Encode()))
+	delReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	delRR := httptest.NewRecorder()
+	handler.ServeHTTP(delRR, delReq)
+	if delRR.Code != http.StatusOK || !strings.Contains(delRR.Body.String(), `id="datasets-container"`) {
+		t.Fatalf("dataset danger destroy must render #datasets-container, got code=%d body=%s", delRR.Code, delRR.Body.String()[:min(300, delRR.Body.Len())])
+	}
+
+	// 4. CloudSync API preserves enabled=false and UI save creates a task with "Never" LastRun
+	csApiReq := httptest.NewRequest("POST", "/api/v1/cloudsync/jobs", strings.NewReader(`{"name":"disabled-job","source_path":"/mnt/DATA","remote_target":"b2_backup:test","schedule":"0 2 * * *","enabled":false}`))
+	csApiReq.Header.Set("Content-Type", "application/json")
+	csApiRR := httptest.NewRecorder()
+	handler.ServeHTTP(csApiRR, csApiReq)
+	if csApiRR.Code != http.StatusOK {
+		t.Fatalf("POST /api/v1/cloudsync/jobs failed: %d %s", csApiRR.Code, csApiRR.Body.String())
+	}
+
+	csPartialReq := httptest.NewRequest("GET", "/ui/partials/cloudsync", nil)
+	csPartialRR := httptest.NewRecorder()
+	handler.ServeHTTP(csPartialRR, csPartialReq)
+	csHTML := csPartialRR.Body.String()
+	if !strings.Contains(csHTML, "Disabled") || !strings.Contains(csHTML, "Never") {
+		t.Fatalf("expected disabled/unrun CloudSync job to show 'Disabled' and 'Never', got:\n%s", csHTML)
+	}
+}
+

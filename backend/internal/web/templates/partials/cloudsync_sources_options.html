@@ -1,6 +1,14 @@
-{{range $p := .Pools}}
-  <option value="/mnt/{{$p.Name}}">/mnt/{{$p.Name}} (Pool Root)</option>
+{{if and (eq (len .Pools) 0) (eq (len .Datasets) 0)}}
+  <option value="" disabled>-- No ZFS datasets available --</option>
+{{else}}
+  {{range $p := .Pools}}
+    <option value="/mnt/{{$p.Name}}">/mnt/{{$p.Name}} (Pool Root)</option>
+  {{end}}
+  {{range $ds := .Datasets}}
+    {{if and (eq $ds.Type "filesystem") (contains $ds.Name "/")}}
+      <option value="{{if $ds.Mountpoint}}{{$ds.Mountpoint}}{{else}}/mnt/{{$ds.Name}}{{end}}">{{if $ds.Mountpoint}}{{$ds.Mountpoint}}{{else}}/mnt/{{$ds.Name}}{{end}}</option>
+    {{end}}
+  {{end}}
 {{end}}
-{{range $ds := .Datasets}}
-  <option value="/mnt/{{$ds.Name}}">/mnt/{{$ds.Name}}</option>
-{{end}}
+
+

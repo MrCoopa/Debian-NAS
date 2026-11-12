@@ -34,7 +34,7 @@
         <!-- Dropdown + Quick Chips refreshed automatically on pool/dataset updates -->
         <div id="share-modal-datasets"
              hx-get="/ui/partials/modals/share_datasets"
-             hx-trigger="poolUpdate from:body, datasetUpdate from:body"
+             hx-trigger="poolUpdate from:body, datasetUpdate from:body, refreshShareDatasets from:body"
              hx-target="this"
              hx-swap="innerHTML">
           {{template "partials/share_datasets_picker.html" .}}
@@ -78,7 +78,7 @@
         <label>Allowed Users (Optional - Leave empty for all Storage Users)</label>
         <div id="share-modal-users"
              hx-get="/ui/partials/modals/share_users"
-             hx-trigger="userUpdate from:body"
+             hx-trigger="userUpdate from:body, refreshShareUsers from:body"
              hx-target="this"
              hx-swap="innerHTML"
              style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.4rem; background: rgba(15, 23, 42, 0.4); border: 1px solid var(--pf-border-color); padding: 0.6rem; border-radius: 4px; max-height: 110px; overflow-y: auto;">

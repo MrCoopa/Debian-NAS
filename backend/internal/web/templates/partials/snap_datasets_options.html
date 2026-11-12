@@ -1,9 +1,13 @@
-{{range $p := .Pools}}
-  <option value="{{$p.Name}}">{{$p.Name}} (Root Pool)</option>
-{{end}}
-{{range $ds := .Datasets}}
-  {{if contains $ds.Name "/"}}
-    <option value="{{$ds.Name}}">{{$ds.Name}}{{if eq $ds.Type "volume"}} (Zvol){{end}}</option>
+{{if and (eq (len .Pools) 0) (eq (len .Datasets) 0)}}
+  <option value="" disabled>-- No ZFS pools or datasets available --</option>
+{{else}}
+  {{range $p := .Pools}}
+    <option value="{{$p.Name}}">{{$p.Name}} (Root Pool)</option>
+  {{end}}
+  {{range $ds := .Datasets}}
+    {{if contains $ds.Name "/"}}
+      <option value="{{$ds.Name}}">{{$ds.Name}}{{if eq $ds.Type "volume"}} (Zvol){{end}}</option>
+    {{end}}
   {{end}}
 {{end}}
 

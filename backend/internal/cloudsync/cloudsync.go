@@ -9,10 +9,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"debian-nas/internal/cronutil"
 )
 
 type SyncDirection string
@@ -65,53 +66,35 @@ func (j *SyncJob) GetDescription() string {
 }
 
 func (j *SyncJob) GetFrequency() string {
-	if j.FrequencyText != "" {
+	if strings.TrimSpace(j.FrequencyText) != "" {
 		return j.FrequencyText
 	}
-	if strings.Contains(j.Schedule, "03:45") || strings.Contains(j.Schedule, "3 45") {
-		return "At 03:45 (03:45 AM), only on Tuesday,..."
-	}
-	if strings.Contains(j.Schedule, "02:00") || strings.Contains(j.Schedule, "2 00") {
-		return "At 02:00 (02:00 AM), every day"
-	}
-	if j.Schedule != "" {
-		return j.Schedule
-	}
-	return "At 02:00 (02:00 AM), every day"
+	return cronutil.FormatFrequency(j.Schedule, "At 02:00 (02:00 AM), every day,...")
 }
 
 func (j *SyncJob) GetNextRun() string {
-	if j.NextRunText != "" {
+	if !j.Enabled {
+		return "Disabled"
+	}
+	now := time.Now()
+	next := cronutil.NextRun(j.Schedule, now)
+	if !next.IsZero() {
+		return cronutil.FormatRelativeFuture(next.Sub(now))
+	}
+	if strings.TrimSpace(j.NextRunText) != "" {
 		return j.NextRunText
 	}
-	if strings.Contains(j.Schedule, "03:45") || strings.Contains(j.Schedule, "3 45") || strings.Contains(j.Name, "DATA") {
-		return "in about 13 hours"
-	}
-	return "in about 11 hours"
+	return "Scheduled"
 }
 
 func (j *SyncJob) GetLastRun() string {
-	if j.LastRunText != "" {
-		return j.LastRunText
-	}
-	if !j.LastRun.IsZero() {
-		dur := time.Since(j.LastRun)
-		if dur < time.Hour {
-			return fmt.Sprintf("%d minutes ago", int(dur.Minutes()))
-		} else if dur < 24*time.Hour {
-			return fmt.Sprintf("about %d hours ago", int(dur.Hours()))
-		} else {
-			days := int(dur.Hours() / 24)
-			if days == 1 {
-				return "1 day ago"
-			}
-			return fmt.Sprintf("%d days ago", days)
+	if j.LastRun.IsZero() {
+		if strings.TrimSpace(j.LastRunText) != "" {
+			return j.LastRunText
 		}
+		return "Never"
 	}
-	if strings.Contains(j.Name, "DATA") {
-		return "1 day ago"
-	}
-	return "about 13 hours ago"
+	return cronutil.FormatRelativePast(time.Since(j.LastRun))
 }
 
 func (j *SyncJob) GetStateClass() string {
@@ -120,8 +103,10 @@ func (j *SyncJob) GetStateClass() string {
 		return "running"
 	case StatusFailed:
 		return "failed"
-	default:
+	case StatusSuccess:
 		return "completed"
+	default:
+		return "idle"
 	}
 }
 
@@ -131,8 +116,10 @@ func (j *SyncJob) GetStateLabel() string {
 		return "Running"
 	case StatusFailed:
 		return "Failed"
-	default:
+	case StatusSuccess:
 		return "Completed"
+	default:
+		return "Idle"
 	}
 }
 
@@ -178,10 +165,8 @@ func (m *Manager) initMockCloudSync() {
 		SourcePath:     "/mnt/DATA",
 		RemoteTarget:   "hetzner_storagebox:backup/DATA",
 		Direction:      DirectionPush,
-		Schedule:       "0 3 45 * * 2", // At 03:45 only on Tuesday
+		Schedule:       "45 3 * * 2", // At 03:45 only on Tuesday
 		FrequencyText:  "At 03:45 (03:45 AM), only on Tuesday,...",
-		NextRunText:    "in about 13 hours",
-		LastRunText:    "1 day ago",
 		BandwidthLimit: "50M",
 		Status:         StatusSuccess,
 		LastRun:        time.Now().Add(-26 * time.Hour),
@@ -196,10 +181,8 @@ func (m *Manager) initMockCloudSync() {
 		SourcePath:     "/mnt/SSD-MIRROR/mail-archiver",
 		RemoteTarget:   "hetzner_storagebox:backup/mail-archiver",
 		Direction:      DirectionPush,
-		Schedule:       "0 2 00 * *", // At 02:00 every day
+		Schedule:       "0 2 * * *", // At 02:00 every day
 		FrequencyText:  "At 02:00 (02:00 AM), every day",
-		NextRunText:    "in about 11 hours",
-		LastRunText:    "about 13 hours ago",
 		BandwidthLimit: "50M",
 		Status:         StatusSuccess,
 		LastRun:        time.Now().Add(-13 * time.Hour),
@@ -278,8 +261,26 @@ func (m *Manager) SaveJob(job *SyncJob) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	job.Schedule = cronutil.NormalizeLegacySchedule(job.Schedule)
+	if job.Schedule == "" {
+		job.Schedule = "0 2 * * *"
+	}
+	if err := cronutil.Validate(job.Schedule); err != nil {
+		return err
+	}
+
 	if job.ID == "" {
-		job.ID = fmt.Sprintf("job-%d", time.Now().Unix())
+		job.ID = fmt.Sprintf("job-%d", time.Now().UnixNano())
+	} else if existing, ok := m.jobs[job.ID]; ok {
+		if job.LastRun.IsZero() && !existing.LastRun.IsZero() {
+			job.LastRun = existing.LastRun
+		}
+		if job.LastMessage == "" && existing.LastMessage != "" {
+			job.LastMessage = existing.LastMessage
+		}
+		if job.Status == "" || (job.Status == StatusIdle && existing.Status != "") {
+			job.Status = existing.Status
+		}
 	}
 	if job.Status == "" {
 		job.Status = StatusIdle
@@ -387,19 +388,7 @@ func (m *Manager) startScheduler() {
 }
 
 func matchSchedule(sched string, t time.Time) bool {
-	fields := strings.Fields(sched)
-	if len(fields) < 5 {
-		return false
-	}
-	// Format: minute hour dom month dow
-	min, err1 := strconv.Atoi(fields[0])
-	hour, err2 := strconv.Atoi(fields[1])
-	if err1 == nil && err2 == nil {
-		if t.Minute() == min && t.Hour() == hour {
-			return true
-		}
-	}
-	return false
+	return cronutil.Matches(sched, t)
 }
 
 func (m *Manager) saveJobsConfig() {
@@ -422,6 +411,7 @@ func (m *Manager) loadJobsConfig() {
 	var list []*SyncJob
 	if err := json.Unmarshal(data, &list); err == nil {
 		for _, j := range list {
+			j.Schedule = cronutil.NormalizeLegacySchedule(j.Schedule)
 			m.jobs[j.ID] = j
 		}
 	}

@@ -28,11 +28,12 @@
 
       <div class="form-group">
         <label>Local Source Dataset / Path</label>
-        <select name="source_path" x-model="cloudSyncForm.source_path" required
+        <select id="cloudsync-source-select" name="source_path" x-model="cloudSyncForm.source_path" required
                 hx-get="/ui/partials/modals/cloudsync_sources"
-                hx-trigger="poolUpdate from:body, datasetUpdate from:body"
+                hx-trigger="poolUpdate from:body, datasetUpdate from:body, refreshCloudSyncSources from:body"
                 hx-target="this"
-                hx-swap="innerHTML">
+                hx-swap="innerHTML"
+                @htmx:after-swap="window.nasEnsureSelectValue && window.nasEnsureSelectValue($el, cloudSyncForm.source_path, v => cloudSyncForm.source_path = v)">
           {{template "partials/cloudsync_sources_options.html" .}}
         </select>
       </div>
@@ -52,9 +53,9 @@
       <div class="form-group">
         <label>Frequency / Schedule</label>
         <select name="schedule" x-model="cloudSyncForm.schedule">
-          <option value="0 3 45 * * 2">Weekly on Tuesday at 03:45 (03:45 AM)</option>
-          <option value="0 2 00 * *">Daily at 02:00 (02:00 AM)</option>
-          <option value="0 0 00 * *">Daily at Midnight (00:00)</option>
+          <option value="45 3 * * 2">Weekly on Tuesday at 03:45 (03:45 AM)</option>
+          <option value="0 2 * * *">Daily at 02:00 (02:00 AM)</option>
+          <option value="0 0 * * *">Daily at Midnight (00:00)</option>
           <option value="0 * * * *">Hourly</option>
           <option value="*/15 * * * *">Every 15 Minutes</option>
         </select>

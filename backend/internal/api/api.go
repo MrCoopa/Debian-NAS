@@ -146,6 +146,7 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("GET /ui/partials/snapshots", s.handleUIPartialSnapshots)
 		mux.HandleFunc("GET /ui/partials/snapshot-tasks", s.handleUIPartialSnapshotTasks)
 		mux.HandleFunc("GET /ui/partials/network", s.handleUIPartialNetwork)
+		mux.HandleFunc("GET /ui/partials/services", s.handleUIPartialServices)
 		mux.HandleFunc("GET /ui/partials/cloudsync", s.handleUIPartialCloudSync)
 		mux.HandleFunc("GET /ui/partials/modals/create_share", s.handleUIPartialCreateShareModal)
 		mux.HandleFunc("GET /ui/partials/modals/share_users", s.handleUIPartialShareModalUsers)
@@ -1566,12 +1567,20 @@ func (s *Server) handleListCloudJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSaveCloudJob(w http.ResponseWriter, r *http.Request) {
-	var job cloudsync.SyncJob
-	if err := json.NewDecoder(r.Body).Decode(&job); err != nil {
+	var payload struct {
+		cloudsync.SyncJob
+		Enabled *bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload")
 		return
 	}
-	job.Enabled = true
+	job := payload.SyncJob
+	if payload.Enabled != nil {
+		job.Enabled = *payload.Enabled
+	} else {
+		job.Enabled = true
+	}
 	if err := s.cloudsync.SaveJob(&job); err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return

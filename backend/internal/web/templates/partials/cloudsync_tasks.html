@@ -73,7 +73,19 @@
                       <button type="button" class="dropdown-item" hx-post="/ui/actions/cloudsync/run?id={{urlquery $j.ID}}" hx-target="#cloudsync-container" hx-swap="outerHTML" @click="openCloudMenuId = ''" style="width: 100%; display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.85rem; background: none; border: none; color: #fff; font-size: 0.78rem; cursor: pointer;">
                         <span style="color: #00e676;">&#9654;</span> Run Now
                       </button>
-                      <button type="button" class="dropdown-item" @click.stop="openCloudMenuId = ''; openEditCloudSync('{{$j.ID}}', '{{$j.Name}}', '{{$j.Description}}', '{{$j.SourcePath}}', '{{$j.RemoteTarget}}', '{{$j.Direction}}', '{{$j.Schedule}}', '{{$j.BandwidthLimit}}', {{$j.Enabled}})" style="width: 100%; display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.85rem; background: none; border: none; color: #fff; font-size: 0.78rem; cursor: pointer;">
+                      <button type="button" class="dropdown-item"
+                              data-id="{{$j.ID}}"
+                              data-name="{{$j.Name}}"
+                              data-description="{{$j.Description}}"
+                              data-source="{{$j.SourcePath}}"
+                              data-target="{{$j.RemoteTarget}}"
+                              data-direction="{{$j.Direction}}"
+                              data-schedule="{{$j.Schedule}}"
+                              data-bandwidth="{{$j.BandwidthLimit}}"
+                              data-enabled="{{$j.Enabled}}"
+                              data-freq="{{$j.FrequencyText}}"
+                              @click.stop="openCloudMenuId = ''; openEditCloudSync($el.dataset.id, $el.dataset.name, $el.dataset.description, $el.dataset.source, $el.dataset.target, $el.dataset.direction, $el.dataset.schedule, $el.dataset.bandwidth, $el.dataset.enabled === 'true', $el.dataset.freq)"
+                              style="width: 100%; display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.85rem; background: none; border: none; color: #fff; font-size: 0.78rem; cursor: pointer;">
                         <span style="color: #40c4ff;">&#9998;</span> Edit
                       </button>
                       <div style="height: 1px; background: #383838; margin: 4px 0;"></div>

@@ -7,30 +7,32 @@
       </template>
     </div>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
-      <button class="btn btn-secondary btn-sm"
-              :disabled="activeDisk.state === 'STANDBY'"
-              @click="htmx.ajax('POST', '/ui/actions/disks/smart-test', { values: { device: activeDisk.path, type: 'short' } })">
+      <button type="button" class="btn btn-secondary btn-sm"
+              :disabled="!activeDisk.path || activeDisk.state === 'STANDBY'"
+              @click="runDrawerDiskAction('/ui/actions/disks/smart-test', { path: activeDisk.path, type: 'short' })">
         SMART Short Test
       </button>
-      <button class="btn btn-secondary btn-sm"
-              :disabled="activeDisk.state === 'STANDBY'"
-              @click="htmx.ajax('POST', '/ui/actions/disks/smart-test', { values: { device: activeDisk.path, type: 'long' } })">
+      <button type="button" class="btn btn-secondary btn-sm"
+              :disabled="!activeDisk.path || activeDisk.state === 'STANDBY'"
+              @click="runDrawerDiskAction('/ui/actions/disks/smart-test', { path: activeDisk.path, type: 'long' })">
         SMART Long Test
       </button>
-      <button class="btn btn-secondary btn-sm"
-              @click="htmx.ajax('POST', '/ui/actions/disks/standby', { values: { device: activeDisk.path } })">
+      <button type="button" class="btn btn-secondary btn-sm"
+              :disabled="!activeDisk.path"
+              @click="runDrawerDiskAction('/ui/actions/disks/standby', { path: activeDisk.path })">
         Force Standby (0W)
       </button>
-      <button class="btn btn-secondary btn-sm"
-              @click="htmx.ajax('POST', '/ui/actions/disks/locate', { values: { device: activeDisk.path } })">
+      <button type="button" class="btn btn-secondary btn-sm"
+              :disabled="!activeDisk.path"
+              @click="runDrawerDiskAction('/ui/actions/disks/locate', { path: activeDisk.path })">
         Toggle Locate LED
       </button>
-      <button class="btn btn-danger btn-sm"
-              :disabled="activeDisk.is_system_disk || Boolean(activeDisk.zfs_pool)"
-              @click="if (confirm('WARNING: Completely wipe disk ' + activeDisk.name + ' (Wipe ZFS labels & GPT)?')) { htmx.ajax('POST', '/ui/actions/disks/wipe', { values: { device: activeDisk.path } }); }">
+      <button type="button" class="btn btn-danger btn-sm"
+              :disabled="!activeDisk.path || activeDisk.is_system_disk || Boolean(activeDisk.zfs_pool)"
+              @click="if (confirm('WARNING: Completely wipe disk ' + activeDisk.name + ' (Wipe ZFS labels & GPT)?')) { runDrawerDiskAction('/ui/actions/disks/wipe', { path: activeDisk.path, confirm_wipe: 'true' }); }">
         Wipe Disk
       </button>
-      <button class="modal-close" style="margin-left: 0.5rem;" @click="drawerOpen = false">&times;</button>
+      <button type="button" class="modal-close" style="margin-left: 0.5rem;" @click="drawerOpen = false">&times;</button>
     </div>
   </div>
 
@@ -59,7 +61,8 @@
       <span class="text-dim" style="display: block; font-size: 0.72rem; margin-bottom: 0.2rem;">Spindown Timeout:</span>
       <select style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: var(--pf-bg-input); border: 1px solid var(--pf-border-color); color: var(--pf-text-primary); border-radius: 4px;"
               x-model="activeDisk.spindown_seconds"
-              @change="htmx.ajax('POST', '/ui/actions/disks/spindown', { values: { device: activeDisk.path, seconds: activeDisk.spindown_seconds } })">
+              :disabled="!activeDisk.path"
+              @change="runDrawerDiskAction('/ui/actions/disks/spindown', { path: activeDisk.path, seconds: activeDisk.spindown_seconds, timeout_minutes: Math.round((Number(activeDisk.spindown_seconds) || 0) / 60) })">
         <option value="0">Disabled (Always On)</option>
         <option value="300">5 Minutes</option>
         <option value="900">15 Minutes (Default)</option>

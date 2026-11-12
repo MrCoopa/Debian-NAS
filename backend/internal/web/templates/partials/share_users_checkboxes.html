@@ -3,7 +3,7 @@
 {{else}}
   {{range $u := .Users}}
     <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.78rem; cursor: pointer;">
-      <input type="checkbox" name="valid_users" value="{{$u.Username}}" :checked="shareForm.users.includes('{{$u.Username}}')">
+      <input type="checkbox" name="valid_users" value="{{$u.Username}}" x-model="shareForm.users">
       <strong class="font-mono text-blue">👤 {{$u.Username}}</strong>
       <span class="text-dim">(nasusers)</span>
     </label>

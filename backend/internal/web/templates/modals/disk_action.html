@@ -17,7 +17,7 @@
         <label>Select New Replacement / Mirror Disk</label>
         <select name="new_device" required
                 hx-get="/ui/partials/modals/available_disks"
-                hx-trigger="poolUpdate from:body, diskUpdate from:body"
+                hx-trigger="poolUpdate from:body, diskUpdate from:body, refreshAvailableDisks from:body"
                 hx-target="this"
                 hx-swap="innerHTML">
           {{template "partials/available_disks_options.html" .}}
