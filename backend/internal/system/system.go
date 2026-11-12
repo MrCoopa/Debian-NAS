@@ -464,6 +464,26 @@ func (c *Collector) collectServices() []ServiceStatus {
 				services[i].Active = true
 			}
 		}
+		// Fallback: smartmontools is often named smartd.service on Debian
+		if services[i].Unit == "smartmontools.service" && !services[i].Active {
+			outSmartd, _ := exec.CommandContext(ctx, "systemctl", "is-active", "smartd.service").Output()
+			if strings.TrimSpace(string(outSmartd)) == "active" {
+				services[i].State = "active"
+				services[i].StateLabel = "Active (non-intrusive)"
+				services[i].BadgeClass = "green"
+				services[i].Active = true
+			}
+		}
+		// Fallback: wsdd may also run as wsdd2.service on some systems
+		if services[i].Unit == "wsdd.service" && !services[i].Active {
+			outWsdd2, _ := exec.CommandContext(ctx, "systemctl", "is-active", "wsdd2.service").Output()
+			if strings.TrimSpace(string(outWsdd2)) == "active" {
+				services[i].State = "active"
+				services[i].StateLabel = "Active (running)"
+				services[i].BadgeClass = "green"
+				services[i].Active = true
+			}
+		}
 	}
 	return services
 }
