@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -300,6 +301,39 @@ func funcMap() template.FuncMap {
 				return "-"
 			}
 		},
+		"nowTime": func() time.Time {
+			return time.Now()
+		},
+		"formatDateTimeSec": func(t time.Time) string {
+			if t.IsZero() {
+				return "-"
+			}
+			return t.Local().Format("2006-01-02 15:04:05")
+		},
+		"timeSubSec": func(t time.Time, sec int) time.Time {
+			return t.Add(-time.Duration(sec) * time.Second)
+		},
+		"calcTempY": func(tempC int, height float64) float64 {
+			if tempC <= 0 {
+				return height - 4.0
+			}
+			maxTemp := 50.0
+			val := float64(tempC)
+			if val > maxTemp {
+				val = maxTemp
+			}
+			return height - ((val / maxTemp) * (height - 8.0)) - 4.0
+		},
+		"safeTempC": func(v interface{}) int {
+			if v == nil {
+				return 35
+			}
+			t := int(toFloat64(v))
+			if t <= 0 {
+				return 35
+			}
+			return t
+		},
 		"lower":     strings.ToLower,
 		"upper":     strings.ToUpper,
 		"join":      strings.Join,
@@ -525,6 +559,299 @@ func funcMap() template.FuncMap {
 				}
 			}
 			return nil
+		},
+		"deviceReadHistory": func(io interface{}) []float64 {
+			if io == nil {
+				return nil
+			}
+			v := reflect.ValueOf(io)
+			if v.Kind() == reflect.Ptr {
+				if v.IsNil() {
+					return nil
+				}
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.Struct {
+				f := v.FieldByName("ReadHistory")
+				if f.IsValid() {
+					if s, ok := f.Interface().([]float64); ok {
+						return s
+					}
+				}
+			} else if v.Kind() == reflect.Map {
+				m := v.MapIndex(reflect.ValueOf("ReadHistory"))
+				if m.IsValid() {
+					if s, ok := m.Interface().([]float64); ok {
+						return s
+					}
+				}
+			}
+			return nil
+		},
+		"deviceWriteHistory": func(io interface{}) []float64 {
+			if io == nil {
+				return nil
+			}
+			v := reflect.ValueOf(io)
+			if v.Kind() == reflect.Ptr {
+				if v.IsNil() {
+					return nil
+				}
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.Struct {
+				f := v.FieldByName("WriteHistory")
+				if f.IsValid() {
+					if s, ok := f.Interface().([]float64); ok {
+						return s
+					}
+				}
+			} else if v.Kind() == reflect.Map {
+				m := v.MapIndex(reflect.ValueOf("WriteHistory"))
+				if m.IsValid() {
+					if s, ok := m.Interface().([]float64); ok {
+						return s
+					}
+				}
+			}
+			return nil
+		},
+		"deviceMaxRead": func(io interface{}) float64 {
+			if io == nil {
+				return 0.0
+			}
+			v := reflect.ValueOf(io)
+			if v.Kind() == reflect.Ptr {
+				if v.IsNil() {
+					return 0.0
+				}
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.Struct {
+				f := v.FieldByName("MaxReadMBS")
+				if f.IsValid() {
+					return toFloat64(f.Interface())
+				}
+			} else if v.Kind() == reflect.Map {
+				m := v.MapIndex(reflect.ValueOf("MaxReadMBS"))
+				if m.IsValid() {
+					return toFloat64(m.Interface())
+				}
+			}
+			return 0.0
+		},
+		"deviceMeanRead": func(io interface{}) float64 {
+			if io == nil {
+				return 0.0
+			}
+			v := reflect.ValueOf(io)
+			if v.Kind() == reflect.Ptr {
+				if v.IsNil() {
+					return 0.0
+				}
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.Struct {
+				f := v.FieldByName("MeanReadMBS")
+				if f.IsValid() {
+					return toFloat64(f.Interface())
+				}
+			} else if v.Kind() == reflect.Map {
+				m := v.MapIndex(reflect.ValueOf("MeanReadMBS"))
+				if m.IsValid() {
+					return toFloat64(m.Interface())
+				}
+			}
+			return 0.0
+		},
+		"deviceMaxWrite": func(io interface{}) float64 {
+			if io == nil {
+				return 0.0
+			}
+			v := reflect.ValueOf(io)
+			if v.Kind() == reflect.Ptr {
+				if v.IsNil() {
+					return 0.0
+				}
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.Struct {
+				f := v.FieldByName("MaxWriteMBS")
+				if f.IsValid() {
+					return toFloat64(f.Interface())
+				}
+			} else if v.Kind() == reflect.Map {
+				m := v.MapIndex(reflect.ValueOf("MaxWriteMBS"))
+				if m.IsValid() {
+					return toFloat64(m.Interface())
+				}
+			}
+			return 0.0
+		},
+		"deviceMeanWrite": func(io interface{}) float64 {
+			if io == nil {
+				return 0.0
+			}
+			v := reflect.ValueOf(io)
+			if v.Kind() == reflect.Ptr {
+				if v.IsNil() {
+					return 0.0
+				}
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.Struct {
+				f := v.FieldByName("MeanWriteMBS")
+				if f.IsValid() {
+					return toFloat64(f.Interface())
+				}
+			} else if v.Kind() == reflect.Map {
+				m := v.MapIndex(reflect.ValueOf("MeanWriteMBS"))
+				if m.IsValid() {
+					return toFloat64(m.Interface())
+				}
+			}
+			return 0.0
+		},
+		"formatRateHuman": func(mbPerSec float64) string {
+			if mbPerSec <= 0.00001 {
+				return "0 B/s"
+			}
+			kib := mbPerSec * 1024.0
+			if kib < 1000.0 {
+				return fmt.Sprintf("%.0f KiB/s", kib)
+			}
+			if mbPerSec < 10.0 {
+				return fmt.Sprintf("%.2f MiB/s", mbPerSec)
+			}
+			return fmt.Sprintf("%.1f MiB/s", mbPerSec)
+		},
+		"truenasChartTicks": func(rHist, wHist interface{}) []string {
+			var maxVal float64 = 0.5
+			extractMax := func(v interface{}) {
+				if v == nil {
+					return
+				}
+				if s, ok := v.([]float64); ok {
+					for _, val := range s {
+						if val > maxVal {
+							maxVal = val
+						}
+					}
+				}
+			}
+			extractMax(rHist)
+			extractMax(wHist)
+			maxKiB := maxVal * 1024.0
+			var topTick float64
+			if maxKiB <= 200 {
+				topTick = 200
+			} else if maxKiB <= 400 {
+				topTick = 400
+			} else if maxKiB <= 800 {
+				topTick = 800
+			} else if maxKiB <= 1500 {
+				topTick = 1500
+			} else {
+				topTick = math.Ceil(maxKiB/1000.0) * 1000.0
+			}
+			return []string{
+				fmt.Sprintf("%.0f", topTick),
+				fmt.Sprintf("%.0f", topTick*0.75),
+				fmt.Sprintf("%.0f", topTick*0.5),
+				fmt.Sprintf("%.0f", topTick*0.25),
+				"0",
+			}
+		},
+		"truenasAreaPath": func(values interface{}, maxScaleKiB, width, height float64) string {
+			var vals []float64
+			if values != nil {
+				if s, ok := values.([]float64); ok {
+					vals = s
+				}
+			}
+			if len(vals) < 2 {
+				return fmt.Sprintf("M 0,%.1f L %.1f,%.1f L %.1f,%.1f L 0,%.1f Z", height, width, height, width, height, height)
+			}
+			maxMB := maxScaleKiB / 1024.0
+			if maxMB <= 0 {
+				maxMB = 1.0
+			}
+			step := width / float64(len(vals)-1)
+			var sb strings.Builder
+			for i, v := range vals {
+				x := float64(i) * step
+				clamped := v
+				if clamped > maxMB {
+					clamped = maxMB
+				}
+				y := height - ((clamped / maxMB) * (height - 6.0)) - 3.0
+				if i == 0 {
+					sb.WriteString(fmt.Sprintf("M %.1f,%.1f", x, y))
+				} else {
+					sb.WriteString(fmt.Sprintf(" L %.1f,%.1f", x, y))
+				}
+			}
+			sb.WriteString(fmt.Sprintf(" L %.1f,%.1f L 0,%.1f Z", width, height, height))
+			return sb.String()
+		},
+		"truenasLinePath": func(values interface{}, maxScaleKiB, width, height float64) string {
+			var vals []float64
+			if values != nil {
+				if s, ok := values.([]float64); ok {
+					vals = s
+				}
+			}
+			if len(vals) < 2 {
+				return fmt.Sprintf("M 0,%.1f L %.1f,%.1f", height, width, height)
+			}
+			maxMB := maxScaleKiB / 1024.0
+			if maxMB <= 0 {
+				maxMB = 1.0
+			}
+			step := width / float64(len(vals)-1)
+			var sb strings.Builder
+			for i, v := range vals {
+				x := float64(i) * step
+				clamped := v
+				if clamped > maxMB {
+					clamped = maxMB
+				}
+				y := height - ((clamped / maxMB) * (height - 6.0)) - 3.0
+				if i == 0 {
+					sb.WriteString(fmt.Sprintf("M %.1f,%.1f", x, y))
+				} else {
+					sb.WriteString(fmt.Sprintf(" L %.1f,%.1f", x, y))
+				}
+			}
+			return sb.String()
+		},
+		"truenasMaxScaleKiB": func(rHist, wHist interface{}) float64 {
+			var maxVal float64 = 0.5
+			extractMax := func(v interface{}) {
+				if v == nil {
+					return
+				}
+				if s, ok := v.([]float64); ok {
+					for _, val := range s {
+						if val > maxVal {
+							maxVal = val
+						}
+					}
+				}
+			}
+			extractMax(rHist)
+			extractMax(wHist)
+			maxKiB := maxVal * 1024.0
+			if maxKiB <= 200 {
+				return 200
+			} else if maxKiB <= 400 {
+				return 400
+			} else if maxKiB <= 800 {
+				return 800
+			} else if maxKiB <= 1500 {
+				return 1500
+			}
+			return math.Ceil(maxKiB/1000.0) * 1000.0
 		},
 		"sparklineSVG": func(values interface{}, width, height float64) string {
 			var vals []float64

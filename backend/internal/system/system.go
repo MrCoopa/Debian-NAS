@@ -46,13 +46,19 @@ type SystemStatus struct {
 }
 
 type DeviceIOInfo struct {
-	Device    string    `json:"device"`
-	Name      string    `json:"name"`
-	ReadMBS   float64   `json:"read_mb_s"`
-	WriteMBS  float64   `json:"write_mb_s"`
-	ReadIOPS  int       `json:"read_iops"`
-	WriteIOPS int       `json:"write_iops"`
-	History   []float64 `json:"history"`
+	Device       string    `json:"device"`
+	Name         string    `json:"name"`
+	ReadMBS      float64   `json:"read_mb_s"`
+	WriteMBS     float64   `json:"write_mb_s"`
+	ReadIOPS     int       `json:"read_iops"`
+	WriteIOPS    int       `json:"write_iops"`
+	History      []float64 `json:"history"`
+	ReadHistory  []float64 `json:"read_history"`
+	WriteHistory []float64 `json:"write_history"`
+	MaxReadMBS   float64   `json:"max_read_mb_s"`
+	MeanReadMBS  float64   `json:"mean_read_mb_s"`
+	MaxWriteMBS  float64   `json:"max_write_mb_s"`
+	MeanWriteMBS float64   `json:"mean_write_mb_s"`
 }
 
 type DiskIOInfo struct {
@@ -137,8 +143,10 @@ type Collector struct {
 	lastLinuxDisks map[string]linuxDiskSnapshot
 
 	// History buffer for Disk I/O
-	ioHistory       []float64
-	deviceHistories map[string][]float64
+	ioHistory            []float64
+	deviceHistories      map[string][]float64
+	deviceReadHistories  map[string][]float64
+	deviceWriteHistories map[string][]float64
 
 	// History buffer for Network I/O
 	netRxHistory []float64
@@ -167,9 +175,11 @@ func NewCollector(mockMode bool) *Collector {
 		startTime:       time.Now(),
 		lastNetStat:     make(map[string]netStatSnapshot),
 		lastStatTime:    time.Now(),
-		ioHistory:       make([]float64, 0, 30),
-		deviceHistories: make(map[string][]float64),
-		lastLinuxDisks:  make(map[string]linuxDiskSnapshot),
+		ioHistory:            make([]float64, 0, 30),
+		deviceHistories:      make(map[string][]float64),
+		deviceReadHistories:  make(map[string][]float64),
+		deviceWriteHistories: make(map[string][]float64),
+		lastLinuxDisks:       make(map[string]linuxDiskSnapshot),
 		netRxHistory:    make([]float64, 0, 30),
 		netTxHistory:    make([]float64, 0, 30),
 		arcStatsPath:    defaultArcStatsPath,
@@ -361,22 +371,34 @@ func (c *Collector) getMockStatus(daemonMB float64) *SystemStatus {
 			History:   []float64{2.0, 4.5, 8.0, 15.2, 22.0, 18.5, 14.2},
 			Devices: map[string]*DeviceIOInfo{
 				"sda": {
-					Device:    "sda",
-					Name:      "/dev/sda",
-					ReadMBS:   11.4,
-					WriteMBS:  4.2,
-					ReadIOPS:  95,
-					WriteIOPS: 38,
-					History:   []float64{1.0, 3.2, 6.0, 12.0, 15.6, 11.4},
+					Device:       "sda",
+					Name:         "/dev/sda",
+					ReadMBS:      11.4,
+					WriteMBS:     4.2,
+					ReadIOPS:     95,
+					WriteIOPS:    38,
+					History:      []float64{1.0, 3.2, 6.0, 12.0, 15.6, 11.4},
+					ReadHistory:  []float64{0.2, 0.8, 3.5, 7.2, 11.4, 8.5, 11.4},
+					WriteHistory: []float64{0.8, 2.4, 2.5, 4.8, 4.2, 2.9, 4.2},
+					MaxReadMBS:   11.4,
+					MeanReadMBS:  6.1,
+					MaxWriteMBS:  4.8,
+					MeanWriteMBS: 3.1,
 				},
 				"sdb": {
-					Device:    "sdb",
-					Name:      "/dev/sdb",
-					ReadMBS:   2.8,
-					WriteMBS:  4.5,
-					ReadIOPS:  25,
-					WriteIOPS: 26,
-					History:   []float64{1.0, 1.3, 2.0, 3.2, 6.4, 7.3},
+					Device:       "sdb",
+					Name:         "/dev/sdb",
+					ReadMBS:      2.8,
+					WriteMBS:     4.5,
+					ReadIOPS:     25,
+					WriteIOPS:    26,
+					History:      []float64{1.0, 1.3, 2.0, 3.2, 6.4, 7.3},
+					ReadHistory:  []float64{0.1, 0.3, 0.5, 1.1, 2.8, 1.9, 2.8},
+					WriteHistory: []float64{0.9, 1.0, 1.5, 2.1, 3.6, 5.4, 4.5},
+					MaxReadMBS:   2.8,
+					MeanReadMBS:  1.3,
+					MaxWriteMBS:  5.4,
+					MeanWriteMBS: 2.7,
 				},
 			},
 		},
@@ -575,14 +597,57 @@ func (c *Collector) readLinuxDiskIO(deltaSec float64) (float64, float64, int, in
 			}
 			c.deviceHistories[dev] = hist
 
+			rHist := c.deviceReadHistories[dev]
+			rHist = append(rHist, devReadMB)
+			if len(rHist) > 30 {
+				rHist = rHist[len(rHist)-30:]
+			}
+			c.deviceReadHistories[dev] = rHist
+
+			wHist := c.deviceWriteHistories[dev]
+			wHist = append(wHist, devWriteMB)
+			if len(wHist) > 30 {
+				wHist = wHist[len(wHist)-30:]
+			}
+			c.deviceWriteHistories[dev] = wHist
+
+			var maxR, sumR, maxW, sumW float64
+			for _, v := range rHist {
+				if v > maxR {
+					maxR = v
+				}
+				sumR += v
+			}
+			var meanR float64
+			if len(rHist) > 0 {
+				meanR = sumR / float64(len(rHist))
+			}
+
+			for _, v := range wHist {
+				if v > maxW {
+					maxW = v
+				}
+				sumW += v
+			}
+			var meanW float64
+			if len(wHist) > 0 {
+				meanW = sumW / float64(len(wHist))
+			}
+
 			devMap[dev] = &DeviceIOInfo{
-				Device:    dev,
-				Name:      "/dev/" + dev,
-				ReadMBS:   devReadMB,
-				WriteMBS:  devWriteMB,
-				ReadIOPS:  devRIOPS,
-				WriteIOPS: devWIOPS,
-				History:   hist,
+				Device:       dev,
+				Name:         "/dev/" + dev,
+				ReadMBS:      devReadMB,
+				WriteMBS:     devWriteMB,
+				ReadIOPS:     devRIOPS,
+				WriteIOPS:    devWIOPS,
+				History:      hist,
+				ReadHistory:  rHist,
+				WriteHistory: wHist,
+				MaxReadMBS:   maxR,
+				MeanReadMBS:  meanR,
+				MaxWriteMBS:  maxW,
+				MeanWriteMBS: meanW,
 			}
 		}
 		c.lastLinuxDisks[dev] = devCurr
