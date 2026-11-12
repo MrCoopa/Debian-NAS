@@ -22,6 +22,7 @@
 
 <body x-data="{
         currentTab: 'dashboard',
+        reportingTab: 'disk',
         sidebarOpen: false,
         sidebarCollapsed: false,
         openShareModal: false,
@@ -550,7 +551,16 @@
           <span class="omv-nav-chevron">&#10095;</span>
         </button>
 
-        <!-- 9. System -->
+        <!-- 9. Reporting (Analog to TrueNAS) -->
+        <button type="button" class="omv-nav-item" :class="{ 'active': currentTab === 'reporting' }" @click="setTab('reporting')">
+          <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/>
+          </svg>
+          <span class="omv-nav-title">Reporting</span>
+          <span class="omv-nav-chevron">&#10095;</span>
+        </button>
+
+        <!-- 10. System -->
         <button type="button" class="omv-nav-item" :class="{ 'active': currentTab === 'system' }" @click="setTab('system')">
           <svg class="omv-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path
@@ -578,7 +588,7 @@
         </span>
         <span class="omv-crumb-divider">|</span>
         <span class="omv-crumb-title"
-          x-text="currentTab === 'dashboard' ? 'Dashboard' : (currentTab === 'disks' ? 'Disks > Physical Disks & S.M.A.R.T.' : (currentTab === 'pools' ? 'Storage > ZFS Storage Pools' : (currentTab === 'datasets' ? 'Dataset > ZFS Datasets & Volumes' : (currentTab === 'shares' ? 'Shares > SMB & NFS Network Shares' : (currentTab === 'users' ? 'User > Storage Users' : (currentTab === 'protection' ? 'Data Protection > Snapshots & Scrub' : (currentTab === 'services' ? 'Services > Core System Services' : 'System > Host & Network')))))))">Dashboard</span>
+          x-text="currentTab === 'dashboard' ? 'Dashboard' : (currentTab === 'disks' ? 'Disks > Physical Disks & S.M.A.R.T.' : (currentTab === 'pools' ? 'Storage > ZFS Storage Pools' : (currentTab === 'datasets' ? 'Dataset > ZFS Datasets & Volumes' : (currentTab === 'shares' ? 'Shares > SMB & NFS Network Shares' : (currentTab === 'users' ? 'User > Storage Users' : (currentTab === 'protection' ? 'Data Protection > Snapshots & Scrub' : (currentTab === 'services' ? 'Services > Core System Services' : (currentTab === 'reporting' ? 'Reporting > Disk I/O & System Telemetry' : 'System > Host & Network'))))))))">Dashboard</span>
       </div>
 
       <main class="omv-main-content">
@@ -693,7 +703,22 @@
           {{template "partials/services_list.html" .}}
         </section>
 
-        <!-- 9. SYSTEM & NETWORK -->
+        <!-- 9. REPORTING (ANALOG TO TRUENAS) -->
+        <section class="tab-pane" :class="{ 'active': currentTab === 'reporting' }" x-show="currentTab === 'reporting'"
+          x-cloak>
+          <div class="page-header">
+            <div class="page-title-group">
+              <h1>System Reporting &amp; Hardware Analytics</h1>
+              <p class="page-subtitle" style="margin: 0.2rem 0 0; color: #9ca3af; font-size: 0.85rem;">
+                Real-time disk throughput, I/O operations and telemetry across all installed physical storage devices
+              </p>
+            </div>
+          </div>
+
+          {{template "partials/reporting.html" .}}
+        </section>
+
+        <!-- 10. SYSTEM & NETWORK -->
         <section class="tab-pane" :class="{ 'active': currentTab === 'system' }" x-show="currentTab === 'system'"
           x-cloak>
           <div class="page-header">

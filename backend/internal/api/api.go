@@ -157,6 +157,7 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("GET /ui/partials/arc", s.handleUIPartialArc)
 		mux.HandleFunc("GET /ui/partials/arc-stats", s.handleUIPartialArcStats)
 		mux.HandleFunc("GET /ui/partials/services", s.handleUIPartialServices)
+		mux.HandleFunc("GET /ui/partials/reporting", s.handleUIPartialReporting)
 		mux.HandleFunc("GET /ui/partials/cloudsync", s.handleUIPartialCloudSync)
 		mux.HandleFunc("GET /ui/partials/modals/create_share", s.handleUIPartialCreateShareModal)
 		mux.HandleFunc("GET /ui/partials/modals/share_users", s.handleUIPartialShareModalUsers)

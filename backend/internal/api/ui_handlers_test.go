@@ -113,6 +113,8 @@ func TestUI_RootAndPartials(t *testing.T) {
 		"/ui/partials/users",
 		"/ui/partials/snapshots",
 		"/ui/partials/network",
+		"/ui/partials/services",
+		"/ui/partials/reporting",
 		"/ui/partials/cloudsync",
 		"/ui/partials/modals/snap_datasets",
 	}

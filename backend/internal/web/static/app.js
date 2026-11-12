@@ -14,6 +14,7 @@ console.log("Debian Storage Appliance: Go + HTMX + Alpine.js initialized.");
     users: { id: "users-container", event: "userUpdate" },
     protection: { id: "snapshots-container", event: "snapshotUpdate" },
     services: { id: "services-container", event: "nasRefresh" },
+    reporting: { id: "reporting-container", event: "nasRefresh" },
     system: { id: "network-container", event: "nasRefresh" }
   };
 

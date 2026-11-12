@@ -389,6 +389,202 @@ func funcMap() template.FuncMap {
 			}
 			return dict, nil
 		},
+		"getDeviceIO": func(devices interface{}, name string) interface{} {
+			if devices == nil {
+				return nil
+			}
+			v := reflect.ValueOf(devices)
+			if v.Kind() == reflect.Map {
+				elem := v.MapIndex(reflect.ValueOf(name))
+				if elem.IsValid() {
+					return elem.Interface()
+				}
+			}
+			return nil
+		},
+		"deviceReadMB": func(io interface{}) float64 {
+			if io == nil {
+				return 0.0
+			}
+			v := reflect.ValueOf(io)
+			if v.Kind() == reflect.Ptr {
+				if v.IsNil() {
+					return 0.0
+				}
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.Struct {
+				f := v.FieldByName("ReadMBS")
+				if f.IsValid() {
+					return toFloat64(f.Interface())
+				}
+			} else if v.Kind() == reflect.Map {
+				m := v.MapIndex(reflect.ValueOf("ReadMBS"))
+				if m.IsValid() {
+					return toFloat64(m.Interface())
+				}
+			}
+			return 0.0
+		},
+		"deviceWriteMB": func(io interface{}) float64 {
+			if io == nil {
+				return 0.0
+			}
+			v := reflect.ValueOf(io)
+			if v.Kind() == reflect.Ptr {
+				if v.IsNil() {
+					return 0.0
+				}
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.Struct {
+				f := v.FieldByName("WriteMBS")
+				if f.IsValid() {
+					return toFloat64(f.Interface())
+				}
+			} else if v.Kind() == reflect.Map {
+				m := v.MapIndex(reflect.ValueOf("WriteMBS"))
+				if m.IsValid() {
+					return toFloat64(m.Interface())
+				}
+			}
+			return 0.0
+		},
+		"deviceReadIOPS": func(io interface{}) int64 {
+			if io == nil {
+				return 0
+			}
+			v := reflect.ValueOf(io)
+			if v.Kind() == reflect.Ptr {
+				if v.IsNil() {
+					return 0
+				}
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.Struct {
+				f := v.FieldByName("ReadIOPS")
+				if f.IsValid() {
+					return int64(toFloat64(f.Interface()))
+				}
+			} else if v.Kind() == reflect.Map {
+				m := v.MapIndex(reflect.ValueOf("ReadIOPS"))
+				if m.IsValid() {
+					return int64(toFloat64(m.Interface()))
+				}
+			}
+			return 0
+		},
+		"deviceWriteIOPS": func(io interface{}) int64 {
+			if io == nil {
+				return 0
+			}
+			v := reflect.ValueOf(io)
+			if v.Kind() == reflect.Ptr {
+				if v.IsNil() {
+					return 0
+				}
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.Struct {
+				f := v.FieldByName("WriteIOPS")
+				if f.IsValid() {
+					return int64(toFloat64(f.Interface()))
+				}
+			} else if v.Kind() == reflect.Map {
+				m := v.MapIndex(reflect.ValueOf("WriteIOPS"))
+				if m.IsValid() {
+					return int64(toFloat64(m.Interface()))
+				}
+			}
+			return 0
+		},
+		"deviceHistory": func(io interface{}) []float64 {
+			if io == nil {
+				return nil
+			}
+			v := reflect.ValueOf(io)
+			if v.Kind() == reflect.Ptr {
+				if v.IsNil() {
+					return nil
+				}
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.Struct {
+				f := v.FieldByName("History")
+				if f.IsValid() {
+					if s, ok := f.Interface().([]float64); ok {
+						return s
+					}
+				}
+			} else if v.Kind() == reflect.Map {
+				m := v.MapIndex(reflect.ValueOf("History"))
+				if m.IsValid() {
+					if s, ok := m.Interface().([]float64); ok {
+						return s
+					}
+				}
+			}
+			return nil
+		},
+		"sparklineSVG": func(values interface{}, width, height float64) string {
+			var vals []float64
+			if values != nil {
+				if s, ok := values.([]float64); ok {
+					vals = s
+				}
+			}
+			if len(vals) < 2 {
+				return fmt.Sprintf("M 0,%.1f L %.1f,%.1f", height, width, height)
+			}
+			maxVal := 1.0
+			for _, v := range vals {
+				if v > maxVal {
+					maxVal = v
+				}
+			}
+			step := width / float64(len(vals)-1)
+			var sb strings.Builder
+			for i, v := range vals {
+				x := float64(i) * step
+				y := height - ((v / maxVal) * (height - 4.0)) - 2.0
+				if i == 0 {
+					sb.WriteString(fmt.Sprintf("M %.1f,%.1f", x, y))
+				} else {
+					sb.WriteString(fmt.Sprintf(" L %.1f,%.1f", x, y))
+				}
+			}
+			return sb.String()
+		},
+		"sparklineFillSVG": func(values interface{}, width, height float64) string {
+			var vals []float64
+			if values != nil {
+				if s, ok := values.([]float64); ok {
+					vals = s
+				}
+			}
+			if len(vals) < 2 {
+				return fmt.Sprintf("M 0,%.1f L %.1f,%.1f L %.1f,%.1f L 0,%.1f Z", height, width, height, width, height, height)
+			}
+			maxVal := 1.0
+			for _, v := range vals {
+				if v > maxVal {
+					maxVal = v
+				}
+			}
+			step := width / float64(len(vals)-1)
+			var sb strings.Builder
+			for i, v := range vals {
+				x := float64(i) * step
+				y := height - ((v / maxVal) * (height - 4.0)) - 2.0
+				if i == 0 {
+					sb.WriteString(fmt.Sprintf("M %.1f,%.1f", x, y))
+				} else {
+					sb.WriteString(fmt.Sprintf(" L %.1f,%.1f", x, y))
+				}
+			}
+			sb.WriteString(fmt.Sprintf(" L %.1f,%.1f L 0,%.1f Z", width, height, height))
+			return sb.String()
+		},
 	}
 }
 

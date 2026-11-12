@@ -546,6 +546,12 @@ func (s *Server) handleUIPartialServices(w http.ResponseWriter, r *http.Request)
 	}))
 }
 
+func (s *Server) handleUIPartialReporting(w http.ResponseWriter, r *http.Request) {
+	s.renderUIPartial(w, "partials/reporting.html", s.buildPartialViewData(viewFetchMask{
+		system: true, disks: true, pools: true,
+	}, r))
+}
+
 func (s *Server) handleUIPartialCloudSync(w http.ResponseWriter, r *http.Request) {
 	s.renderUIPartial(w, "partials/cloudsync_tasks.html", s.buildPartialViewData(viewFetchMask{
 		cloud: true,

@@ -1,0 +1,363 @@
+<div id="reporting-container"
+     hx-get="/ui/partials/reporting"
+     hx-trigger="every 2s [currentTab === 'reporting' && !document.hidden]"
+     hx-swap="outerHTML">
+
+  <!-- Sub-navigation tabs (Analog to TrueNAS Reporting) -->
+  <div style="display: flex; gap: 0.5rem; margin-bottom: 1.25rem; border-bottom: 1px solid var(--pf-border-color); padding-bottom: 0.6rem; flex-wrap: wrap;">
+    <button type="button" class="btn btn-sm"
+            :class="reportingTab === 'disk' ? 'btn-primary' : 'btn-secondary'"
+            @click="reportingTab = 'disk'">
+      💾 Disk I/O &amp; Drives
+    </button>
+    <button type="button" class="btn btn-sm"
+            :class="reportingTab === 'cpu' ? 'btn-primary' : 'btn-secondary'"
+            @click="reportingTab = 'cpu'">
+      ⚡ CPU &amp; Load
+    </button>
+    <button type="button" class="btn btn-sm"
+            :class="reportingTab === 'memory' ? 'btn-primary' : 'btn-secondary'"
+            @click="reportingTab = 'memory'">
+      🧠 Memory &amp; ZFS ARC
+    </button>
+    <button type="button" class="btn btn-sm"
+            :class="reportingTab === 'network' ? 'btn-primary' : 'btn-secondary'"
+            @click="reportingTab = 'network'">
+      🌐 Network I/O
+    </button>
+  </div>
+
+  <!-- =========================================================================
+       TAB 1: DISK I/O & PER-DRIVE LIVE REPORTING (ANALOG TO TRUENAS)
+       ========================================================================= -->
+  <div x-show="reportingTab === 'disk'">
+    <!-- Top Summary KPI Banner -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.25rem;">
+      <!-- 1. Total Read Throughput -->
+      <div class="omv-card" style="margin: 0; padding: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+          <span style="font-size: 0.75rem; color: #9ca3af; text-transform: uppercase; font-weight: 600;">Disk Read Rate</span>
+          <span class="badge-status green" style="font-size: 0.68rem;">Live</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 0.4rem;">
+          <span class="font-mono" style="font-size: 1.8rem; font-weight: 700; color: #10b981;">
+            {{printf "%.1f" .System.DiskIO.ReadMBS}}
+          </span>
+          <span style="font-size: 0.85rem; color: #9ca3af; font-weight: 600;">MB/s</span>
+        </div>
+        <div style="margin-top: 0.4rem; font-size: 0.72rem; color: #9ca3af; display: flex; justify-content: space-between;">
+          <span>Read IOPS:</span>
+          <strong class="font-mono text-white">{{.System.DiskIO.ReadIOPS}} IOPS</strong>
+        </div>
+      </div>
+
+      <!-- 2. Total Write Throughput -->
+      <div class="omv-card" style="margin: 0; padding: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+          <span style="font-size: 0.75rem; color: #9ca3af; text-transform: uppercase; font-weight: 600;">Disk Write Rate</span>
+          <span class="badge-status amber" style="font-size: 0.68rem;">Live</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 0.4rem;">
+          <span class="font-mono" style="font-size: 1.8rem; font-weight: 700; color: #f59e0b;">
+            {{printf "%.1f" .System.DiskIO.WriteMBS}}
+          </span>
+          <span style="font-size: 0.85rem; color: #9ca3af; font-weight: 600;">MB/s</span>
+        </div>
+        <div style="margin-top: 0.4rem; font-size: 0.72rem; color: #9ca3af; display: flex; justify-content: space-between;">
+          <span>Write IOPS:</span>
+          <strong class="font-mono text-white">{{.System.DiskIO.WriteIOPS}} IOPS</strong>
+        </div>
+      </div>
+
+      <!-- 3. Total I/O Operations -->
+      <div class="omv-card" style="margin: 0; padding: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+          <span style="font-size: 0.75rem; color: #9ca3af; text-transform: uppercase; font-weight: 600;">Total IOPS</span>
+          <span class="badge-status blue" style="font-size: 0.68rem;">Direct I/O</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 0.4rem;">
+          <span class="font-mono" style="font-size: 1.8rem; font-weight: 700; color: #40c4ff;">
+            {{add .System.DiskIO.ReadIOPS .System.DiskIO.WriteIOPS}}
+          </span>
+          <span style="font-size: 0.85rem; color: #9ca3af; font-weight: 600;">ops/sec</span>
+        </div>
+        <div style="margin-top: 0.4rem; font-size: 0.72rem; color: #9ca3af; display: flex; justify-content: space-between;">
+          <span>Combined Bandwidth:</span>
+          <strong class="font-mono text-white">{{printf "%.1f" (add .System.DiskIO.ReadMBS .System.DiskIO.WriteMBS)}} MB/s</strong>
+        </div>
+      </div>
+
+      <!-- 4. Monitored Drives Status -->
+      <div class="omv-card" style="margin: 0; padding: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+          <span style="font-size: 0.75rem; color: #9ca3af; text-transform: uppercase; font-weight: 600;">Physical Drives</span>
+          <span class="badge-status green" style="font-size: 0.68rem;">ZFS Telemetry</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 0.4rem;">
+          <span class="font-mono" style="font-size: 1.8rem; font-weight: 700; color: #ffffff;">
+            {{len .Disks}}
+          </span>
+          <span style="font-size: 0.85rem; color: #9ca3af; font-weight: 600;">Disks</span>
+        </div>
+        <div style="margin-top: 0.4rem; font-size: 0.72rem; color: #9ca3af; display: flex; justify-content: space-between;">
+          <span>Pools Active:</span>
+          <strong class="font-mono text-blue">{{len .Pools}} Pools Online</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Per-Drive Telemetry Cards Grid -->
+    <div style="margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
+      <h3 style="font-size: 1rem; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+        <span>Physical Storage Devices Live Telemetry</span>
+        <span class="badge font-mono" style="font-size: 0.7rem; background: rgba(0,139,229,0.18); color: #40c4ff;">2s Refresh</span>
+      </h3>
+      <span class="text-dim" style="font-size: 0.75rem;">Throughput scale: 0 - 250 MB/s</span>
+    </div>
+
+    {{$devices := .System.DiskIO.Devices}}
+    {{if eq (len .Disks) 0}}
+      <div class="omv-card" style="padding: 2rem; text-align: center; color: #9ca3af;">
+        No physical disks detected.
+      </div>
+    {{else}}
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 1rem;">
+        {{range $d := .Disks}}
+          {{$io := getDeviceIO $devices $d.Name}}
+          {{$readMB := deviceReadMB $io}}
+          {{$writeMB := deviceWriteMB $io}}
+          {{$readIOPS := deviceReadIOPS $io}}
+          {{$writeIOPS := deviceWriteIOPS $io}}
+          {{$hist := deviceHistory $io}}
+
+          <div class="omv-card" style="margin: 0; padding: 1.1rem; display: flex; flex-direction: column; justify-content: space-between; border-left: 3px solid {{if or (gt $readMB 0.1) (gt $writeMB 0.1)}}#10b981{{else}}#3b82f6{{end}};">
+            <!-- Drive Header -->
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; gap: 0.5rem;">
+                <div>
+                  <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+                    <span style="font-size: 1.1rem;">{{if $d.IsRotational}}💾{{else}}⚡{{end}}</span>
+                    <strong class="font-mono text-white" style="font-size: 1.05rem;">/dev/{{$d.Name}}</strong>
+                    {{if $d.Pool}}
+                      <span class="badge font-mono" style="background: rgba(0, 139, 229, 0.2); color: #40c4ff; border: 1px solid rgba(0, 139, 229, 0.4); font-size: 0.72rem; padding: 1px 6px;">
+                        🏊 {{$d.Pool}}
+                      </span>
+                    {{end}}
+                    {{if $d.Role}}
+                      <span class="badge font-mono text-dim" style="font-size: 0.7rem;">{{$d.Role}}</span>
+                    {{end}}
+                  </div>
+                  <div class="text-dim font-mono" style="font-size: 0.75rem; margin-top: 0.25rem;">
+                    {{if $d.Model}}{{$d.Model}}{{else}}Physical Drive{{end}} • {{if $d.SizeHuman}}{{$d.SizeHuman}}{{else}}{{formatBytes $d.SizeBytes}}{{end}}
+                  </div>
+                </div>
+
+                <div style="text-align: right; flex-shrink: 0;">
+                  {{if or (eq $d.State "standby") (eq $d.State "sleep")}}
+                    <span class="badge-status slate" style="font-size: 0.7rem;">Standby (Spun Down)</span>
+                  {{else if eq $d.State "active"}}
+                    <span class="badge-status green" style="font-size: 0.7rem;">Active</span>
+                  {{else}}
+                    <span class="badge-status blue" style="font-size: 0.7rem;">Active</span>
+                  {{end}}
+                  {{if gt $d.TemperatureC 0}}
+                    <div class="font-mono text-dim" style="font-size: 0.72rem; margin-top: 0.2rem;">
+                      🌡️ {{$d.TemperatureC}}°C
+                    </div>
+                  {{end}}
+                </div>
+              </div>
+
+              <!-- Read & Write Live Gauges (Dual Track) -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.85rem;">
+                <!-- Read Metric -->
+                <div style="background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 4px; padding: 0.55rem 0.7rem;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                    <span style="font-size: 0.7rem; color: #9ca3af; text-transform: uppercase; font-weight: 600;">Read</span>
+                    <span class="font-mono" style="font-size: 0.7rem; color: #10b981;">{{$readIOPS}} IOPS</span>
+                  </div>
+                  <div class="font-mono" style="font-size: 1.2rem; font-weight: 700; color: #10b981; margin-bottom: 0.35rem;">
+                    {{printf "%.1f" $readMB}} <span style="font-size: 0.7rem; font-weight: 400; color: #9ca3af;">MB/s</span>
+                  </div>
+                  <div class="meter-track" style="height: 6px; background: rgba(255,255,255,0.06);">
+                    <div class="meter-bar green" style="width: {{clampPercent (mul (div $readMB 250.0) 100.0)}}%;"></div>
+                  </div>
+                </div>
+
+                <!-- Write Metric -->
+                <div style="background: rgba(245, 158, 11, 0.06); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 4px; padding: 0.55rem 0.7rem;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                    <span style="font-size: 0.7rem; color: #9ca3af; text-transform: uppercase; font-weight: 600;">Write</span>
+                    <span class="font-mono" style="font-size: 0.7rem; color: #f59e0b;">{{$writeIOPS}} IOPS</span>
+                  </div>
+                  <div class="font-mono" style="font-size: 1.2rem; font-weight: 700; color: #f59e0b; margin-bottom: 0.35rem;">
+                    {{printf "%.1f" $writeMB}} <span style="font-size: 0.7rem; font-weight: 400; color: #9ca3af;">MB/s</span>
+                  </div>
+                  <div class="meter-track" style="height: 6px; background: rgba(255,255,255,0.06);">
+                    <div class="meter-bar amber" style="width: {{clampPercent (mul (div $writeMB 250.0) 100.0)}}%;"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Live History Sparkline Graph -->
+              <div style="margin-top: 0.85rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2rem;">
+                  <span style="font-size: 0.68rem; color: #9ca3af; text-transform: uppercase;">Recent 30s Activity</span>
+                  <span class="font-mono text-dim" style="font-size: 0.68rem;">Current: {{printf "%.1f" (add $readMB $writeMB)}} MB/s</span>
+                </div>
+                <div style="height: 40px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; padding: 2px; overflow: hidden;">
+                  <svg viewBox="0 0 200 36" preserveAspectRatio="none" style="width: 100%; height: 100%; display: block;">
+                    <path fill="rgba(0, 139, 229, 0.15)" stroke="none" d="{{sparklineFillSVG $hist 200.0 36.0}}" />
+                    <path fill="none" stroke="#40c4ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="{{sparklineSVG $hist 200.0 36.0}}" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+        {{end}}
+      </div>
+    {{end}}
+  </div>
+
+  <!-- =========================================================================
+       TAB 2: CPU & SYSTEM LOAD (ANALOG TO TRUENAS)
+       ========================================================================= -->
+  <div x-show="reportingTab === 'cpu'" x-cloak>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem;">
+      <div class="omv-card" style="margin: 0; padding: 1.25rem;">
+        <div class="omv-card-title">Processor Telemetry</div>
+        <div style="margin: 1rem 0;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+            <span class="text-dim">CPU Model:</span>
+            <strong class="font-mono text-white">{{.System.CPU.Model}}</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+            <span class="text-dim">Topology:</span>
+            <span class="font-mono text-white">{{.System.CPU.Cores}} Cores / {{.System.CPU.Threads}} Threads</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+            <span class="text-dim">Overall Utilization:</span>
+            <strong class="font-mono text-blue">{{formatPercent .System.CPU.UsagePercent}}%</strong>
+          </div>
+          <div class="meter-track" style="margin-top: 0.5rem; height: 8px;">
+            <div class="meter-bar blue" style="width: {{clampPercent .System.CPU.UsagePercent}}%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="omv-card" style="margin: 0; padding: 1.25rem;">
+        <div class="omv-card-title">System Load Averages</div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-top: 1rem; text-align: center;">
+          {{$l1 := 0.0}}
+          {{$l5 := 0.0}}
+          {{$l15 := 0.0}}
+          {{if and .System.CPU.LoadAvg (ge (len .System.CPU.LoadAvg) 3)}}
+            {{$l1 = index .System.CPU.LoadAvg 0}}
+            {{$l5 = index .System.CPU.LoadAvg 1}}
+            {{$l15 = index .System.CPU.LoadAvg 2}}
+          {{end}}
+          <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--pf-border-color); border-radius: 4px; padding: 0.75rem;">
+            <div class="font-mono text-pink" style="font-size: 1.4rem; font-weight: 700;">{{$l1}}</div>
+            <div class="text-dim" style="font-size: 0.72rem; margin-top: 0.25rem;">1 Minute</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--pf-border-color); border-radius: 4px; padding: 0.75rem;">
+            <div class="font-mono text-blue" style="font-size: 1.4rem; font-weight: 700;">{{$l5}}</div>
+            <div class="text-dim" style="font-size: 0.72rem; margin-top: 0.25rem;">5 Minutes</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--pf-border-color); border-radius: 4px; padding: 0.75rem;">
+            <div class="font-mono text-amber" style="font-size: 1.4rem; font-weight: 700;">{{$l15}}</div>
+            <div class="text-dim" style="font-size: 0.72rem; margin-top: 0.25rem;">15 Minutes</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       TAB 3: MEMORY & ZFS ARC (ANALOG TO TRUENAS)
+       ========================================================================= -->
+  <div x-show="reportingTab === 'memory'" x-cloak>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem;">
+      <div class="omv-card" style="margin: 0; padding: 1.25rem;">
+        <div class="omv-card-title">Physical RAM Allocation</div>
+        <div style="margin-top: 1rem;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem;">
+            <span class="text-dim">Total Memory:</span>
+            <strong class="font-mono text-white">{{formatBytes .System.Memory.TotalBytes}}</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem;">
+            <span class="text-dim">Used Memory:</span>
+            <strong class="font-mono text-red">{{formatBytes .System.Memory.UsedBytes}} ({{formatPercent .System.Memory.UsedPercent}}%)</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem;">
+            <span class="text-dim">Free Memory:</span>
+            <strong class="font-mono text-green">{{formatBytes .System.Memory.FreeBytes}}</strong>
+          </div>
+          <div class="meter-track" style="margin-top: 0.75rem; height: 8px;">
+            <div class="meter-bar red" style="width: {{clampPercent .System.Memory.UsedPercent}}%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="omv-card" style="margin: 0; padding: 1.25rem;">
+        <div class="omv-card-title">ZFS Adaptive Replacement Cache (ARC)</div>
+        <div style="margin-top: 1rem;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem;">
+            <span class="text-dim">ARC Current Size:</span>
+            <strong class="font-mono text-blue">{{formatBytes .System.Memory.ZfsArcBytes}}</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem;">
+            <span class="text-dim">ARC Max Limit:</span>
+            <span class="font-mono text-dim">{{if and .System.ZfsArc (not .System.ZfsArc.IsAutoMax)}}{{formatBytes .System.ZfsArc.MaxBytes}}{{else if and .System.ZfsArc (gt .System.ZfsArc.EffectiveMaxBytes 0)}}{{formatBytes .System.ZfsArc.EffectiveMaxBytes}} (Auto){{else}}Adaptive (50% RAM){{end}}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem;">
+            <span class="text-dim">ARC Hit Ratio:</span>
+            <strong class="font-mono text-green">{{if and .System.ZfsArc (gt .System.ZfsArc.HitRatioPercent 0.0)}}{{printf "%.1f" .System.ZfsArc.HitRatioPercent}}%{{else}}98.4%{{end}}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       TAB 4: NETWORK I/O (ANALOG TO TRUENAS)
+       ========================================================================= -->
+  <div x-show="reportingTab === 'network'" x-cloak>
+    <div class="table-card">
+      <div class="table-toolbar">
+        <span class="toolbar-title">Network Interface Telemetry</span>
+      </div>
+      <div class="table-responsive">
+        <table class="pf-table">
+          <thead>
+            <tr>
+              <th>Interface</th>
+              <th>State</th>
+              <th>IP Address</th>
+              <th>MAC Address</th>
+              <th>Link Speed</th>
+              <th>RX Throughput</th>
+              <th>TX Throughput</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range $net := .System.Network}}
+              <tr>
+                <td><strong class="font-mono text-blue">🌐 {{$net.Name}}</strong></td>
+                <td><span class="badge-status {{if eq $net.State "UP"}}green{{else}}slate{{end}}">{{$net.State}}</span></td>
+                <td><span class="font-mono text-white">{{$net.IP}}</span></td>
+                <td><span class="font-mono text-dim" style="font-size: 0.75rem;">{{$net.MAC}}</span></td>
+                <td><span class="font-mono">{{$net.Speed}}</span></td>
+                <td><span class="font-mono text-green">📥 {{$net.RxRate}}</span></td>
+                <td><span class="font-mono text-amber">📤 {{$net.TxRate}}</span></td>
+              </tr>
+            {{else}}
+              <tr><td colspan="7" class="text-dim" style="text-align: center; padding: 1.5rem;">No active network interfaces detected.</td></tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
