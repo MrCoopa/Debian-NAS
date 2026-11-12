@@ -31,7 +31,7 @@ Ein kompromisslos schnelles, leichtgewichtiges NAS-Betriebssystem-Frontend und D
   * **Datasets & Zvols:** Dateisysteme und Block-Volumes mit `lz4`/`zstd`-Kompression, Recordsize, Quota und Schreibschutz.
   * **Snapshots & Clones:** Unveränderliche Point-in-Time Schnappschüsse, 1-Klick-Rollback und beschreibbare Klone.
 * **Dateifreigaben & Benutzerverwaltung:**
-  * **Samba (SMB):** Inklusive nativer Windows-Netzwerkerkennung (`wsdd`), macOS Time Machine-Unterstützung und Multi-User-Zuordnung (Gast-Zugriff vs. eingeschränkte Benutzer).
+  * **Samba (SMB):** Inklusive nativer Windows-Netzwerkerkennung (`wsdd2` / `wsdd`), macOS Time Machine-Unterstützung und Multi-User-Zuordnung (Gast-Zugriff vs. eingeschränkte Benutzer).
   * **NFS Kernel Server:** Hohe I/O-Performance für Linux-Clients, Proxmox VE und Virtualisierung.
 * **Cloud Sync (Rclone Engine):**
   * Zeitgesteuerte oder manuelle Synchronisation zu Backblaze B2, Google Drive, OneDrive, S3, WebDAV und Nextcloud.
@@ -99,7 +99,7 @@ sudo ./debian/install.sh
 
 Das Skript:
 1. Aktiviert `contrib` und `non-free-firmware` in den Paketquellen.
-2. Installiert `zfsutils-linux`, `samba`, `wsdd`, `nfs-kernel-server`, `hd-idle`, `smartmontools`, `fio` und `rclone`.
+2. Installiert `zfsutils-linux`, `samba`, `wsdd2` (bzw. `wsdd`), `nfs-kernel-server`, `hd-idle`, `smartmontools`, `fio` und `rclone`.
 3. Kompiliert die statische Go-Binärdatei nach `/opt/debian-nas/bin/nasd` (Symlink `/usr/local/bin/nasd`).
 4. Konfiguriert Samba mit `/etc/samba/nas-shares.conf` und Windows-Discovery.
 5. Richtet den Systemd-Service `nasd.service` ein und startet ihn sofort.

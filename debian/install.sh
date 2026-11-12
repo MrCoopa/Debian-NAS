@@ -48,8 +48,9 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
   rclone \
   golang-go
 
-# Optional hardware & Windows 10/11 Network Discovery (wsdd) tools
-DEBIAN_FRONTEND=noninteractive apt-get install -y hd-idle ledmon wsdd || DEBIAN_FRONTEND=noninteractive apt-get install -y hd-idle ledmon wsdd-server || true
+# Optional hardware & Windows 10/11 Network Discovery (wsdd2 for Trixie, wsdd for older Debian) tools
+DEBIAN_FRONTEND=noninteractive apt-get install -y wsdd2 || DEBIAN_FRONTEND=noninteractive apt-get install -y wsdd || DEBIAN_FRONTEND=noninteractive apt-get install -y wsdd-server || true
+DEBIAN_FRONTEND=noninteractive apt-get install -y hd-idle ledmon || true
 
 echo "[+] 3/6: System-Optimierungen für HDD-Standby & ZFS..."
 # 0. Gruppe nasusers für Samba/NAS-Speicherzugriffe anlegen
@@ -89,7 +90,8 @@ EOF
 fi
 
 systemctl restart smbd nmbd || true
-systemctl restart wsdd 2>/dev/null || systemctl restart wsdd-server 2>/dev/null || true
+systemctl enable --now wsdd2 2>/dev/null || systemctl enable --now wsdd 2>/dev/null || systemctl enable --now wsdd-server 2>/dev/null || true
+systemctl restart wsdd2 2>/dev/null || systemctl restart wsdd 2>/dev/null || systemctl restart wsdd-server 2>/dev/null || true
 
 # 2. NFS Exports Ordner
 mkdir -p /etc/exports.d
@@ -105,6 +107,14 @@ START_HD_IDLE=true
 HD_IDLE_OPTS="-i 900 -l /var/log/hd-idle.log"
 EOF
 systemctl enable --now hd-idle || true
+
+# 5. smartmontools / smartd mit -n standby (Festplatten nicht aus Standby wecken) aktivieren
+if [ -f /etc/smartd.conf ]; then
+  if grep -q "^DEVICESCAN" /etc/smartd.conf && ! grep -q -- "-n standby" /etc/smartd.conf; then
+    sed -i 's/^DEVICESCAN\(.*\)/DEVICESCAN\1 -n standby/' /etc/smartd.conf || true
+  fi
+fi
+systemctl enable --now smartd 2>/dev/null || systemctl enable --now smartmontools 2>/dev/null || true
 
 echo "[+] 4/6: Debian NAS Daemon unter /opt/debian-nas einrichten & kompilieren..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
