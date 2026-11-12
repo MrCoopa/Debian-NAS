@@ -1,50 +1,119 @@
 <div id="snapshots-container" hx-get="/ui/partials/snapshots" hx-trigger="every 8s [currentTab === 'protection' && !document.hidden], snapshotUpdate from:body, snapshotTaskUpdate from:body, datasetUpdate from:body, poolUpdate from:body" hx-swap="outerHTML">
-  <div class="table-card">
-    <div class="table-toolbar" style="flex-wrap: wrap; gap: 0.75rem;">
-      <span class="toolbar-title">OpenZFS Snapshots (Point-in-Time Backups)</span>
-      <div class="toolbar-actions" style="display: flex; align-items: center; gap: 0.5rem;">
-        <input type="text" x-model="snapSearch" placeholder="Filter snapshots..." style="padding: 0.28rem 0.6rem; font-size: 0.78rem; width: 190px; background: #141414; border: 1px solid var(--fn-border-main); border-radius: 3px; color: var(--fn-text-primary);">
-        <button type="button" class="btn btn-primary btn-sm" @click.stop="openCreateSnap('')">+ Take Manual Snapshot</button>
-      </div>
-    </div>
-    <div class="table-responsive">
-    <table class="pf-table">
-      <thead>
-        <tr>
-          <th>Snapshot Name</th>
-          <th>Dataset</th>
-          <th>Referenced Data</th>
-          <th>Used Space</th>
-          <th>Created</th>
-          <th class="col-actions">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {{if eq (len .Snapshots) 0}}
-          <tr><td colspan="6" class="text-dim" style="text-align: center; padding: 1.5rem;">No snapshots found. Snapshots take 0 additional space until data is modified.</td></tr>
-        {{else}}
-          {{range $s := .Snapshots}}
-            <tr id="row-snap-{{domId $s.Name}}" x-show="matchesSnap('{{$s.Name}}', '{{$s.Dataset}}')">
-              <td><strong class="font-mono text-blue">{{$s.Name}}</strong></td>
-              <td><span class="font-mono text-dim">{{$s.Dataset}}</span></td>
-              <td class="font-mono">{{formatBytes $s.ReferencedBytes}}</td>
-              <td class="font-mono text-dim">{{formatBytes $s.UsedBytes}}</td>
-              <td class="font-mono text-dim" style="font-size: 0.78rem;">{{formatTime $s.Created}}</td>
-              <td class="col-actions">
-                <div style="display: flex; gap: 0.35rem; justify-content: flex-end; flex-wrap: wrap;">
-                  <button type="button" class="btn btn-secondary btn-sm" data-snapshot="{{$s.Name}}" hx-post="/ui/actions/zfs/snapshots/rollback" hx-vals='{"snapshot": "{{$s.Name}}"}' hx-confirm="WARNING: Rollback dataset to snapshot '{{$s.Name}}'? All newer data and snapshots on '{{$s.Dataset}}' will be lost!" hx-target="#snapshots-container" hx-swap="outerHTML">Rollback</button>
-                  {{if gt $s.DescendantCount 0}}
-                    <button type="button" class="btn btn-secondary btn-sm" data-snapshot="{{$s.Name}}" hx-post="/ui/actions/zfs/snapshots/rollback" hx-vals='{"snapshot": "{{$s.Name}}", "recursive": "true"}' hx-confirm="WARNING: Recursively rollback '{{$s.Name}}' and {{$s.DescendantCount}} matching child dataset snapshot(s)? All newer data and snapshots across the dataset tree will be lost!" hx-target="#snapshots-container" hx-swap="outerHTML">Rollback Tree</button>
-                  {{end}}
-                  <button type="button" class="btn btn-secondary btn-sm" data-snapshot="{{$s.Name}}" @click.stop="openCloneSnap($el.dataset.snapshot)">Clone</button>
-                  <button type="button" class="btn btn-danger btn-sm" hx-delete="/ui/actions/zfs/snapshots?name={{urlquery $s.Name}}" hx-confirm="Destroy snapshot '{{$s.Name}}'?" hx-target="#snapshots-container" hx-swap="outerHTML">Destroy</button>
-                </div>
-              </td>
-            </tr>
+  {{range $grp := .SnapshotsByPool}}
+    <div class="table-card" style="margin-bottom: 1.5rem;" x-data="{
+        page: 1,
+        pageSize: 10,
+        search: '',
+        allSnaps: [
+          {{range $idx, $s := $grp.Snapshots}}
+            {{if $idx}},{{end}}{ name: '{{$s.Name}}', dataset: '{{$s.Dataset}}' }
           {{end}}
-        {{end}}
-      </tbody>
-    </table>
+        ],
+        get filtered() {
+          if (!this.search || !this.search.trim()) return this.allSnaps;
+          const q = this.search.toLowerCase().trim();
+          return this.allSnaps.filter(s => (s.name && s.name.toLowerCase().includes(q)) || (s.dataset && s.dataset.toLowerCase().includes(q)));
+        },
+        get totalPages() {
+          return Math.max(1, Math.ceil(this.filtered.length / this.pageSize));
+        },
+        get startIdx() {
+          return (this.page - 1) * this.pageSize;
+        },
+        get endIdx() {
+          return Math.min(this.startIdx + this.pageSize, this.filtered.length);
+        },
+        get pageSet() {
+          return new Set(this.filtered.slice(this.startIdx, this.endIdx).map(s => s.name));
+        },
+        isShown(name) {
+          return this.pageSet.has(name);
+        }
+    }">
+      <div class="table-toolbar" style="flex-wrap: wrap; gap: 0.75rem; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <span class="toolbar-title" style="display: flex; align-items: center; gap: 0.5rem;">
+            <span>Pool: <strong class="text-blue">{{$grp.PoolName}}</strong></span>
+            <span class="badge-status {{if eq $grp.Health "ONLINE"}}green{{else}}amber{{end}}" style="font-size: 0.68rem;">{{$grp.Health}}</span>
+          </span>
+          <span class="badge-status" style="font-size: 0.68rem; background: #262626; color: #a0a0a0;" x-text="filtered.length + ' Snapshots'">{{len $grp.Snapshots}} Snapshots</span>
+        </div>
+        <div class="toolbar-actions" style="display: flex; align-items: center; gap: 0.5rem;">
+          <input type="text" x-model="search" @input="page = 1" placeholder="Filter {{$grp.PoolName}}..." style="padding: 0.28rem 0.6rem; font-size: 0.78rem; width: 170px; background: #141414; border: 1px solid var(--fn-border-main, #333); border-radius: 3px; color: var(--fn-text-primary, #fff);">
+          <button type="button" class="btn btn-primary btn-sm" @click.stop="openCreateSnap('{{$grp.PoolName}}')">+ Take Manual Snapshot</button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="pf-table">
+          <thead>
+            <tr>
+              <th>Snapshot Name</th>
+              <th>Dataset</th>
+              <th>Referenced Data</th>
+              <th>Used Space</th>
+              <th>Created</th>
+              <th class="col-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{if not $grp.Snapshots}}
+              <tr>
+                <td colspan="6" class="text-dim" style="text-align: center; padding: 1.5rem;">
+                  No snapshots found for pool '{{$grp.PoolName}}'. Snapshots take 0 additional space until data is modified.
+                </td>
+              </tr>
+            {{else}}
+              <tr x-show="filtered.length === 0" style="display: none;">
+                <td colspan="6" class="text-dim" style="text-align: center; padding: 1.5rem;">
+                  No snapshots match the filter '<span x-text="search"></span>'.
+                </td>
+              </tr>
+              {{range $s := $grp.Snapshots}}
+                <tr id="row-snap-{{domId $s.Name}}" x-show="isShown('{{$s.Name}}')">
+                  <td><strong class="font-mono text-blue">{{$s.Name}}</strong></td>
+                  <td><span class="font-mono text-dim">{{$s.Dataset}}</span></td>
+                  <td class="font-mono">{{formatBytes $s.ReferencedBytes}}</td>
+                  <td class="font-mono text-dim">{{formatBytes $s.UsedBytes}}</td>
+                  <td class="font-mono text-dim" style="font-size: 0.78rem;">{{formatTime $s.Created}}</td>
+                  <td class="col-actions">
+                    <div style="display: flex; gap: 0.35rem; justify-content: flex-end; flex-wrap: wrap;">
+                      <button type="button" class="btn btn-secondary btn-sm" data-snapshot="{{$s.Name}}" hx-post="/ui/actions/zfs/snapshots/rollback" hx-vals='{"snapshot": "{{$s.Name}}"}' hx-confirm="WARNING: Rollback dataset to snapshot '{{$s.Name}}'? All newer data and snapshots on '{{$s.Dataset}}' will be lost!" hx-target="#snapshots-container" hx-swap="outerHTML">Rollback</button>
+                      {{if gt $s.DescendantCount 0}}
+                        <button type="button" class="btn btn-secondary btn-sm" data-snapshot="{{$s.Name}}" hx-post="/ui/actions/zfs/snapshots/rollback" hx-vals='{"snapshot": "{{$s.Name}}", "recursive": "true"}' hx-confirm="WARNING: Recursively rollback '{{$s.Name}}' and {{$s.DescendantCount}} matching child dataset snapshot(s)? All newer data and snapshots across the dataset tree will be lost!" hx-target="#snapshots-container" hx-swap="outerHTML">Rollback Tree</button>
+                      {{end}}
+                      <button type="button" class="btn btn-secondary btn-sm" data-snapshot="{{$s.Name}}" @click.stop="openCloneSnap($el.dataset.snapshot)">Clone</button>
+                      <button type="button" class="btn btn-danger btn-sm" hx-delete="/ui/actions/zfs/snapshots?name={{urlquery $s.Name}}" hx-confirm="Destroy snapshot '{{$s.Name}}'?" hx-target="#snapshots-container" hx-swap="outerHTML">Destroy</button>
+                    </div>
+                  </td>
+                </tr>
+              {{end}}
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+
+      {{if $grp.Snapshots}}
+        <div class="table-pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 1rem; border-top: 1px solid var(--fn-border-main, #262626); background: rgba(0,0,0,0.15); font-size: 0.8rem;" x-show="allSnaps.length > 0">
+          <div class="text-dim">
+            <span x-show="filtered.length > 0">
+              Showing <span class="font-mono text-white" x-text="startIdx + 1"></span> - <span class="font-mono text-white" x-text="endIdx"></span> of <span class="font-mono text-white" x-text="filtered.length"></span> snapshots
+            </span>
+            <span x-show="filtered.length === 0">0 snapshots</span>
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center;" x-show="totalPages > 1">
+            <button type="button" class="btn btn-secondary btn-sm" :disabled="page <= 1" @click="page--">‹ Previous</button>
+            <span class="font-mono" style="font-size: 0.78rem; color: #a0a0a0;">
+              Page <span class="text-white" x-text="page"></span> of <span class="text-white" x-text="totalPages"></span>
+            </span>
+            <button type="button" class="btn btn-secondary btn-sm" :disabled="page >= totalPages" @click="page++">Next ›</button>
+          </div>
+        </div>
+      {{end}}
     </div>
-  </div>
+  {{else}}
+    <div class="table-card" style="padding: 2rem; text-align: center;">
+      <span class="text-dim">No ZFS storage pools or snapshots configured.</span>
+    </div>
+  {{end}}
 </div>

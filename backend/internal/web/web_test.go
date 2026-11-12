@@ -180,6 +180,20 @@ func TestEngine_RenderAll(t *testing.T) {
 				"UsedBytes":       uint64(0),
 			},
 		},
+		"SnapshotsByPool": []map[string]interface{}{
+			{
+				"PoolName": "tank",
+				"Health":   "ONLINE",
+				"Snapshots": []map[string]interface{}{
+					{
+						"Name":            "tank/data@init",
+						"Dataset":         "tank/data",
+						"ReferencedBytes": uint64(500000000),
+						"UsedBytes":       uint64(0),
+					},
+				},
+			},
+		},
 		"Network": []map[string]interface{}{
 			{
 				"Name":        "eth0",

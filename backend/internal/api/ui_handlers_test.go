@@ -1304,5 +1304,37 @@ func TestUI_DiskPowerSettingsDoNotRevertAcrossRenders(t *testing.T) {
 	}
 }
 
+func TestUI_SnapshotsGroupedByPoolAndPagination(t *testing.T) {
+	srv := createTestServer(t)
+	handler := srv.Routes()
+
+	_ = srv.zfs.CreateSnapshot("DATA/apps", "test-snap-01")
+	_ = srv.zfs.CreateSnapshot("DATA/apps", "test-snap-02")
+	_ = srv.zfs.CreateSnapshot("SSD-MIRROR/fast", "test-fast-01")
+
+	req := httptest.NewRequest("GET", "/ui/partials/snapshots", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from /ui/partials/snapshots, got %d", rr.Code)
+	}
+
+	body := rr.Body.String()
+	if !strings.Contains(body, `Pool: <strong class="text-blue">DATA</strong>`) {
+		t.Fatalf("expected pool DATA table in body: %s", body)
+	}
+	if !strings.Contains(body, `Pool: <strong class="text-blue">SSD-MIRROR</strong>`) {
+		t.Fatalf("expected pool SSD-MIRROR table in body: %s", body)
+	}
+	if !strings.Contains(body, "pageSize: 10") {
+		t.Fatalf("expected pageSize 10 in body: %s", body)
+	}
+	if !strings.Contains(body, "table-pagination") {
+		t.Fatalf("expected table-pagination container in body: %s", body)
+	}
+}
+
+
 
 

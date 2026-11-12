@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,12 @@ import (
 	"debian-nas/internal/system"
 	"debian-nas/internal/zfs"
 )
+
+type PoolSnapshotsGroup struct {
+	PoolName  string
+	Health    string
+	Snapshots []*zfs.Snapshot
+}
 
 // ViewData is passed to the root layout and all partials
 type ViewData struct {
@@ -26,7 +33,8 @@ type ViewData struct {
 	SmbShares     []*shares.SmbShare
 	NfsExports    []*shares.NfsExport
 	Users         []shares.StorageUser
-	Snapshots     []*zfs.Snapshot
+	Snapshots       []*zfs.Snapshot
+	SnapshotsByPool []PoolSnapshotsGroup
 	SnapshotTasks []*zfs.SnapshotTask
 	CloudJobs     []*cloudsync.SyncJob
 	CloudRemotes  []cloudsync.Remote
@@ -105,8 +113,48 @@ func (s *Server) buildPartialViewData(mask viewFetchMask, req ...*http.Request) 
 	}
 
 	var snapshots []*zfs.Snapshot
+	var snapshotsByPool []PoolSnapshotsGroup
 	if mask.snapshots && s.zfs != nil {
 		snapshots, _ = s.zfs.ListSnapshots()
+
+		poolMap := make(map[string][]*zfs.Snapshot)
+		var poolOrder []string
+
+		for _, p := range pools {
+			if _, exists := poolMap[p.Name]; !exists {
+				poolMap[p.Name] = []*zfs.Snapshot{}
+				poolOrder = append(poolOrder, p.Name)
+			}
+		}
+
+		for _, snap := range snapshots {
+			pName := snap.Dataset
+			if idx := strings.Index(pName, "/"); idx != -1 {
+				pName = pName[:idx]
+			}
+			if _, exists := poolMap[pName]; !exists {
+				poolMap[pName] = []*zfs.Snapshot{}
+				poolOrder = append(poolOrder, pName)
+			}
+			poolMap[pName] = append(poolMap[pName], snap)
+		}
+
+		sort.Strings(poolOrder)
+
+		for _, pName := range poolOrder {
+			health := "ONLINE"
+			for _, p := range pools {
+				if p.Name == pName {
+					health = string(p.Health)
+					break
+				}
+			}
+			snapshotsByPool = append(snapshotsByPool, PoolSnapshotsGroup{
+				PoolName:  pName,
+				Health:    health,
+				Snapshots: poolMap[pName],
+			})
+		}
 	}
 
 	var snapTasks []*zfs.SnapshotTask
@@ -161,9 +209,10 @@ func (s *Server) buildPartialViewData(mask viewFetchMask, req ...*http.Request) 
 		Datasets:        datasets,
 		SmbShares:     smbShares,
 		NfsExports:    nfsExports,
-		Users:         users,
-		Snapshots:     snapshots,
-		SnapshotTasks: snapTasks,
+		Users:           users,
+		Snapshots:       snapshots,
+		SnapshotsByPool: snapshotsByPool,
+		SnapshotTasks:   snapTasks,
 		CloudJobs:     cloudJobs,
 		CloudRemotes:  cloudRemotes,
 		ZfsVersion:    zfsVer,
@@ -346,6 +395,7 @@ func (s *Server) handleUIPartialUsers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUIPartialSnapshots(w http.ResponseWriter, r *http.Request) {
 	s.renderUIPartial(w, "partials/snapshots_list.html", s.buildPartialViewData(viewFetchMask{
 		snapshots: true,
+		pools:     true,
 	}))
 }
 
