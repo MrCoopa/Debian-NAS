@@ -57,6 +57,7 @@ type DiskInfo struct {
 	VdevType               string    `json:"vdev_type"`                // mirror-0, raidz1, single, unassigned
 	AdvPowerManagement     string    `json:"adv_power_management"`     // "Disabled", "128", etc.
 	IsSystemDisk           bool      `json:"is_system_disk"`           // true = contains OS mount (/ or /boot)
+	LastIOStats            string    `json:"-"`                        // snapshot of /sys/block/<name>/stat to prevent waking standby drives
 	LastStateCheck         time.Time `json:"last_state_check"`
 }
 
@@ -428,6 +429,14 @@ func isManagedBlockDevice(name string) bool {
 		strings.HasPrefix(name, "xvd")
 }
 
+func readBlockDevStat(name string) string {
+	data, err := os.ReadFile(filepath.Join("/sys/block", name, "stat"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
 // linuxBlockDeviceSetChangedLocked reports whether /sys/block managed devices differ from cachedDisks.
 // Caller must hold m.mu.RLock or m.mu.Lock.
 func (m *Manager) linuxBlockDeviceSetChangedLocked() bool {
@@ -435,7 +444,7 @@ func (m *Manager) linuxBlockDeviceSetChangedLocked() bool {
 	if err != nil {
 		return false
 	}
-	count := 0
+	managedCount := 0
 	for _, entry := range entries {
 		name := entry.Name()
 		if !isManagedBlockDevice(name) {
@@ -444,14 +453,15 @@ func (m *Manager) linuxBlockDeviceSetChangedLocked() bool {
 		if _, ok := m.cachedDisks[name]; !ok {
 			return true
 		}
-		count++
+		managedCount++
 	}
+	cachedCount := 0
 	for name := range m.cachedDisks {
 		if isManagedBlockDevice(name) {
-			count--
+			cachedCount++
 		}
 	}
-	return count != 0
+	return managedCount != cachedCount
 }
 
 // ListDisks enumerates all block devices without waking up sleeping HDDs.
@@ -593,11 +603,28 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 		pending := 0
 		smartStatus := "PASSED (Standby Safe)"
 		smartLastTest := ""
+		curIOStat := readBlockDevStat(name)
+		lastIOStat := ""
 
-		if rotational {
+		existing, hasExisting := m.cachedDisks[name]
+		if hasExisting {
+			lastIOStat = existing.LastIOStats
+		}
+
+		if hasExisting && (existing.State == StateStandby || existing.State == StateSleep) && curIOStat != "" && lastIOStat != "" && curIOStat == lastIOStat {
+			// Zero block I/O has occurred since the disk went to standby.
+			// Never ping hardware with smartctl or hdparm, preserve sleeping state!
+			state = existing.State
+			temp = -1
+			smartStatus = existing.SmartStatus
+			smartLastTest = existing.SmartLastTest
+			powerHours = existing.PowerOnHours
+		} else if rotational {
 			state = m.checkStandbySafe(devPath)
 			if state == StateActive {
 				temp, powerHours, realloc, pending, smartStatus, smartLastTest = m.readSmartAttributesSafe(devPath)
+			} else {
+				lastIOStat = curIOStat
 			}
 		} else {
 			state = StateActive
@@ -689,6 +716,7 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 			LocateLed:          locateLed,
 			VdevType:           vdevType,
 			IsSystemDisk:       isSystem,
+			LastIOStats:        lastIOStat,
 			LastStateCheck:     time.Now(),
 		}
 		syncDiskFields(disk)
@@ -1037,6 +1065,7 @@ func (m *Manager) ForceStandby(devPath string) error {
 	target.State = StateStandby
 	target.PowerState = "STANDBY"
 	target.TemperatureC = -1
+	target.LastIOStats = readBlockDevStat(target.Name)
 	target.LastStateCheck = time.Now()
 	return nil
 }
@@ -1151,6 +1180,7 @@ type diskPollSnapshot struct {
 	isRotational bool
 	prevState    DiskState
 	needAPMProbe bool
+	lastIOStats  string
 }
 
 type diskApplyTarget struct {
@@ -1174,6 +1204,7 @@ func (m *Manager) pollDiskStatesOnce() {
 			isRotational: d.IsRotational,
 			prevState:    d.State,
 			needAPMProbe: d.IsRotational && !hasSaved && d.AdvPowerManagement == "",
+			lastIOStats:  d.LastIOStats,
 		})
 	}
 	m.mu.RUnlock()
@@ -1185,6 +1216,21 @@ func (m *Manager) pollDiskStatesOnce() {
 		temp := -1
 		var hours, realloc, pending int
 		var status, lastTest, probedAPM string
+		curIOStat := readBlockDevStat(snap.name)
+
+		if (snap.prevState == StateStandby || snap.prevState == StateSleep) && curIOStat != "" && snap.lastIOStats != "" && curIOStat == snap.lastIOStats {
+			// Zero block I/O has occurred since the disk went to standby.
+			// Never ping hardware with smartctl or hdparm, preserve sleeping state!
+			m.mu.Lock()
+			if d, exists := m.cachedDisks[snap.name]; exists {
+				d.State = snap.prevState
+				d.TemperatureC = -1
+				d.LastStateCheck = time.Now()
+				syncDiskFields(d)
+			}
+			m.mu.Unlock()
+			continue
+		}
 
 		if snap.isRotational {
 			state = m.checkStandbySafe(snap.path)
@@ -1208,6 +1254,9 @@ func (m *Manager) pollDiskStatesOnce() {
 			if !d.LastStateCheck.After(scanStarted) {
 				if snap.isRotational {
 					d.State = state
+				}
+				if state == StateStandby || state == StateSleep {
+					d.LastIOStats = curIOStat
 				}
 				if state == StateActive {
 					if temp > 0 {

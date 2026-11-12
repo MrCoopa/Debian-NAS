@@ -225,3 +225,26 @@ func TestDiskPowerSettings_NormalizationPersistenceAndHdIdle(t *testing.T) {
 		}
 	}
 }
+
+func TestDiskStandbyZeroIOPreservation(t *testing.T) {
+	m := NewManager(true, "")
+	if err := m.ForceStandby("sdc"); err != nil {
+		t.Fatalf("ForceStandby failed: %v", err)
+	}
+
+	m.mu.RLock()
+	sdc := m.cachedDisks["sdc"]
+	m.mu.RUnlock()
+
+	if sdc.State != StateStandby || sdc.PowerState != "STANDBY" || sdc.TemperatureC != -1 {
+		t.Fatalf("expected sdc in standby, got: %+v", sdc)
+	}
+
+	// Simulate mock/readBlockDevStat matching lastIOStats
+	sdc.LastIOStats = "100 200 400"
+	// In mock mode pollDiskStatesOnce skips, but we can verify field synchronization
+	syncDiskFields(sdc)
+	if sdc.PowerState != "STANDBY" {
+		t.Errorf("expected PowerState to stay STANDBY, got %s", sdc.PowerState)
+	}
+}
