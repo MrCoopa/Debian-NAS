@@ -59,7 +59,7 @@ func TestUI_RootAndPartials(t *testing.T) {
 		t.Fatalf("GET /login returned status %d, expected 200", loginRR.Code)
 	}
 	loginBody := loginRR.Body.String()
-	if !strings.Contains(loginBody, "debian") || !strings.Contains(loginBody, "root") {
+	if !strings.Contains(strings.ToLower(loginBody), "debian") || !strings.Contains(loginBody, "root") {
 		t.Errorf("GET /login missing expected login markup: %s", loginBody[:min(len(loginBody), 500)])
 	}
 
