@@ -225,6 +225,16 @@ func (s *Server) Routes() http.Handler {
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			fileServer.ServeHTTP(w, r)
 		})))
+		mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+			if data, err := fs.ReadFile(s.staticFS, "favicon.ico"); err == nil {
+				w.Header().Set("Content-Type", "image/x-icon")
+				w.Header().Set("Cache-Control", "public, max-age=86400")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(data)
+				return
+			}
+			http.NotFound(w, r)
+		})
 	}
 
 	if s.web != nil {

@@ -1358,6 +1358,41 @@ func TestUI_SnapshotsGroupedByPoolAndPagination(t *testing.T) {
 	}
 }
 
+func TestUI_FaviconServed(t *testing.T) {
+	srv := createTestServer(t)
+	handler := srv.Routes()
+
+	// 1. Check /login contains favicon link
+	req := httptest.NewRequest("GET", "/login", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from /login, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), `/static/favicon.svg`) {
+		t.Fatalf("expected /static/favicon.svg in /login head")
+	}
+
+	// 2. Check /favicon.ico returns 200 with image/x-icon
+	icoReq := httptest.NewRequest("GET", "/favicon.ico", nil)
+	icoRR := httptest.NewRecorder()
+	handler.ServeHTTP(icoRR, icoReq)
+	if icoRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from /favicon.ico, got %d", icoRR.Code)
+	}
+	if icoRR.Header().Get("Content-Type") != "image/x-icon" {
+		t.Fatalf("expected Content-Type image/x-icon, got %s", icoRR.Header().Get("Content-Type"))
+	}
+
+	// 3. Check /static/favicon.svg returns 200
+	svgReq := httptest.NewRequest("GET", "/static/favicon.svg", nil)
+	svgRR := httptest.NewRecorder()
+	handler.ServeHTTP(svgRR, svgReq)
+	if svgRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from /static/favicon.svg, got %d", svgRR.Code)
+	}
+}
+
 
 
 
