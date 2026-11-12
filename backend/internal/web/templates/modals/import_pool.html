@@ -14,7 +14,7 @@
       </div>
       <div id="importable-pools-list"
            hx-get="/ui/partials/modals/importable_pools"
-           hx-trigger="poolUpdate from:body, diskUpdate from:body, refreshImportablePools from:body"
+           hx-trigger="refreshImportablePools from:body"
            hx-target="this"
            hx-swap="innerHTML">
         {{template "partials/importable_pools_list.html" .}}

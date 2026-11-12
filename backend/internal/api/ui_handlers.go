@@ -55,7 +55,7 @@ func (s *Server) buildViewData(req ...*http.Request) *ViewData {
 	return s.buildPartialViewData(viewFetchMask{
 		system:        true,
 		pools:         true,
-		importable:    true,
+		importable:    false,
 		disks:         true,
 		datasets:      true,
 		shares:        true,
@@ -1234,7 +1234,7 @@ func (s *Server) handleUIActionForceStandby(w http.ResponseWriter, r *http.Reque
 	if err := s.disks.ForceStandby(path); err != nil {
 		s.setHXTrigger(w, "Standby error: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Drive %s placed in standby mode", path), "success", "diskUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Drive %s placed in standby mode", path), "success")
 	}
 	s.handleUIPartialDisks(w, r)
 }

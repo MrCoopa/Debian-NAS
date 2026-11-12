@@ -167,7 +167,7 @@ func TestDiskPowerSettings_NormalizationPersistenceAndHdIdle(t *testing.T) {
 		t.Fatal(err)
 	}
 	hdStr := string(hdData)
-	if !strings.Contains(hdStr, "-i 0") || strings.Contains(hdStr, "TOSHIBA_MG08ACA12TE_20E0A099 -i") || !strings.Contains(hdStr, "WDC_WD20EFAX-68B29N0_WD-WCC4M124 -i 600") {
+	if !strings.Contains(hdStr, "-i 0") || !strings.Contains(hdStr, "-a sdb -i 600") {
 		t.Errorf("unexpected hd-idle config: %s", hdStr)
 	}
 

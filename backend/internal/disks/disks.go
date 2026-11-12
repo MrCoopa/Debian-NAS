@@ -1709,9 +1709,7 @@ func (m *Manager) syncHdIdleConfigLocked() {
 			continue
 		}
 		targetDev := d.Name
-		if strings.HasPrefix(d.ByIDPath, "/dev/disk/by-id/") {
-			targetDev = d.ByIDPath
-		} else if targetDev == "" {
+		if targetDev == "" {
 			targetDev = strings.TrimPrefix(d.Path, "/dev/")
 		}
 		opts = append(opts, "-a", targetDev, "-i", strconv.Itoa(d.SpindownSeconds))
