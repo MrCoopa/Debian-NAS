@@ -1704,7 +1704,7 @@ func (s *Server) handleUIActionSaveCloudSync(w http.ResponseWriter, r *http.Requ
 		remoteTarget = fmt.Sprintf("%s:%s", remoteCred, strings.TrimPrefix(remotePath, "/"))
 	}
 	if !strings.Contains(remoteTarget, ":") {
-		s.setHXTrigger(w, fmt.Sprintf("Ungültiges Ziel '%s' (Remote-Präfix mit Doppelpunkt fehlt)", remoteTarget), "error")
+		s.setHXTrigger(w, fmt.Sprintf("Invalid destination '%s' (missing remote prefix with colon)", remoteTarget), "error")
 		s.handleUIPartialCloudSync(w, r)
 		return
 	}

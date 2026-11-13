@@ -686,7 +686,7 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 	}
 	if target == "" || !strings.Contains(target, ":") {
 		m.mu.Unlock()
-		return fmt.Errorf("Kein gültiges Cloud-Ziel konfiguriert (Doppelpunkt fehlt, z.B. hetzner:Backup). Bitte Cloud Credential wählen.")
+		return fmt.Errorf("No valid cloud destination configured (missing remote prefix with colon, e.g. hetzner:backup). Please select a Cloud Credential.")
 	}
 
 	if job.EncryptionEnabled && job.EncryptionPassword != "" {
@@ -911,7 +911,7 @@ func (m *Manager) SaveJob(job *SyncJob) error {
 		target = job.RemoteTarget
 	}
 	if job.RemoteCredential == "" && (target == "" || !strings.Contains(target, ":")) {
-		return fmt.Errorf("Kein gültiges Cloud-Ziel angegeben. Bitte wähle ein Cloud Credential aus.")
+		return fmt.Errorf("No valid cloud destination specified. Please select a Cloud Credential.")
 	}
 
 	if job.ID == "" {

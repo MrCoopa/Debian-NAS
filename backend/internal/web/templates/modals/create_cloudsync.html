@@ -59,24 +59,24 @@
             {{template "partials/cloudsync_remotes_options.html" .}}
           </select>
           <span x-show="!cloudSyncForm.remote_credential" class="text-dim" style="font-size: 0.72rem; color: #ffb74d;">
-            ⚠️ Erforderlich: Wähle ein Cloud Credential (z. B. Hetzner). Klicke auf "+ Add Credential", falls noch keines existiert.
+            ⚠️ Required: Select a Cloud Credential (e.g. Hetzner). Click "+ Add Credential" if none exists.
           </span>
         </div>
         <div class="form-group">
           <div style="display: flex; justify-content: space-between; align-items: baseline;">
             <label>Remote Folder / Subpath</label>
             <a href="javascript:void(0)" @click="cloudSyncForm.remote_path = computeDefaultRemotePath(cloudSyncForm.source_path, '')"
-               style="font-size: 0.70rem; color: #40c4ff; text-decoration: none;" title="Auf /backup/<Dataset> zurücksetzen">
-              🔄 Dataset-Pfad
+               style="font-size: 0.70rem; color: #40c4ff; text-decoration: none;" title="Reset to /backup/<Dataset>">
+              🔄 Dataset Path
             </a>
           </div>
           <input type="text" name="remote_path" x-model="cloudSyncForm.remote_path" placeholder="e.g. /backup/SSD-MIRROR/Test">
           <div style="font-size: 0.72rem; color: #a0a0a0; margin-top: 0.35rem;">
-            <span>Ziel: </span>
+            <span>Destination: </span>
             <code style="color: #40c4ff;" x-text="(cloudSyncForm.remote_credential || 'Remote') + ':' + (cloudSyncForm.remote_path || '')"></code>
           </div>
           <div style="font-size: 0.69rem; color: #ffb74d; margin-top: 0.2rem; line-height: 1.35;">
-            💡 Das Ziel spiegelt automatisch das komplette Dataset (<code style="color: #40c4ff;" x-text="computeDefaultRemotePath(cloudSyncForm.source_path, '')"></code>), sodass alle Unterordner exakt erhalten bleiben.
+            💡 Destination automatically mirrors the full dataset hierarchy (<code style="color: #40c4ff;" x-text="computeDefaultRemotePath(cloudSyncForm.source_path, '')"></code>) to preserve all subdirectories.
           </div>
         </div>
       </div>
@@ -86,11 +86,11 @@
         <label style="display: flex; align-items: center; gap: 0.55rem; cursor: pointer; margin-bottom: 0;">
           <input type="checkbox" name="encryption_enabled" x-model="cloudSyncForm.encryption_enabled" value="true" class="disk-checkbox">
           <span style="font-size: 0.85rem; font-weight: 600; color: #a78bfa; display: flex; align-items: center; gap: 0.35rem;">
-            &#128274; Client-Side Encryption aktivieren (AES-256 Rclone Crypt)
+            &#128274; Enable Client-Side Encryption (AES-256 Rclone Crypt)
           </span>
         </label>
         <span class="text-dim" style="display: block; font-size: 0.72rem; color: #999; margin-top: 0.25rem; margin-left: 1.55rem;">
-          Verschlüsselt Daten lokal auf deinem NAS vor dem Upload. Auf dem Cloud-Speicher landen keine Klartextdaten.
+          Encrypts data locally on your NAS before upload. No plaintext files or unencrypted data will be stored in the cloud.
         </span>
 
         <div x-show="cloudSyncForm.encryption_enabled" x-cloak style="margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px dashed rgba(167, 139, 250, 0.25);">
@@ -98,28 +98,28 @@
             <div class="form-group">
               <div style="display: flex; justify-content: space-between; align-items: baseline;">
                 <label>Encryption Password</label>
-                <a href="javascript:void(0)" @click="showCloudPassword = !showCloudPassword" style="font-size: 0.70rem; color: #40c4ff; text-decoration: none;" x-text="showCloudPassword ? '🙈 Verbergen' : '👁️ Anzeigen'"></a>
+                <a href="javascript:void(0)" @click="showCloudPassword = !showCloudPassword" style="font-size: 0.70rem; color: #40c4ff; text-decoration: none;" x-text="showCloudPassword ? '🙈 Hide' : '👁️ Show'"></a>
               </div>
-              <input :type="showCloudPassword ? 'text' : 'password'" name="encryption_password" x-model="cloudSyncForm.encryption_password" placeholder="Passphrase eingeben" :required="cloudSyncForm.encryption_enabled && !isEditingCloudSync">
+              <input :type="showCloudPassword ? 'text' : 'password'" name="encryption_password" x-model="cloudSyncForm.encryption_password" placeholder="Enter passphrase" :required="cloudSyncForm.encryption_enabled && !isEditingCloudSync">
             </div>
             <div class="form-group">
               <div style="display: flex; justify-content: space-between; align-items: baseline;">
                 <label>Master Salt</label>
-                <a href="javascript:void(0)" @click="showCloudPassword = !showCloudPassword" style="font-size: 0.70rem; color: #40c4ff; text-decoration: none;" x-text="showCloudPassword ? '🙈 Verbergen' : '👁️ Anzeigen'"></a>
+                <a href="javascript:void(0)" @click="showCloudPassword = !showCloudPassword" style="font-size: 0.70rem; color: #40c4ff; text-decoration: none;" x-text="showCloudPassword ? '🙈 Hide' : '👁️ Show'"></a>
               </div>
-              <input :type="showCloudPassword ? 'text' : 'password'" name="encryption_salt" x-model="cloudSyncForm.encryption_salt" placeholder="Salt (beliebige Zeichenfolge)">
+              <input :type="showCloudPassword ? 'text' : 'password'" name="encryption_salt" x-model="cloudSyncForm.encryption_salt" placeholder="Salt (optional custom string)">
             </div>
           </div>
           <div class="form-group" style="margin-bottom: 0.25rem;">
-            <label>Filename Encryption (Dateinamen-Verschlüsselung)</label>
+            <label>Filename Encryption</label>
             <select name="filename_encryption" x-model="cloudSyncForm.filename_encryption">
-              <option value="standard">Standard (Dateinamen &amp; Ordner verschlüsseln - Maximale Sicherheit)</option>
-              <option value="off">Off (Dateinamen im Klartext belassen, nur Inhalt verschlüsseln)</option>
-              <option value="obfuscate">Obfuscate (Einfache Namensverschleierung)</option>
+              <option value="standard">Standard (Encrypt filenames &amp; directory names - Maximum Security)</option>
+              <option value="off">Off (Keep filenames in plaintext, encrypt file contents only)</option>
+              <option value="obfuscate">Obfuscate (Simple filename obfuscation)</option>
             </select>
             <span class="text-dim" style="font-size: 0.72rem; color: #bbb; display: block; margin-top: 0.25rem;">
-              💡 <b>Off</b>: Ordner- und Dateinamen bleiben auf Hetzner/Cloud lesbar &ndash; der Dateiinhalt ist AES-256 verschlüsselt.<br>
-              💡 <b>Standard</b>: Sowohl Dateinamen als auch Inhalte sind vollständig unkenntlich verschlüsselt.
+              💡 <b>Off</b>: Directory and file names remain human-readable on Hetzner/Cloud &ndash; file contents are AES-256 encrypted.<br>
+              💡 <b>Standard</b>: Both file/directory names and file contents are fully encrypted and unreadable.
             </span>
           </div>
         </div>

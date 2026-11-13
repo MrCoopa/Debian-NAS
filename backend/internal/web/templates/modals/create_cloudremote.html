@@ -61,22 +61,22 @@
           </div>
           <div class="form-group">
             <label>Master Salt</label>
-            <input type="password" name="salt" x-model="cloudRemoteForm.salt" placeholder="Salt (beliebige Zeichenfolge)">
+            <input type="password" name="salt" x-model="cloudRemoteForm.salt" placeholder="Salt (optional custom string)">
           </div>
         </div>
         <div class="form-group">
-          <label>Filename Encryption (Dateinamen-Verschlüsselung)</label>
+          <label>Filename Encryption</label>
           <select name="filename_encryption" x-model="cloudRemoteForm.filename_encryption">
-            <option value="standard">Standard (Dateinamen &amp; Ordner verschlüsseln - Empfohlen)</option>
-            <option value="off">Off (Dateinamen im Klartext belassen, nur Inhalt verschlüsseln)</option>
-            <option value="obfuscate">Obfuscate (Einfache Namensverschleierung)</option>
+            <option value="standard">Standard (Encrypt filenames &amp; directory names - Recommended)</option>
+            <option value="off">Off (Keep filenames in plaintext, encrypt file contents only)</option>
+            <option value="obfuscate">Obfuscate (Simple filename obfuscation)</option>
           </select>
           <span class="text-dim" style="font-size: 0.72rem; color: #a0a0a0;">
-            💡 <b>Off</b>: Verzeichnis- und Dateinamen bleiben auf dem Cloud-Speicher im Klartext lesbar. Nur der Dateiinhalt ist AES-256 verschlüsselt.<br>
-            💡 <b>Standard</b>: Sowohl Datei- und Verzeichnisnamen als auch Inhalte werden vollständig unkenntlich verschlüsselt.
+            💡 <b>Off</b>: Directory and file names remain in plaintext on cloud storage. File contents are AES-256 encrypted.<br>
+            💡 <b>Standard</b>: Both file/directory names and file contents are fully encrypted and unreadable.
           </span>
         </div>
-        <span class="text-dim" style="font-size: 0.72rem; color: #a78bfa;">Analog to TrueNAS SCALE: Zero-Knowledge Client-Side AES-256 Verschlüsselung.</span>
+        <span class="text-dim" style="font-size: 0.72rem; color: #a78bfa;">TrueNAS standard: Zero-Knowledge Client-Side AES-256 Encryption.</span>
       </div>
 
       <!-- 3. WebDAV Fields -->
