@@ -260,6 +260,10 @@
               }
             }
           }
+          let defaultRemotePath = 'backup';
+          if (firstSrc) {
+            defaultRemotePath = 'backup/' + firstSrc.replace(/^\/mnt\//, '');
+          }
           this.cloudSyncForm = {
             id: '',
             name: '',
@@ -267,7 +271,7 @@
             source_path: firstSrc,
             remote_target: '',
             remote_credential: firstRem,
-            remote_path: 'Backup',
+            remote_path: defaultRemotePath,
             direction: 'PUSH',
             transfer_mode: 'COPY',
             dry_run: false,
