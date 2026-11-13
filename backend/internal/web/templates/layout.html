@@ -241,9 +241,25 @@
         openCreateCloudSync() {
           this.isEditingCloudSync = false;
           const sel = document.getElementById('cloudsync-source-select');
-          const firstSrc = sel && sel.options.length > 0 ? sel.options[0].value : '';
+          let firstSrc = '';
+          if (sel && sel.options) {
+            for (let i = 0; i < sel.options.length; i++) {
+              if (!sel.options[i].disabled && sel.options[i].value) {
+                firstSrc = sel.options[i].value;
+                break;
+              }
+            }
+          }
           const remSel = document.getElementById('cloudsync-remote-select');
-          const firstRem = remSel && remSel.options.length > 0 ? remSel.options[0].value : '';
+          let firstRem = '';
+          if (remSel && remSel.options) {
+            for (let i = 0; i < remSel.options.length; i++) {
+              if (!remSel.options[i].disabled && remSel.options[i].value) {
+                firstRem = remSel.options[i].value;
+                break;
+              }
+            }
+          }
           this.cloudSyncForm = {
             id: '',
             name: '',
@@ -253,7 +269,7 @@
             remote_credential: firstRem,
             remote_path: 'Backup',
             direction: 'PUSH',
-            transfer_mode: 'SYNC',
+            transfer_mode: 'COPY',
             dry_run: false,
             encryption_enabled: false,
             encryption_password: '',
@@ -270,16 +286,23 @@
         },
         openEditCloudSync(id, name, desc, src, target, cred, remotePath, dir, mode, dryRun, sched, bw, enabled, freqText, encEnabled, encSalt, fnEnc) {
           this.isEditingCloudSync = true;
+          let remoteCred = cred || '';
+          let subPath = remotePath || '';
+          if (!remoteCred && target && target.includes(':')) {
+            const parts = target.split(':');
+            remoteCred = parts[0];
+            subPath = subPath || parts.slice(1).join(':');
+          }
           this.cloudSyncForm = {
             id: id,
             name: name,
             description: desc || name,
             source_path: src,
             remote_target: target || '',
-            remote_credential: cred || '',
-            remote_path: remotePath || '',
+            remote_credential: remoteCred,
+            remote_path: subPath,
             direction: dir || 'PUSH',
-            transfer_mode: mode || 'SYNC',
+            transfer_mode: mode || 'COPY',
             dry_run: dryRun === true || dryRun === 'true',
             encryption_enabled: encEnabled === true || encEnabled === 'true',
             encryption_password: '',
@@ -291,8 +314,12 @@
             enabled: Boolean(enabled)
           };
           this.openCloudSyncModal = true;
-          this.triggerHtmxRefresh('refreshCloudSyncSources');
-          this.triggerHtmxRefresh('refreshCloudSyncRemotes');
+          this.$nextTick(() => {
+            const srcSel = document.getElementById('cloudsync-source-select');
+            if (srcSel && window.nasEnsureSelectValue) window.nasEnsureSelectValue(srcSel, src, v => this.cloudSyncForm.source_path = v);
+            const remSel = document.getElementById('cloudsync-remote-select');
+            if (remSel && window.nasEnsureSelectValue) window.nasEnsureSelectValue(remSel, remoteCred, v => this.cloudSyncForm.remote_credential = v);
+          });
         },
         selectedDisks: [],
         toggleAllDisks(checked, names) {

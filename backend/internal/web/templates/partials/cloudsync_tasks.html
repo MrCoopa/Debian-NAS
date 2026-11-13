@@ -173,7 +173,7 @@
                 </td>
                 <td style="padding: 0.75rem 1rem; vertical-align: middle;">
                   <div style="display: flex; align-items: center; gap: 0.45rem;">
-                    <span class="truenas-state-pill {{$j.GetStateClass}}">
+                    <span class="truenas-state-pill {{$j.GetStateClass}}" {{if $j.LastMessage}}title="{{$j.LastMessage}}"{{end}}>
                       {{$j.GetStateLabel}}
                     </span>
                     {{if eq $j.Status "RUNNING"}}
@@ -187,6 +187,11 @@
                       </button>
                     {{end}}
                   </div>
+                  {{if and (eq $j.Status "FAILED") $j.LastMessage}}
+                    <div style="font-size: 0.68rem; color: #ff8a80; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 0.25rem;" title="{{$j.LastMessage}}">
+                      {{$j.LastMessage}}
+                    </div>
+                  {{end}}
                 </td>
                 <td style="padding: 0.75rem 0.5rem; text-align: center; vertical-align: middle;">
                   <div class="relative" @click.outside="if (openCloudMenuId === '{{$j.ID}}') openCloudMenuId = ''" style="position: relative; display: inline-block;">
@@ -213,8 +218,8 @@
                               data-description="{{$j.Description}}"
                               data-source="{{$j.SourcePath}}"
                               data-target="{{$j.RemoteTarget}}"
-                              data-credential="{{$j.RemoteCredential}}"
-                              data-remotepath="{{$j.RemotePath}}"
+                              data-credential="{{$j.GetRemoteCredential}}"
+                              data-remotepath="{{$j.GetRemotePath}}"
                               data-direction="{{$j.Direction}}"
                               data-transfermode="{{$j.GetTransferMode}}"
                               data-dryrun="{{if $j.DryRun}}true{{else}}false{{end}}"

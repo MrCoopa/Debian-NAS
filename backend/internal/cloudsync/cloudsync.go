@@ -142,6 +142,26 @@ func (j *SyncJob) GetTarget() string {
 	return ""
 }
 
+func (j *SyncJob) GetRemoteCredential() string {
+	if j.RemoteCredential != "" {
+		return j.RemoteCredential
+	}
+	if idx := strings.Index(j.RemoteTarget, ":"); idx != -1 {
+		return j.RemoteTarget[:idx]
+	}
+	return ""
+}
+
+func (j *SyncJob) GetRemotePath() string {
+	if j.RemotePath != "" {
+		return j.RemotePath
+	}
+	if idx := strings.Index(j.RemoteTarget, ":"); idx != -1 {
+		return j.RemoteTarget[idx+1:]
+	}
+	return ""
+}
+
 func (j *SyncJob) GetDisplayTarget() string {
 	base := ""
 	if j.RemoteCredential != "" {
@@ -795,6 +815,18 @@ func (m *Manager) SaveJob(job *SyncJob) error {
 		return err
 	}
 
+	if job.RemoteCredential == "" && strings.Contains(job.RemoteTarget, ":") {
+		parts := strings.SplitN(job.RemoteTarget, ":", 2)
+		job.RemoteCredential = parts[0]
+		if job.RemotePath == "" {
+			job.RemotePath = parts[1]
+		}
+	}
+	if job.RemoteTarget == "" && job.RemoteCredential != "" {
+		sub := strings.TrimPrefix(job.RemotePath, "/")
+		job.RemoteTarget = fmt.Sprintf("%s:%s", job.RemoteCredential, sub)
+	}
+
 	target := job.GetTarget()
 	if target == "" {
 		target = job.RemoteTarget
@@ -806,6 +838,15 @@ func (m *Manager) SaveJob(job *SyncJob) error {
 	if job.ID == "" {
 		job.ID = fmt.Sprintf("job-%d", time.Now().UnixNano())
 	} else if existing, ok := m.jobs[job.ID]; ok {
+		if job.RemoteCredential == "" && existing.RemoteCredential != "" {
+			job.RemoteCredential = existing.RemoteCredential
+		}
+		if job.RemotePath == "" && existing.RemotePath != "" {
+			job.RemotePath = existing.RemotePath
+		}
+		if job.RemoteTarget == "" && existing.RemoteTarget != "" {
+			job.RemoteTarget = existing.RemoteTarget
+		}
 		if job.LastRun.IsZero() && !existing.LastRun.IsZero() {
 			job.LastRun = existing.LastRun
 		}

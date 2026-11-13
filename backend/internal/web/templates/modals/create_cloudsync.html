@@ -53,7 +53,8 @@
                   hx-get="/ui/partials/modals/cloudsync_remotes"
                   hx-trigger="cloudSyncUpdate from:body, refreshCloudSyncRemotes from:body"
                   hx-target="this"
-                  hx-swap="innerHTML">
+                  hx-swap="innerHTML"
+                  @htmx:after-swap="window.nasEnsureSelectValue && window.nasEnsureSelectValue($el, cloudSyncForm.remote_credential, v => cloudSyncForm.remote_credential = v)">
             {{template "partials/cloudsync_remotes_options.html" .}}
           </select>
           <span x-show="!cloudSyncForm.remote_credential" class="text-dim" style="font-size: 0.72rem; color: #ffb74d;">

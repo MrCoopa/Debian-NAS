@@ -20,19 +20,24 @@ console.log("Debian Storage Appliance: Go + HTMX + Alpine.js initialized.");
 
   window.nasEnsureSelectValue = function (selectEl, currentVal, onChange) {
     if (!selectEl || !selectEl.options) return;
+    if (!currentVal) return;
     var hasCurrent = false;
-    var firstValid = "";
     for (var i = 0; i < selectEl.options.length; i++) {
       var opt = selectEl.options[i];
-      if (!opt.disabled && opt.value !== "") {
-        if (!firstValid) firstValid = opt.value;
-        if (opt.value === currentVal) hasCurrent = true;
+      if (!opt.disabled && opt.value === currentVal) {
+        hasCurrent = true;
+        break;
       }
     }
-    if (!hasCurrent && firstValid) {
-      selectEl.value = firstValid;
-      if (typeof onChange === "function") onChange(firstValid);
+    if (!hasCurrent && currentVal) {
+      var newOpt = document.createElement("option");
+      newOpt.value = currentVal;
+      newOpt.text = currentVal;
+      newOpt.selected = true;
+      selectEl.appendChild(newOpt);
     }
+    selectEl.value = currentVal;
+    if (typeof onChange === "function") onChange(currentVal);
   };
 
   window.nasTriggerHasError = function (xhr) {

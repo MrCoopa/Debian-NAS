@@ -1,7 +1,7 @@
 {{if not .CloudRemotes}}
   <option value="" disabled selected>No Cloud Credentials configured yet</option>
 {{else}}
-  <option value="" disabled selected>Select a Cloud Credential...</option>
+  <option value="" disabled>Select a Cloud Credential...</option>
   {{range $r := .CloudRemotes}}
     <option value="{{$r.Name}}">{{$r.Name}} ({{$r.Type}})</option>
   {{end}}
