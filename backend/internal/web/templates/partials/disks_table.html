@@ -41,7 +41,7 @@
           <th style="padding: 0.75rem 1rem; font-weight: 600;">Disk Size</th>
           <th style="padding: 0.75rem 1rem; font-weight: 600;">Pool</th>
           <th style="padding: 0.75rem 1rem; font-weight: 600;">HDD Standby</th>
-          <th style="padding: 0.75rem 1rem; font-weight: 600;">Adv. Power Management</th>
+          <th style="padding: 0.75rem 1rem; font-weight: 600;">Power Mgmt (APM / EPC)</th>
           <th style="width: 48px; padding: 0.75rem 1rem;"></th>
         </tr>
       </thead>
@@ -86,14 +86,19 @@
               </div>
             </td>
             <td style="padding: 0.5rem 1rem;" @click.stop>
-              <form hx-post="/ui/actions/disks/apm" hx-target="#disks-container" hx-swap="outerHTML" style="margin: 0;">
-                <input type="hidden" name="path" value="{{$d.Path}}">
-                <select name="level" aria-label="APM for {{$d.Name}}"
-                        style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #1a1a1a; border: 1px solid #333; color: #fff; border-radius: 4px; min-width: 165px;"
-                        onchange="this.form.requestSubmit()">
-                  {{template "disk_apm_options" $d}}
-                </select>
-              </form>
+              <div style="display: flex; align-items: center; gap: 0.4rem;">
+                <form hx-post="/ui/actions/disks/apm" hx-target="#disks-container" hx-swap="outerHTML" style="margin: 0;">
+                  <input type="hidden" name="path" value="{{$d.Path}}">
+                  <select name="level" aria-label="APM for {{$d.Name}}"
+                          style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #1a1a1a; border: 1px solid #333; color: #fff; border-radius: 4px; min-width: 155px;"
+                          onchange="this.form.requestSubmit()">
+                    {{template "disk_apm_options" $d}}
+                  </select>
+                </form>
+                {{if $d.HasEPC}}
+                  <span class="badge-status green" title="Extended Power Conditions (EPC) supported by drive" style="font-size: 0.65rem; padding: 0.15rem 0.35rem; cursor: help;">EPC</span>
+                {{end}}
+              </div>
             </td>
             <td style="padding: 0.75rem 1rem; text-align: right;">
               <button type="button" class="btn-chevron"
@@ -161,13 +166,31 @@
                   </form>
                 </div>
                 <div>
-                  <div class="text-dim" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Adv. Power Management:</div>
+                  <div class="text-dim" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Adv. Power Management (APM):</div>
                   <form hx-post="/ui/actions/disks/apm" hx-target="#disks-container" hx-swap="outerHTML" style="margin: 0;">
                     <input type="hidden" name="path" value="{{$d.Path}}">
                     <select name="level" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #1a1a1a; border: 1px solid #333; color: #fff; border-radius: 4px; width: 100%;"
                             onchange="this.form.requestSubmit()">
                       {{template "disk_apm_options" $d}}
                     </select>
+                  </form>
+                </div>
+                <div>
+                  <div class="text-dim" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Extended Power Conditions (EPC):</div>
+                  <form hx-post="/ui/actions/disks/epc" hx-target="#disks-container" hx-swap="outerHTML" style="margin: 0;">
+                    <input type="hidden" name="path" value="{{$d.Path}}">
+                    <div style="display: flex; align-items: center; gap: 0.4rem;">
+                      <select name="mode" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: #1a1a1a; border: 1px solid #333; color: #fff; border-radius: 4px; width: 100%;"
+                              onchange="this.form.requestSubmit()">
+                        <option value="Disabled" {{if or (not $d.ExtendedPowerConditions) (eq $d.ExtendedPowerConditions "Disabled")}}selected{{end}}>Disabled (No Spindown Timer)</option>
+                        <option value="Enabled" {{if eq $d.ExtendedPowerConditions "Enabled"}}selected{{end}}>Enabled (Drive Internal Timers)</option>
+                      </select>
+                      {{if $d.HasEPC}}
+                        <span class="badge-status green" style="font-size: 0.65rem; white-space: nowrap;">Supported</span>
+                      {{else}}
+                        <span class="badge-status slate" style="font-size: 0.65rem; white-space: nowrap;">None</span>
+                      {{end}}
+                    </div>
                   </form>
                 </div>
               </div>

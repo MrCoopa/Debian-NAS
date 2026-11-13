@@ -41,6 +41,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
   rpcbind \
   psmisc \
   hdparm \
+  sdparm \
   smartmontools \
   gdisk \
   parted \
@@ -119,10 +120,13 @@ HD_IDLE_OPTS="-i 900 -l /var/log/hd-idle.log"
 EOF
 systemctl enable --now hd-idle || true
 
-# 5. smartmontools / smartd mit -n standby (Festplatten nicht aus Standby wecken) aktivieren
+# 5. smartmontools / smartd mit -n idle / -n standby (Festplatten in Standby & EPC nicht aufwecken)
 if [ -f /etc/smartd.conf ]; then
-  if grep -q "^DEVICESCAN" /etc/smartd.conf && ! grep -q -- "-n standby" /etc/smartd.conf; then
-    sed -i 's/^DEVICESCAN\(.*\)/DEVICESCAN\1 -n standby/' /etc/smartd.conf || true
+  if grep -q "^DEVICESCAN" /etc/smartd.conf; then
+    sed -i 's/^DEVICESCAN\(.*\) -n [a-z0-9,]*/DEVICESCAN\1/' /etc/smartd.conf || true
+    if ! grep -q -- "-n idle" /etc/smartd.conf && ! grep -q -- "-n standby" /etc/smartd.conf; then
+      sed -i 's/^DEVICESCAN\(.*\)/DEVICESCAN\1 -n idle/' /etc/smartd.conf || true
+    fi
   fi
 fi
 systemctl enable --now smartd 2>/dev/null || systemctl enable --now smartmontools 2>/dev/null || true
@@ -141,14 +145,18 @@ for i in /sys/class/scsi_host/host*/link_power_management_policy; do
   [ -f "$i" ] && echo max_performance > "$i" 2>/dev/null || true
 done
 
-# 8. Globale APM-Deaktivierung im Autostart (@reboot Cronjob) gegen unkontrollierte Firmware-Wakeups (z. B. WD 30-Minuten-Timer)
-CRON_CMD='@reboot for dev in /dev/sd[a-z]; do /usr/sbin/smartctl -s apm,off $dev 2>/dev/null; done'
+# 8. Globale APM- & EPC-Deaktivierung im Autostart (@reboot Cronjob) gegen Firmware-Wakeups (z. B. WD 30-Minuten-Timer & Seagate EPC)
+CRON_CMD='@reboot for dev in /dev/sd[a-z]; do /usr/sbin/smartctl -s apm,off $dev 2>/dev/null; which sdparm >/dev/null 2>&1 && sdparm --flexible --set=STANDBY=0 $dev 2>/dev/null || true; done'
 (crontab -l 2>/dev/null | grep -Fv "/usr/sbin/smartctl -s apm,off" || true; echo "$CRON_CMD") | crontab -
 systemctl enable --now cron 2>/dev/null || true
 # Sofortige Anwendung auf alle vorhandenen Block-Devices
 for dev in /dev/sd[a-z]; do
   if [ -e "$dev" ]; then
     /usr/sbin/smartctl -s apm,off "$dev" 2>/dev/null || true
+    if command -v sdparm >/dev/null 2>&1; then
+      sdparm --flexible --set=STANDBY=0 "$dev" 2>/dev/null || true
+      sdparm --flexible --clear=SCT "$dev" 2>/dev/null || true
+    fi
   fi
 done
 

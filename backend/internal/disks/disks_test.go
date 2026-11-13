@@ -148,6 +148,12 @@ func TestDiskPowerSettings_NormalizationPersistenceAndHdIdle(t *testing.T) {
 	if err := m.SetAPM("sdc", "Disabled"); err != nil {
 		t.Fatalf("SetAPM(Disabled) failed: %v", err)
 	}
+	if err := m.SetEPC("sdc", "Disabled"); err != nil {
+		t.Fatalf("SetEPC(Disabled) failed: %v", err)
+	}
+	if err := m.SetEPC("sdb", "Enabled"); err != nil {
+		t.Fatalf("SetEPC(Enabled) failed: %v", err)
+	}
 	if err := m.SetSpindown("sdc", 0); err != nil {
 		t.Fatalf("SetSpindown(0) failed: %v", err)
 	}
@@ -208,8 +214,14 @@ func TestDiskPowerSettings_NormalizationPersistenceAndHdIdle(t *testing.T) {
 	if sdc2 == nil || sdc2.AdvPowerManagement != "Disabled" || sdc2.SpindownSeconds != 0 || sdc2.SpindownTimeoutSeconds != 0 {
 		t.Fatalf("expected sdc persisted settings (Disabled, 0s) after reload, got %+v", sdc2)
 	}
+	if sdc2.ExtendedPowerConditions != "Disabled" {
+		t.Fatalf("expected sdc2 persisted EPC=Disabled after reload, got %q", sdc2.ExtendedPowerConditions)
+	}
 	if sdb2 == nil || sdb2.SpindownSeconds != 600 || sdb2.SpindownTimeoutSeconds != 600 {
 		t.Fatalf("expected sdb persisted spindown=600 after reload, got %+v", sdb2)
+	}
+	if sdb2.ExtendedPowerConditions != "Enabled" {
+		t.Fatalf("expected sdb2 persisted EPC=Enabled after reload, got %q", sdb2.ExtendedPowerConditions)
 	}
 
 	// 3. Legacy map[string]int disks.json backward compatibility

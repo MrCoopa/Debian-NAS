@@ -1428,6 +1428,27 @@ func (s *Server) handleUIActionSetAPM(w http.ResponseWriter, r *http.Request) {
 	s.handleUIPartialDisks(w, r)
 }
 
+func (s *Server) handleUIActionSetEPC(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	path := formDiskTarget(r)
+	mode := strings.TrimSpace(r.FormValue("mode"))
+	if path == "" {
+		s.setHXTrigger(w, "Device path is required", "error")
+		s.handleUIPartialDisks(w, r)
+		return
+	}
+	if mode == "" {
+		mode = "Disabled"
+	}
+
+	if err := s.disks.SetEPC(path, mode); err != nil {
+		s.setHXTrigger(w, "Error configuring EPC: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("EPC mode for %s set to %s", path, mode), "success", "diskUpdate")
+	}
+	s.handleUIPartialDisks(w, r)
+}
+
 func (s *Server) handleUIActionForceStandby(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	path := formDiskTarget(r)

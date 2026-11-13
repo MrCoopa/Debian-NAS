@@ -58,6 +58,10 @@ type DiskInfo struct {
 	LocateLed              bool      `json:"locate_led"`               // LED blinking
 	VdevType               string    `json:"vdev_type"`                // mirror-0, raidz1, single, unassigned
 	AdvPowerManagement     string    `json:"adv_power_management"`     // "Disabled", "128", etc.
+	HasAPM                 bool      `json:"has_apm"`                  // true if APM supported
+	HasEPC                 bool      `json:"has_epc"`                  // true if Extended Power Conditions (EPC) supported
+	ExtendedPowerConditions string   `json:"extended_power_conditions"` // "Disabled", "Enabled", "Default"
+	EPCStatus              string    `json:"epc_status"`               // "Supported", "Enabled", "Not Supported"
 	IsSystemDisk           bool      `json:"is_system_disk"`           // true = contains OS mount (/ or /boot)
 	LastIOStats            string    `json:"-"`                        // snapshot of /sys/block/<name>/stat to prevent waking standby drives
 	LastStateCheck         time.Time `json:"last_state_check"`
@@ -93,6 +97,24 @@ func syncDiskFields(d *DiskInfo) {
 	if d.AdvPowerManagement == "" || strings.EqualFold(d.AdvPowerManagement, "255") || strings.EqualFold(d.AdvPowerManagement, "off") {
 		d.AdvPowerManagement = "Disabled"
 	}
+	if d.AdvPowerManagement != "" && !strings.EqualFold(d.AdvPowerManagement, "not supported") {
+		d.HasAPM = true
+	}
+	if d.ExtendedPowerConditions == "" {
+		d.ExtendedPowerConditions = "Disabled"
+	}
+	if d.EPCStatus == "" {
+		if d.HasEPC {
+			d.EPCStatus = "Supported"
+		} else if !d.IsRotational {
+			d.EPCStatus = "Not Supported (SSD)"
+		} else {
+			d.EPCStatus = "Supported"
+		}
+	}
+	if d.IsRotational {
+		d.HasEPC = true
+	}
 	if d.IsSystemDisk && d.ZfsPool == "" {
 		d.ZfsPool = "boot-pool"
 	}
@@ -106,11 +128,27 @@ func syncDiskFields(d *DiskInfo) {
 
 // DiskPowerConfig stores persisted per-disk power settings across scans and reboots.
 type DiskPowerConfig struct {
-	Name               string `json:"name,omitempty"`
-	ByIDPath           string `json:"by_id_path,omitempty"`
-	Serial             string `json:"serial,omitempty"`
-	SpindownSeconds    *int   `json:"spindown_seconds,omitempty"`
-	AdvPowerManagement string `json:"adv_power_management,omitempty"`
+	Name                    string `json:"name,omitempty"`
+	ByIDPath                string `json:"by_id_path,omitempty"`
+	Serial                  string `json:"serial,omitempty"`
+	SpindownSeconds         *int   `json:"spindown_seconds,omitempty"`
+	AdvPowerManagement      string `json:"adv_power_management,omitempty"`
+	ExtendedPowerConditions string `json:"extended_power_conditions,omitempty"`
+}
+
+// NormalizeEPCMode validates and normalizes an EPC setting ("Disabled", "Enabled", "Default").
+func NormalizeEPCMode(raw string) (string, error) {
+	v := strings.TrimSpace(raw)
+	switch strings.ToLower(v) {
+	case "disabled", "off", "0", "false":
+		return "Disabled", nil
+	case "enabled", "on", "1", "true":
+		return "Enabled", nil
+	case "", "default":
+		return "Default", nil
+	default:
+		return "", fmt.Errorf("invalid EPC mode '%s': must be Disabled, Enabled or Default", raw)
+	}
 }
 
 // NormalizeAPMLevel validates and normalizes an APM level ("Disabled"/"255" or "1".."254").
@@ -761,7 +799,7 @@ func (m *Manager) checkStandbySafe(devPath string) DiskState {
 		return StateStandby
 	}
 	smartLower := strings.ToLower(string(smartOut))
-	if strings.Contains(smartLower, "standby") {
+	if strings.Contains(smartLower, "standby") || strings.Contains(smartLower, "standby_z") || strings.Contains(smartLower, "idle_b") || strings.Contains(smartLower, "idle_c") {
 		return StateStandby
 	}
 	if strings.Contains(smartLower, "sleep") {
@@ -1042,6 +1080,43 @@ func (m *Manager) SetAPM(devPath string, level string) error {
 	}
 
 	target.AdvPowerManagement = displayVal
+	target.LastStateCheck = time.Now()
+	m.recordSavedConfigLocked(target)
+	if !m.mockMode || m.customConfigPath {
+		m.saveDiskConfigLocked()
+	}
+	return nil
+}
+
+// SetEPC sets Extended Power Conditions (EPC) mode using sdparm
+func (m *Manager) SetEPC(devPath string, mode string) error {
+	normMode, err := NormalizeEPCMode(mode)
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	target := m.findDiskLocked(devPath)
+	if target == nil {
+		return fmt.Errorf("disk %s not found", devPath)
+	}
+	diskPath := target.Path
+
+	if !m.mockMode {
+		if err := validate.DevicePath(diskPath); err != nil {
+			return fmt.Errorf("invalid disk device path: %w", err)
+		}
+		if normMode == "Disabled" {
+			_ = applyHardwareEPC(diskPath, true)
+		} else if normMode == "Enabled" {
+			_ = applyHardwareEPC(diskPath, false)
+		}
+	}
+
+	target.ExtendedPowerConditions = normMode
+	target.EPCStatus = normMode
 	target.LastStateCheck = time.Now()
 	m.recordSavedConfigLocked(target)
 	if !m.mockMode || m.customConfigPath {
@@ -1508,6 +1583,10 @@ func (m *Manager) recordSavedConfigLocked(d *DiskInfo) {
 	key := diskConfigKey(d.Name, d.ByIDPath, d.Serial)
 	spSec := d.SpindownSeconds
 	apm := d.AdvPowerManagement
+	epc := d.ExtendedPowerConditions
+	if epc == "" {
+		epc = d.EPCStatus
+	}
 	// Remove stale aliases pointing to the same disk under older keys
 	for k, existing := range m.savedConfigs {
 		if k == key {
@@ -1519,15 +1598,19 @@ func (m *Manager) recordSavedConfigLocked(d *DiskInfo) {
 			if apm == "" {
 				apm = existing.AdvPowerManagement
 			}
+			if epc == "" {
+				epc = existing.ExtendedPowerConditions
+			}
 			delete(m.savedConfigs, k)
 		}
 	}
 	m.savedConfigs[key] = DiskPowerConfig{
-		Name:               d.Name,
-		ByIDPath:           d.ByIDPath,
-		Serial:             d.Serial,
-		SpindownSeconds:    &spSec,
-		AdvPowerManagement: apm,
+		Name:                    d.Name,
+		ByIDPath:                d.ByIDPath,
+		Serial:                  d.Serial,
+		SpindownSeconds:         &spSec,
+		AdvPowerManagement:      apm,
+		ExtendedPowerConditions: epc,
 	}
 }
 
@@ -1545,6 +1628,12 @@ func (m *Manager) applySavedConfigToDiskLocked(d *DiskInfo) {
 	if cfg.AdvPowerManagement != "" {
 		if norm, _, err := NormalizeAPMLevel(cfg.AdvPowerManagement); err == nil {
 			d.AdvPowerManagement = norm
+		}
+	}
+	if cfg.ExtendedPowerConditions != "" {
+		if norm, err := NormalizeEPCMode(cfg.ExtendedPowerConditions); err == nil {
+			d.ExtendedPowerConditions = norm
+			d.EPCStatus = norm
 		}
 	}
 }
@@ -1578,7 +1667,7 @@ func (m *Manager) loadSavedDiskConfigLocked() {
 	if err := json.Unmarshal(data, &structured); err == nil && len(structured) > 0 {
 		loadedAny := false
 		for _, cfg := range structured {
-			if cfg.SpindownSeconds != nil || cfg.AdvPowerManagement != "" || cfg.Name != "" || cfg.ByIDPath != "" || cfg.Serial != "" {
+			if cfg.SpindownSeconds != nil || cfg.AdvPowerManagement != "" || cfg.ExtendedPowerConditions != "" || cfg.Name != "" || cfg.ByIDPath != "" || cfg.Serial != "" {
 				loadedAny = true
 				break
 			}
@@ -1591,6 +1680,11 @@ func (m *Manager) loadSavedDiskConfigLocked() {
 				if cfg.AdvPowerManagement != "" {
 					if norm, _, normErr := NormalizeAPMLevel(cfg.AdvPowerManagement); normErr == nil {
 						cfg.AdvPowerManagement = norm
+					}
+				}
+				if cfg.ExtendedPowerConditions != "" {
+					if norm, normErr := NormalizeEPCMode(cfg.ExtendedPowerConditions); normErr == nil {
+						cfg.ExtendedPowerConditions = norm
 					}
 				}
 				m.savedConfigs[k] = cfg
@@ -1676,11 +1770,12 @@ func applyHardwareAPM(devPath, hdparmArg string) error {
 	outStr := strings.TrimSpace(string(out))
 	lower := strings.ToLower(outStr)
 
-	// If APM is being disabled (255), also apply smartctl -s apm,off (vital for Western Digital and enterprise SATA/SAS drives)
+	// If APM is being disabled (255), also apply smartctl -s apm,off and sdparm EPC disable (vital for Western Digital and enterprise SATA/SAS drives)
 	if hdparmArg == "255" {
 		sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer sCancel()
 		_ = exec.CommandContext(sCtx, "smartctl", "-s", "apm,off", devPath).Run()
+		_ = applyHardwareEPC(devPath, true)
 	}
 
 	if err != nil || strings.Contains(lower, "not supported") || strings.Contains(lower, "failed") || strings.Contains(lower, "inappropriate ioctl") {
@@ -1699,6 +1794,25 @@ func applyHardwareAPM(devPath, hdparmArg string) error {
 			return fmt.Errorf("APM level %s rejected by %s: %w", hdparmArg, devPath, err)
 		}
 		return fmt.Errorf("APM level %s not supported by %s", hdparmArg, devPath)
+	}
+	return nil
+}
+
+// applyHardwareEPC configures or clears EPC Standby timers using sdparm
+func applyHardwareEPC(devPath string, disabled bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	val := "0"
+	if !disabled {
+		val = "1"
+	}
+	// Use sdparm on Power Condition (po) mode page to set STANDBY timer switch
+	cmd := exec.CommandContext(ctx, "sdparm", "--flexible", "--set=STANDBY="+val, devPath)
+	_ = cmd.Run()
+	if disabled {
+		cCtx, cCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cCancel()
+		_ = exec.CommandContext(cCtx, "sdparm", "--flexible", "--clear=SCT", devPath).Run()
 	}
 	return nil
 }
