@@ -144,6 +144,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/cloudsync/jobs", s.handleSaveCloudJob)
 	mux.HandleFunc("DELETE /api/v1/cloudsync/jobs", s.handleDeleteCloudJob)
 	mux.HandleFunc("POST /api/v1/cloudsync/trigger", s.handleTriggerCloudJob)
+	mux.HandleFunc("POST /api/v1/cloudsync/abort", s.handleAbortCloudJob)
 
 	// 6. UI Endpoints (Go Templates + HTMX + Idiomorph)
 	if s.web != nil {
@@ -187,6 +188,7 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("POST /ui/actions/cloudsync/toggle", s.handleUIActionToggleCloudSync)
 		mux.HandleFunc("POST /ui/actions/cloudsync/run", s.handleUIActionRunCloudSync)
 		mux.HandleFunc("POST /ui/actions/cloudsync/dryrun", s.handleUIActionDryRunCloudSync)
+		mux.HandleFunc("POST /ui/actions/cloudsync/abort", s.handleUIActionAbortCloudSync)
 
 		mux.HandleFunc("POST /ui/actions/shares/save", s.handleUIActionSaveSmb)
 		mux.HandleFunc("POST /ui/actions/shares/smb", s.handleUIActionSaveSmb)
@@ -1762,6 +1764,26 @@ func (s *Server) handleTriggerCloudJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "started"})
+}
+
+func (s *Server) handleAbortCloudJob(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		JobID string `json:"job_id"`
+	}
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	if id == "" && r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		id = req.JobID
+	}
+	if id == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Job ID is required")
+		return
+	}
+	if err := s.cloudsync.AbortJob(id); err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "aborted", "id": id})
 }
 
 func (s *Server) handleListSnapshotTasks(w http.ResponseWriter, r *http.Request) {

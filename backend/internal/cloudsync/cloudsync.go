@@ -234,6 +234,11 @@ func (j *SyncJob) GetStateLabel() string {
 	}
 }
 
+type runningTask struct {
+	cmd    *exec.Cmd
+	cancel context.CancelFunc
+}
+
 type Manager struct {
 	mu           sync.RWMutex
 	mockMode     bool
@@ -241,6 +246,7 @@ type Manager struct {
 	configPath   string
 	remotes      []Remote
 	jobs         map[string]*SyncJob
+	running      map[string]*runningTask
 }
 
 func NewManager(mockMode bool, rcloneConfig string) *Manager {
@@ -249,6 +255,7 @@ func NewManager(mockMode bool, rcloneConfig string) *Manager {
 		rcloneConfig: rcloneConfig,
 		configPath:   "/etc/nas/cloudsync.json",
 		jobs:         make(map[string]*SyncJob),
+		running:      make(map[string]*runningTask),
 	}
 
 	if m.mockMode {
@@ -597,6 +604,38 @@ func (m *Manager) TriggerJob(jobID string) error {
 	return m.TriggerJobWithOptions(jobID, false)
 }
 
+func (m *Manager) AbortJob(jobID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	job, exists := m.jobs[jobID]
+	if !exists {
+		return fmt.Errorf("job not found")
+	}
+
+	if rt, ok := m.running[jobID]; ok {
+		if rt.cancel != nil {
+			rt.cancel()
+		}
+		if rt.cmd != nil && rt.cmd.Process != nil {
+			_ = rt.cmd.Process.Kill()
+		}
+		delete(m.running, jobID)
+	}
+
+	job.Status = StatusFailed
+	job.LastMessage = "Aborted by user"
+	job.LastRun = time.Now()
+	m.saveJobsConfig()
+
+	if runtime.GOOS == "linux" {
+		_ = exec.Command("logger", "-t", "debian-nas-cloudsync", fmt.Sprintf("Job %s aborted by user", job.ID)).Run()
+		cryptTarget := fmt.Sprintf("cs_crypt_%s:", job.ID)
+		_ = exec.Command("pkill", "-f", cryptTarget).Run()
+	}
+	return nil
+}
+
 func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 	m.mu.Lock()
 	job, exists := m.jobs[jobID]
@@ -610,6 +649,18 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 		return fmt.Errorf("job is already running")
 	}
 
+	target := job.GetTarget()
+	if target == "" {
+		target = job.RemoteTarget
+	}
+	if target == "" || !strings.Contains(target, ":") {
+		m.mu.Unlock()
+		return fmt.Errorf("Kein gültiges Cloud-Ziel konfiguriert (Doppelpunkt fehlt, z.B. hetzner:Backup). Bitte Cloud Credential wählen.")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.running[jobID] = &runningTask{cancel: cancel}
+
 	job.Status = StatusRunning
 	if dryRun {
 		job.LastMessage = "Dry run in progress..."
@@ -619,8 +670,24 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 	m.mu.Unlock()
 
 	go func() {
+		defer func() {
+			m.mu.Lock()
+			delete(m.running, jobID)
+			m.mu.Unlock()
+		}()
+
 		if m.mockMode {
-			time.Sleep(1 * time.Second)
+			select {
+			case <-time.After(1 * time.Second):
+			case <-ctx.Done():
+				m.mu.Lock()
+				job.Status = StatusFailed
+				job.LastRun = time.Now()
+				job.LastMessage = "Aborted by user"
+				m.saveJobsConfig()
+				m.mu.Unlock()
+				return
+			}
 			m.mu.Lock()
 			job.Status = StatusSuccess
 			job.LastRun = time.Now()
@@ -634,7 +701,7 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 			return
 		}
 
-		var args []string
+		args := []string{"--non-interactive"}
 		if m.rcloneConfig != "" {
 			args = append(args, "--config", m.rcloneConfig)
 		}
@@ -647,11 +714,6 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 			action = "move"
 		default:
 			action = "sync"
-		}
-
-		target := job.GetTarget()
-		if target == "" {
-			target = job.RemoteTarget
 		}
 
 		if job.Direction == DirectionPush {
@@ -668,12 +730,21 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 		}
 		args = append(args, "--stats", "1s", "--stats-one-line")
 
-		cmd := exec.Command("rclone", args...)
+		cmd := exec.CommandContext(ctx, "rclone", args...)
+		m.mu.Lock()
+		if rt, ok := m.running[jobID]; ok {
+			rt.cmd = cmd
+		}
+		m.mu.Unlock()
+
 		out, err := cmd.CombinedOutput()
 
 		m.mu.Lock()
 		job.LastRun = time.Now()
-		if err != nil {
+		if ctx.Err() == context.Canceled {
+			job.Status = StatusFailed
+			job.LastMessage = "Aborted by user"
+		} else if err != nil {
 			job.Status = StatusFailed
 			job.LastMessage = fmt.Sprintf("Error: %v (%s)", err, strings.TrimSpace(string(out)))
 		} else {
@@ -722,6 +793,14 @@ func (m *Manager) SaveJob(job *SyncJob) error {
 	}
 	if err := cronutil.Validate(job.Schedule); err != nil {
 		return err
+	}
+
+	target := job.GetTarget()
+	if target == "" {
+		target = job.RemoteTarget
+	}
+	if job.RemoteCredential == "" && (target == "" || !strings.Contains(target, ":")) {
+		return fmt.Errorf("Kein gültiges Cloud-Ziel angegeben. Bitte wähle ein Cloud Credential aus.")
 	}
 
 	if job.ID == "" {

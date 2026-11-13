@@ -1197,7 +1197,15 @@ func TestUI_CloudSync_RemotesAndTransferModesLifecycle(t *testing.T) {
 		t.Errorf("Expected job table to show 'Encrypted Documents Backup' and 'PLAIN-NAMES', got: %s", jobHTML)
 	}
 
-	// 6. Delete the Crypt remote
+	// 6. Test Abort Cloud Sync action
+	abortReq := httptest.NewRequest("POST", "/ui/actions/cloudsync/abort?id=job-1", nil)
+	abortRR := httptest.NewRecorder()
+	handler.ServeHTTP(abortRR, abortReq)
+	if abortRR.Code != http.StatusOK {
+		t.Fatalf("POST /ui/actions/cloudsync/abort returned %d", abortRR.Code)
+	}
+
+	// 7. Delete the Crypt remote
 	delReq := httptest.NewRequest("DELETE", "/ui/actions/cloudsync/remotes/delete?name=hetzner_box_crypt", nil)
 	delRR := httptest.NewRecorder()
 	handler.ServeHTTP(delRR, delReq)

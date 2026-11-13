@@ -184,7 +184,18 @@ func TestCloudSync_RemoteManagementAndTransferModes(t *testing.T) {
 		}
 	}
 
-	// 5. Test Inline Task-Level Encryption & Filename Encryption
+	// 5. Test Abort / Cancel running job
+	if err := m.TriggerJobWithOptions(job.ID, false); err != nil {
+		t.Fatalf("TriggerJob failed: %v", err)
+	}
+	if err := m.AbortJob(job.ID); err != nil {
+		t.Fatalf("AbortJob failed: %v", err)
+	}
+	if job.Status != StatusFailed || !strings.Contains(job.LastMessage, "Aborted") {
+		t.Fatalf("expected aborted job, got status=%s msg=%s", job.Status, job.LastMessage)
+	}
+
+	// 6. Test Inline Task-Level Encryption & Filename Encryption
 	encJob := &SyncJob{
 		ID:                 "job-enc-test",
 		Name:               "Inline Encrypted Job",

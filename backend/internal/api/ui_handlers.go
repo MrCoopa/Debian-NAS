@@ -1561,6 +1561,26 @@ func (s *Server) handleUIActionDryRunCloudSync(w http.ResponseWriter, r *http.Re
 	s.handleUIPartialCloudSync(w, r)
 }
 
+func (s *Server) handleUIActionAbortCloudSync(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	id := strings.TrimSpace(r.FormValue("id"))
+	if id == "" {
+		id = strings.TrimSpace(r.URL.Query().Get("id"))
+	}
+	if id == "" {
+		s.setHXTrigger(w, "Task ID is required", "error")
+		s.handleUIPartialCloudSync(w, r)
+		return
+	}
+
+	if err := s.cloudsync.AbortJob(id); err != nil {
+		s.setHXTrigger(w, "Abbrechen fehlgeschlagen: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, "Cloud Sync Task sofort abgebrochen", "info", "cloudSyncUpdate")
+	}
+	s.handleUIPartialCloudSync(w, r)
+}
+
 func (s *Server) handleUIActionSaveCloudRemote(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	port, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("port")))
@@ -1674,8 +1694,19 @@ func (s *Server) handleUIActionSaveCloudSync(w http.ResponseWriter, r *http.Requ
 	remoteTarget := strings.TrimSpace(r.FormValue("remote_target"))
 	remoteCred := strings.TrimSpace(r.FormValue("remote_credential"))
 	remotePath := strings.TrimSpace(r.FormValue("remote_path"))
+
+	if remoteCred == "" && remoteTarget == "" {
+		s.setHXTrigger(w, "Bitte wähle ein Cloud Credential aus (klicke auf '+ Add Credential', falls noch keines existiert)", "error")
+		s.handleUIPartialCloudSync(w, r)
+		return
+	}
 	if remoteTarget == "" && remoteCred != "" {
 		remoteTarget = fmt.Sprintf("%s:%s", remoteCred, strings.TrimPrefix(remotePath, "/"))
+	}
+	if !strings.Contains(remoteTarget, ":") {
+		s.setHXTrigger(w, fmt.Sprintf("Ungültiges Ziel '%s' (Remote-Präfix mit Doppelpunkt fehlt)", remoteTarget), "error")
+		s.handleUIPartialCloudSync(w, r)
+		return
 	}
 	direction := cloudsync.SyncDirection(strings.ToUpper(strings.TrimSpace(r.FormValue("direction"))))
 	if direction != cloudsync.DirectionPull {
