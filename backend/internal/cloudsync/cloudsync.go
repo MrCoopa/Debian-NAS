@@ -791,6 +791,7 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 		if m.rcloneConfig != "" {
 			args = append(args, "--config", m.rcloneConfig)
 		}
+		args = append(args, "--create-empty-src-dirs")
 		if dryRun || job.DryRun {
 			args = append(args, "--dry-run")
 		}
