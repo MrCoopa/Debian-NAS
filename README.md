@@ -33,8 +33,30 @@ Ein kompromisslos schnelles, leichtgewichtiges NAS-Betriebssystem-Frontend und D
 * **Dateifreigaben & Benutzerverwaltung:**
   * **Samba (SMB):** Inklusive nativer Windows-Netzwerkerkennung (`wsdd2` / `wsdd`), macOS Time Machine-Unterstützung und Multi-User-Zuordnung (Gast-Zugriff vs. eingeschränkte Benutzer).
   * **NFS Kernel Server:** Hohe I/O-Performance für Linux-Clients, Proxmox VE und Virtualisierung.
-* **Cloud Sync (Rclone Engine):**
-  * Zeitgesteuerte oder manuelle Synchronisation zu Backblaze B2, Google Drive, OneDrive, S3, WebDAV und Nextcloud.
+* **Cloud Sync Tasks nach TrueNAS-Vorbild (Bare-Metal Rclone Engine):**
+  * **100% Linux-nativ & ohne Docker-Overhead:** Höchste Durchsatzraten und minimale Latenz durch direkte Rclone-Prozesssteuerung auf Debian 13.
+  * **Multi-Cloud- & SFTP-Unterstützung:** Vorkonfigurierte Templates für **Hetzner Storage Box (SFTP)**, Nextcloud/ownCloud (WebDAV), Backblaze B2, Amazon S3 / S3-kompatible Speicher (MinIO, Wasabi, Cloudflare R2), Google Drive und Microsoft OneDrive.
+  * **TrueNAS Standard Transfer-Modi:**
+    * `COPY`: Kopiert neue und veränderte Dateien sicher zum Zielspeicher; bestehende Remote-Dateien werden niemals gelöscht (Safe Mode).
+    * `SYNC`: Exakte 1:1 Spiegelung des ZFS-Datasets; auf der Quelle gelöschte Dateien werden auch auf dem Remote-Speicher bereinigt.
+    * `MOVE`: Verschiebt Dateien nach erfolgreichem Upload und gibt lokalen Speicherplatz frei.
+  * **Zero-Knowledge Client-Side Encryption (AES-256 Rclone Crypt):**
+    * Lokale Ver- und Entschlüsselung direkt im NAS-Arbeitsspeicher vor dem Netzwerktransfer über dynamische Crypt-Overlays (`cs_crypt_<id>`). Der Cloud-Provider speichert ausschließlich unlesbare Chiffren.
+    * Vollständige Trennung von Encryption Passphrase und kryptografischem Master Salt.
+  * **Granulare Dateinamen-Verschlüsselung (Filename Encryption):**
+    * `Off (Plain Names)`: Ordner- und Dateinamen bleiben auf Hetzner / Cloud im Klartext lesbar für perfekte Struktur und Übersicht – alle Dateiinhalte sind strikt AES-256-verschlüsselt.
+    * `Standard`: Sowohl Dateinamen als auch Verzeichnisstrukturen werden vollständig unkenntlich verschlüsselt (EME-Standard).
+    * `Obfuscate`: Dateinamen-Verschleierung für Systeme mit Zeichen- oder Längenbeschränkungen.
+  * **1:1 ZFS-Dataset-Hierarchiemapping (`/backup/<Pool>/<Dataset>`):**
+    * Automatische Pfad-Expansion und 1-Klick-Synchronisation (`🔄 Dataset Path`), sodass ZFS-Datasets sauber als getrennte Verzeichnisse auf dem Ziel angelegt werden (z. B. `/backup/SSD-MIRROR/Test/Test`).
+  * **Replikation leerer Verzeichnisse (`--create-empty-src-dirs`):**
+    * Auch neu angelegte, noch leere Ordner und ZFS-Datasets werden zuverlässig auf den Cloud-Speicher repliziert.
+  * **Prozess-Tracking & Sofortiger Abbruch (Instant Abort):**
+    * Laufende Transfers können per Klick auf `Abort` augenblicklich via POSIX-Signale (`SIGTERM`/`SIGKILL` & `pkill`) abgebrochen werden.
+  * **Dry-Run Modus & Fehler-Tooltips:**
+    * Risikoloses Testen von Synchronisationen mit `--dry-run` ohne Schreibzugriffe auf das Ziel, inklusive detaillierter Fehler-Tooltips (Exit-Codes und Rclone-Logs) direkt an den Status-Badges.
+  * **Bandbreitenbegrenzung (`--bwlimit`) & Cron-Scheduler:**
+    * Präzise Drosselung (z. B. `10M`, `50M`) und flexible Zeitpläne für automatische Nacht-Backups.
 * **Hardware-Agnostisch:**
   * Identifiziert Disks über persistente Pfade (`/dev/disk/by-id/`).
   * 45Drives Houston Chassis & Drive-Bay Erkennung, SMART-Selbsttests und Locate-LED Steuerung.
@@ -236,6 +258,151 @@ Debian NAS wurde von Grund auf dafür entwickelt, **echten, funktionierenden HDD
 * **Pool-Gruppierung:** Snapshots werden automatisch nach Speicherpool gruppiert und in separaten Tabellen dargestellt.
 * **Server-Side Pagination:** Um bei Dutzenden oder Hunderten automatischen Snapshots den Browser nicht zu überlasten, liefert das Backend exakt **10 Snapshots pro Seite** aus.
 * **Live-Filter & Aktionen:** Snapshots lassen sich pro Pool in Echtzeit durchsuchen, auf Knopfdruck zurückrollen (`Rollback`), klonen (`Clone`) oder löschen (`Destroy`).
+
+---
+
+## Cloud Sync & Hetzner Storage Box Guide (TrueNAS-Style Offsite-Replication)
+
+Debian NAS implementiert ein hochperformantes, an **TrueNAS SCALE angelehntes Cloud Sync Subsystem**, das direkt auf der nativen **Rclone-Engine** im Debian-Betriebssystem aufsetzt (ohne ressourcenhungrige Container). Es ermöglicht automatisierte, verschlüsselte Offsite-Backups deiner ZFS-Datasets zu externen Cloud-Zielen wie der **Hetzner Storage Box**, WebDAV/Nextcloud, Amazon S3 oder Backblaze B2.
+
+```mermaid
+flowchart LR
+    A["Lokales ZFS-Dataset<br/>(/mnt/SSD-MIRROR/mail-archiver)"] --> B["Debian NAS Daemon<br/>(cs_crypt Overlay)"]
+    B -- "AES-256 Verschlüsselung<br/>(Zero-Knowledge)" --> C["Rclone Engine<br/>(--create-empty-src-dirs)"]
+    C -- "SFTP (Port 23 / 22)" --> D["Hetzner Storage Box<br/>(/home/backup/SSD-MIRROR/mail-archiver)"]
+```
+
+---
+
+### 1. Cloud Credential einrichten (am Beispiel Hetzner Storage Box SFTP)
+
+Hetzner Storage Boxen bieten kostengünstigen, hochverfügbaren Speicher mit nativer SFTP/SSH-Unterstützung.
+
+1. Öffne in der WebUI den Bereich **Cloud Sync Tasks** und klicke auf **+ Add Credential** (oder in der Sektion *Cloud Credentials* auf **Add**).
+2. Wähle als **Provider:** `Hetzner Storage Box / SFTP`.
+3. Fülle die Verbindungsdaten aus:
+   * **Name:** Ein eindeutiger Identifier ohne Sonderzeichen oder Leerzeichen (z. B. `Hetzner` oder `StorageBox`).
+   * **Host:** Dein zugewiesener Hostname, z. B. `uXXXXXX.your-storagebox.de`.
+   * **User:** Dein Storage-Box Benutzername, z. B. `uXXXXXX`.
+   * **Port:** Standardmäßig `23` (Hetzner SFTP-Port) oder `22`.
+   * **Password:** Dein Storage-Box-Passwort oder SSH-Schlüssel.
+4. **Automatischer Host-Key-Schutz:** Debian NAS übergibt automatisch `known_hosts_file=none`. Dadurch bleibt der Hintergrund-Daemon niemals an interaktiven SSH-Fingerprint-Bestätigungen hängen, und automatische Tasks laufen unterbrechungsfrei durch.
+5. Klicke auf **Test Connection**, um die Verbindung sofort live zu verifizieren, und speichere mit **Save Credential**.
+
+---
+
+### 2. Cloud Sync Task konfigurieren
+
+Klicke in der Tabelle *Cloud Sync Tasks* auf **Add**, um eine neue Synchronisationsaufgabe anzulegen:
+
+| Feld | Erklärung & Best Practices |
+| :--- | :--- |
+| **Description / Task Name** | Aussagekräftiger Name (z. B. `Mail-Archiver --> Hetzner Upload`). |
+| **Direction** | **`PUSH (Local NAS → Cloud)`** für reguläre Offsite-Backups.<br/>**`PULL (Cloud → Local NAS)`** für Restore-Prozesse und Disaster Recovery. |
+| **Transfer Mode** | **`COPY (Safe - copy new/changed files only)`**: Kopiert neue oder geänderte Dateien. Auf dem Ziel bereits existierende Dateien werden *niemals* gelöscht. Ideal für unberührbare Langzeit-Backups.<br/>**`SYNC (Exact mirror)`**: Spiegelt das Dataset 1:1. Dateien, die lokal gelöscht wurden, werden auch auf der Cloud entfernt.<br/>**`MOVE`**: Verschiebt Dateien (löscht die lokale Quelldatei nach erfolgreichem Transfer). |
+| **Local Source Dataset** | Das zu sichernde ZFS-Dataset (z. B. `/mnt/SSD-MIRROR/Test` oder `/mnt/DATA/Nextcloud`). Das Backend normalisiert Pfade bei Bedarf automatisch auf den korrekten `/mnt/`-Mountpunkt (*Self-Healing*). |
+| **Remote Credential** | Das zuvor angelegte Remote (z. B. `Hetzner (sftp)`). |
+| **Remote Folder / Subpath** | Zielverzeichnis auf dem Remote-Speicher (z. B. `/backup/SSD-MIRROR/Test`). |
+| **Bandwidth Limit** | Optionale Begrenzung des Uploads (z. B. `50M` für 50 MB/s, `10M` oder `0` für unbegrenzt). |
+| **Frequency / Schedule** | Zeitplan nach Cron-Standard (z. B. *Daily at 02:00 AM* oder benutzerdefinierte Intervalle). |
+
+---
+
+### 3. ZFS-Dataset-Hierarchiemapping & leere Verzeichnisse
+
+Rclone überträgt standardmäßig den **Inhalt** des Quellordners. Würde man als Ziel nur `/backup` angeben, würden die Dateien aus `/mnt/SSD-MIRROR/Test/` direkt lose in `/backup/` auf der Storage Box abgelegt – der Ordnername `Test` ginge verloren.
+
+Debian NAS löst dieses Verhalten durch **vollautomatische Pfadhierarchie**:
+* Bei Auswahl eines Quell-Datasets (z. B. `/mnt/SSD-MIRROR/Test`) berechnet das System automatisch:
+  $$\text{Remote Subpath} = \text{/backup/} + \langle\text{Pool}\rangle + \text{/} + \langle\text{Dataset}\rangle$$
+* Beispiel: Das Quell-Dataset `/mnt/SSD-MIRROR/Test` wird zielgerichtet nach `/backup/SSD-MIRROR/Test` geschrieben. Auf der Hetzner Storage Box entsteht exakt die saubere ZFS-Struktur:
+  ```text
+  /home/backup/
+  └── SSD-MIRROR/
+      ├── mail-archiver/
+      │   └── ...
+      └── Test/
+          └── Test/
+  ```
+* **Button `🔄 Dataset Path`:** Ermöglicht bei nachträglichem Ändern des Quell-Datasets das sofortige Neuberechnen des optimalen Remote-Pfades mit einem Klick.
+* **Leere Ordner (`--create-empty-src-dirs`):** Debian NAS übergibt standardmäßig den Parameter `--create-empty-src-dirs`. Dadurch werden auch leere Unterordner und frisch erstellte, noch unbefüllte ZFS-Datasets zuverlässig auf dem Remote-Speicher abgebildet.
+
+---
+
+### 4. Zero-Knowledge Client-Side Encryption (AES-256 Rclone Crypt)
+
+Debian NAS schützt deine Daten auf externen Servern durch echte **Client-Side-Verschlüsselung**. Die Daten werden lokal auf deinem NAS im RAM verschlüsselt, bevor sie über die Netzwerkschnittstelle gesendet werden. Der Cloud-Provider speichert ausnahmslos unlesbare Chiffren.
+
+#### Funktionsweise unter der Haube
+Wird die Option **🔒 Client-Side Encryption** aktiviert, registriert der Daemon zur Laufzeit ein dynamisches, task-spezifisches Rclone-Crypt-Remote (`cs_crypt_<taskID>`), das als transparente Verschlüsselungsschicht vor das Ziel geschaltet wird.
+
+#### Schlüsselverwaltung
+* **Encryption Password:** Deine primäre Passphrase. Im Bearbeiten-Dialog (`Edit Cloud Sync Task`) wird das gespeicherte Passwort geladen und kann über das **👁️ Show / Hide**-Icon ein- und ausgeblendet werden.
+* **Master Salt:** Ein zweiter, unabhängiger Salt (Passphrase 2). Er verhindert Wörterbuch- und Rainbow-Table-Angriffe.
+
+#### Filename Encryption (Dateinamen-Verschlüsselung)
+Debian NAS bietet drei Betriebsmodi für Dateinamen:
+
+1. **`Off (Plain Names)` (Empfehlung für Hetzner Storage Box):**
+   * **Dateiinhalte:** Zu 100% kryptografisch sicher mit **AES-256-CTR** verschlüsselt. Niemand bei Hetzner kann Dateiinhalte einsehen.
+   * **Ordner- & Dateinamen:** Bleiben im Klartext lesbar (`rechnung_2026.pdf`, `Test/`, `mail-archiver/`).
+   * **Vorteil:** Du behältst über SSH (`ls -la`), SFTP oder den Hetzner Web-Dateimanager den vollen Überblick über deine Backups und Ordnerstrukturen, während der Inhalt unlesbar geschützt ist.
+2. **`Standard`:**
+   * Sowohl Dateiinhalte als auch Dateinamen und Verzeichnisstrukturen werden mit **AES-256-EME** unkenntlich verschlüsselt (z. B. `7k9f2b8a.../3p8m1c...`).
+   * **Vorteil:** Maximale Vertraulichkeit. Außenstehende können weder Dateinamen noch Rückschlüsse auf Dateitypen ziehen.
+3. **`Obfuscate`:**
+   * Einfache Obfuskation für Zielsysteme mit Zeichenbeschränkungen.
+
+---
+
+### 5. Task-Steuerung, Live-Monitoring & Sofort-Abbruch
+
+* **Dry-Run Modus (`DRY`):**
+  * Mit der Option *Dry-Run* führt Rclone einen Simulationslauf (`--dry-run`) durch. Es wird exakt geprüft und protokolliert, welche Dateien übertragen, geändert oder gelöscht würden, ohne Schreiboperationen auf dem Ziel auszuführen.
+* **Sofortiger Abbruch (`Abort`):**
+  * Soll ein laufender Upload gestoppt werden (z. B. bei versehentlich gestartetem Großtransfer), beendet ein Klick auf **Abort** den Prozess unverzüglich über Betriebssystem-Signale (`SIGTERM` / `SIGKILL` / `pkill`). Der Task wird sauber in den Status `FAILED (Aborted by user)` überführt.
+* **Fehler-Tooltips (Error Inspection):**
+  * Schlägt ein Sync fehl (z. B. wegen falscher Zugangsdaten, voller Storage Box oder fehlerhaftem Pfad), wird das `Failed`-Badge mit einem roten Warnrahmen markiert. Ein Mouse-Hover über das Badge öffnet einen detaillierten Tooltip mit dem exakten Rclone-Exit-Status und der Fehlermeldung.
+
+---
+
+### 6. Notfall-Wiederherstellung (Disaster Recovery & Restore)
+
+Sollte dein NAS ausfallen oder Daten versehentlich gelöscht werden, können die Backups auf zwei Wegen wiederhergestellt werden:
+
+#### Methode A: Über die Debian NAS WebUI (PULL Task)
+1. Erstelle einen neuen Task mit **Direction:** `PULL (Cloud → Local NAS)`.
+2. Wähle als Quelle das entsprechende Remote und den Subpath (z. B. `/backup/SSD-MIRROR/mail-archiver`).
+3. Wähle als lokales Ziel das gewünschte ZFS-Dataset (z. B. `/mnt/SSD-MIRROR/mail-archiver`).
+4. Aktiviere bei verschlüsselten Backups **Client-Side Encryption** und trage dieselbe Passphrase und dasselbe Salt ein.
+5. Klicke auf **Run Now** – alle Daten werden aus der Cloud heruntergeladen, transparent entschlüsselt und in dein ZFS-Dataset geschrieben.
+
+#### Methode B: Manuell auf jedem beliebigen Linux-/macOS-/Windows-Rechner via Rclone CLI
+Da Debian NAS auf standardisiertem Rclone Crypt aufbaut, bist du **nicht** an Debian NAS gebunden und kannst deine Daten jederzeit mit puren Rclone-Befehlen wiederherstellen:
+
+```bash
+# 1. Rclone installieren (falls noch nicht vorhanden)
+sudo apt update && sudo apt install -y rclone
+
+# 2. Hetzner Storage Box Remote manuell einrichten
+rclone config create Hetzner sftp \
+    host="uXXXXXX.your-storagebox.de" \
+    user="uXXXXXX" \
+    port=23 \
+    pass="DEIN_STORAGEBOX_PASSWORT" \
+    known_hosts_file="none"
+
+# 3. Bei Client-Side Encryption: Crypt-Overlay definieren
+# (Bei Filename Encryption 'Off' setze filename_encryption=off)
+rclone config create RestoreCrypt crypt \
+    remote="Hetzner:backup/SSD-MIRROR/mail-archiver" \
+    password="DEIN_VERSCHLUESSELUNGS_PASSWORT" \
+    salt="DEIN_MASTER_SALT" \
+    filename_encryption="off"
+
+# 4. Daten transparent entschlüsselt in ein lokales Verzeichnis kopieren
+rclone copy RestoreCrypt: /mnt/RESTORE/mail-archiver -P --create-empty-src-dirs
+```
 
 ---
 
