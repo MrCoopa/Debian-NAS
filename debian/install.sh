@@ -42,6 +42,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
   psmisc \
   hdparm \
   sdparm \
+  sg3-utils \
   smartmontools \
   gdisk \
   parted \

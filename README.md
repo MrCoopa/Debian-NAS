@@ -252,6 +252,18 @@ Debian NAS wurde von Grund auf dafür entwickelt, **echten, funktionierenden HDD
      1. **APM (Advanced Power Management):** Klassischer ATA-Standard (z. B. WD Red, ältere SATA-HDDs).
      2. **EPC (Extended Power Conditions):** Moderner ATA/SCSI-Standard (z. B. WD Ultrastar / Red Plus, Seagate Exos / IronWolf).
      Beide Technologien besitzen interne Firmware-Timer (wie z. B. zyklische Head-Parking-Timer oder 30-Minuten-Aufwachphasen), die sich mit `hd-idle` überschneiden und Festplatten ohne Betriebssystem-Zugriffe aus dem Ruhezustand wecken. Da Festplatten diese Einstellungen nach einem Reboot oder Stromverlust zurücksetzen, muss die Deaktivierung systemweit automatisiert werden.
+   * **Western Digital White Paper Referenz (*Storage Power Efficiency Improvement With HDD Idle Modes*):**
+     Western Digital spezifiziert 4 diskrete EPC Idle-Zustände für Enterprise-Laufwerke (wie Ultrastar, WD Red, Gold):
+     | Modus | Beschreibung | Typische Latenz beim Aufwachen | Leistungsaufnahme (SATA) | WD Default-Timer |
+     | :--- | :--- | :--- | :--- | :--- |
+     | **Idle_A** | Elektronik teilweise heruntergetaktet, Spindel voll aktiv | **0 s** (sofort bereit) | ~5,7 W | 2 Sekunden |
+     | **Idle_B** | Spindel dreht mit 7200 RPM, Köpfe geparkt (*Unloaded*) | **1,5 s** | ~3,8 W | **10 Minuten (SATA)** |
+     | **Idle_C / Standby_Y** | Niedrige Spindeldrehzahl (*Low RPM*), Köpfe geparkt | **4 s** | ~3,3 W | Deaktiviert (*Never*) |
+     | **Standby_Z** | **Voller Spindown (0 RPM)**, Spindelmotor gestoppt | **15 s** | **~1,3 W** (-77% Ersparnis) | Deaktiviert (*Never*) |
+
+     > [!IMPORTANT]
+     > **Verschleißgrenzen (Endurance):** Enterprise-HDDs sind typischerweise auf **600.000 Load/Unload-Zyklen** (Kopfparken ab `Idle_B`) und **50.000 Start/Stop-Zyklen** (`Standby_Z`) spezifiziert. Zu kurze Timer (< 5 Min) führen bei unkontrollierten Zugriffen zu hohem Verschleiß. Daher setzt Debian NAS auf zentrale 15–30-Minuten-Spindown-Timer via `hd-idle` und deaktiviert unkontrollierte interne Firmware-Timer (`Idle_B` 10-Minuten-Autotimer). Zudem bestätigt die von WD dokumentierte Aufwachzeit von **15 Sekunden** für `Standby_Z` die Notwendigkeit unseres 120s-SCSI-Device-Timeouts.
+
    * **Lösung in Debian NAS:** 
      * **Autostart-Cronjob:** Ein `@reboot`-Root-Cronjob deaktiviert beim Hochfahren sowohl APM als auch EPC-Standby-Timer global auf allen mechanischen Laufwerken:
        ```bash
