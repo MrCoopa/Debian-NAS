@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -572,6 +573,17 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 		rotData, err := os.ReadFile(filepath.Join(sysPath, "queue", "rotational"))
 		if err == nil && strings.TrimSpace(string(rotData)) == "1" {
 			rotational = true
+		}
+
+		// Ensure SCSI block timeout is at least 120s for rotational HDDs to prevent ZFS pool suspension during spin-up
+		if rotational && runtime.GOOS == "linux" {
+			timeoutPath := filepath.Join(sysPath, "device", "timeout")
+			if tData, err := os.ReadFile(timeoutPath); err == nil {
+				curSec, _ := strconv.Atoi(strings.TrimSpace(string(tData)))
+				if curSec > 0 && curSec < 120 {
+					_ = os.WriteFile(timeoutPath, []byte("120\n"), 0644)
+				}
+			}
 		}
 
 		// Read size in 512-byte sectors

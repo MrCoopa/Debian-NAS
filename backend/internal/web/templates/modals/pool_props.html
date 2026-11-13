@@ -24,6 +24,16 @@
         </select>
       </div>
 
+      <div class="form-group">
+        <label>Failure Mode (failmode)</label>
+        <select name="failmode" x-model="poolProps.failmode">
+          <option value="continue">continue (Recommended for sleeping HDDs: retries I/O and NEVER suspends pool on spinup delay)</option>
+          <option value="wait">wait (Default: Halts all I/O and suspends pool until 'zpool clear' is run)</option>
+          <option value="panic">panic (Kernel panic on pool error)</option>
+        </select>
+        <span class="text-dim" style="font-size: 0.72rem;">Set to 'continue' to prevent pools with sleeping mechanical HDDs from freezing in SUSPENDED state when spinning up.</span>
+      </div>
+
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" @click="openPoolPropsModal = false">Cancel</button>
         <button type="submit" class="btn btn-primary">Save Properties</button>

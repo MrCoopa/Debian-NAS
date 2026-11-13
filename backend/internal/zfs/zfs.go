@@ -101,6 +101,7 @@ type Pool struct {
 	AtimeDefault  string      `json:"atime_default"`
 	Autotrim      string      `json:"autotrim"`
 	Autoexpand    string      `json:"autoexpand"`
+	Failmode      string      `json:"failmode"`
 	Compression   string      `json:"compression"`
 }
 
@@ -146,6 +147,9 @@ func syncPoolFields(p *Pool) {
 	}
 	if p.Autoexpand == "" {
 		p.Autoexpand = "on"
+	}
+	if p.Failmode == "" {
+		p.Failmode = "wait"
 	}
 	if p.AtimeDefault == "" {
 		p.AtimeDefault = "off"
@@ -770,16 +774,20 @@ func (m *Manager) ListPools() ([]*Pool, error) {
 }
 
 func (m *Manager) scanLinuxPools() ([]*Pool, error) {
-	out, err := runCommand(fastZfsTimeout, "zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,frag,cap,health,autotrim,autoexpand")
+	out, err := runCommand(fastZfsTimeout, "zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,frag,cap,health,autotrim,autoexpand,failmode")
 	if err != nil {
-		// Fallback without autotrim/autoexpand if older zpool
-		out, err = runCommand(fastZfsTimeout, "zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,frag,cap,health")
+		// Fallback without failmode if older zpool
+		out, err = runCommand(fastZfsTimeout, "zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,frag,cap,health,autotrim,autoexpand")
 		if err != nil {
-			outStr := strings.TrimSpace(string(out))
-			if strings.Contains(outStr, "no pools available") || strings.Contains(outStr, "no pools found") || outStr == "" {
-				return []*Pool{}, nil
+			// Fallback without autotrim/autoexpand
+			out, err = runCommand(fastZfsTimeout, "zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,frag,cap,health")
+			if err != nil {
+				outStr := strings.TrimSpace(string(out))
+				if strings.Contains(outStr, "no pools available") || strings.Contains(outStr, "no pools found") || outStr == "" {
+					return []*Pool{}, nil
+				}
+				return nil, fmt.Errorf("zpool list: %w (%s)", err, outStr)
 			}
-			return nil, fmt.Errorf("zpool list: %w (%s)", err, outStr)
 		}
 	}
 
@@ -810,11 +818,15 @@ func parseZpoolList(out []byte, fetchStatus func(poolName string) ([]Vdev, Scrub
 
 		autotrim := "off"
 		autoexpand := "on"
+		failmode := "wait"
 		if len(f) >= 8 {
 			autotrim = strings.TrimSpace(f[7])
 		}
 		if len(f) >= 9 {
 			autoexpand = strings.TrimSpace(f[8])
+		}
+		if len(f) >= 10 {
+			failmode = strings.TrimSpace(f[9])
 		}
 
 		poolName := strings.TrimSpace(f[0])
@@ -840,6 +852,7 @@ func parseZpoolList(out []byte, fetchStatus func(poolName string) ([]Vdev, Scrub
 			AtimeDefault:  "off",
 			Autotrim:      autotrim,
 			Autoexpand:    autoexpand,
+			Failmode:      failmode,
 		}
 		syncPoolFields(p)
 		pools = append(pools, p)
@@ -3363,6 +3376,8 @@ func (m *Manager) SetPoolProperty(pool, property, value string) error {
 				p.Autotrim = value
 			case "autoexpand":
 				p.Autoexpand = value
+			case "failmode":
+				p.Failmode = value
 			}
 			syncPoolFields(p)
 		}

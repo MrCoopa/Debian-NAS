@@ -455,8 +455,8 @@
           this.openDiskActionModal = true;
           this.triggerHtmxRefresh('refreshAvailableDisks');
         },
-        openPoolProps(pool, autotrim, autoexpand) {
-          this.poolProps = { pool: pool, autotrim: autotrim || 'off', autoexpand: autoexpand || 'on' };
+        openPoolProps(pool, autotrim, autoexpand, failmode) {
+          this.poolProps = { pool: pool, autotrim: autotrim || 'off', autoexpand: autoexpand || 'on', failmode: failmode || 'wait' };
           this.openPoolPropsModal = true;
         },
         openDatasetProps(name, compression, recordsize, quota, atime, readonly, type) {

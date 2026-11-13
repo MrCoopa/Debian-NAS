@@ -980,6 +980,7 @@ func (s *Server) handleUIActionSetPoolProperty(w http.ResponseWriter, r *http.Re
 	pool := strings.TrimSpace(r.FormValue("pool"))
 	autotrim := r.FormValue("autotrim")
 	autoexpand := r.FormValue("autoexpand")
+	failmode := r.FormValue("failmode")
 
 	if pool == "" {
 		s.setHXTrigger(w, "Pool name is required", "error")
@@ -995,6 +996,11 @@ func (s *Server) handleUIActionSetPoolProperty(w http.ResponseWriter, r *http.Re
 	}
 	if autoexpand != "" {
 		if err := s.zfs.SetPoolProperty(pool, "autoexpand", autoexpand); err != nil && propErr == nil {
+			propErr = err
+		}
+	}
+	if failmode != "" {
+		if err := s.zfs.SetPoolProperty(pool, "failmode", failmode); err != nil && propErr == nil {
 			propErr = err
 		}
 	}

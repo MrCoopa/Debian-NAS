@@ -239,6 +239,13 @@ Debian NAS wurde von Grund auf dafür entwickelt, **echten, funktionierenden HDD
    Alle über die WebUI erstellten Datasets setzen standardmäßig `atime=off`. Dadurch führen reine Lesezugriffe nicht zu Schreiboperationen für Zugriffszeitstempel.
 4. **Spindown-Timer via `hd-idle`:**
    In `/etc/default/hd-idle` wird der Spindown-Timer (z. B. 900 Sekunden = 15 Minuten) hinterlegt. Die WebUI erlaubt zusätzlich die granulare Steuerung pro Festplatte (Always On, 5 Min, 10 Min, 15 Min, 30 Min, 1 Std, 2 Std).
+5. **Schutz vor ZFS "SUSPENDED" beim Aufwachen (SCSI Device Timeout & failmode):**
+   * **Problemstellung:** Große Helium- oder Enterprise-HDDs (wie 12TB–22TB) besitzen 8–10 Magnetscheiben. Das Hochdrehen aus dem Standby dauert **12 bis 18 Sekunden**. Standardmäßig bricht der Linux-Kernel I/O-Befehle bereits nach 30 Sekunden ab, wenn ein SATA-Handshake leicht verzögert wird. OpenZFS erhält dadurch einen temporären I/O-Error und versetzt den gesamten Pool in den Zustand `SUSPENDED` (`failmode=wait`), wodurch alle Zugriffe (z. B. von Jellyfin via NFS) einfrieren.
+   * **Lösung in Debian NAS:**
+     1. **Automatischer 120s SCSI-Timeout:** Das System setzt den Kernel-Block-Timeout für alle rotierenden HDDs (`/sys/block/sdX/device/timeout`) automatisch auf **120 Sekunden** (via `/etc/udev/rules.d/99-zfs-spindown-timeout.rules` und Daemon-Erkennung). Der Kernel wartet geduldig, bis die Spindel die volle Drehzahl erreicht hat.
+     2. **SATA ALPM auf `max_performance`:** Verhindert das Einschlafen der SATA-Leitung (PHY-Link) bei schlafender Spindel, wodurch `COMRESET`-Abbrüche beim Aufwachen vermieden werden.
+     3. **Pool `failmode=continue`:** Unter **Storage Pools -> Properties** kann `failmode=continue` gewählt werden. ZFS wiederholt I/O-Anfragen geduldig und suspendiert den Pool bei Anlaufverzögerungen niemals.
+     4. **1-Klick Resume:** Sollte ein Pool im Notfall suspendiert sein, lässt er sich mit einem Klick auf **⚡ Resume Pool** (oder per CLI `zpool clear <pool>`) sofort wiederbeleben.
 
 ---
 
