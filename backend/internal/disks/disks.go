@@ -1144,11 +1144,23 @@ func (m *Manager) ForceStandby(devPath string) error {
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "hdparm", "-y", diskPath)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			msg := strings.TrimSpace(string(out))
-			if msg != "" {
-				return fmt.Errorf("hdparm -y %s failed: %s", diskPath, msg)
+			// Fallback for LSI HBAs (mpt3sas): smartctl -s standby,now via SCSI-to-ATA Translation (SAT)
+			sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer sCancel()
+			sCmd := exec.CommandContext(sCtx, "smartctl", "-s", "standby,now", diskPath)
+			if sErr := sCmd.Run(); sErr != nil {
+				// Further fallback: explicit -d sat flag for LSI controllers
+				satCtx, satCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer satCancel()
+				satCmd := exec.CommandContext(satCtx, "smartctl", "-d", "sat", "-s", "standby,now", diskPath)
+				if satErr := satCmd.Run(); satErr != nil {
+					msg := strings.TrimSpace(string(out))
+					if msg != "" {
+						return fmt.Errorf("standby for %s failed (hdparm and smartctl SAT failed): %s", diskPath, msg)
+					}
+					return fmt.Errorf("standby for %s failed: %w", diskPath, err)
+				}
 			}
-			return fmt.Errorf("hdparm -y %s failed: %w", diskPath, err)
 		}
 	}
 
@@ -1754,6 +1766,12 @@ func applyHardwareSpindown(devPath string, seconds int) error {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
+		lower := strings.ToLower(msg)
+		// On LSI HBAs (mpt3sas), hardware spindown ioctl may not be supported directly;
+		// hd-idle handles software spindown in Debian NAS, so treat this as non-fatal.
+		if strings.Contains(lower, "inappropriate ioctl") || strings.Contains(lower, "not supported") {
+			return nil
+		}
 		if msg != "" {
 			return fmt.Errorf("hdparm -S %d %s failed: %s", val, devPath, msg)
 		}
