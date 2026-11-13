@@ -238,6 +238,15 @@
           if (s === '0 0 00 * *') return '0 0 * * *';
           return s || '0 2 * * *';
         },
+        computeDefaultRemotePath(sourcePath, currentRemotePath) {
+          if (!sourcePath) return '/backup';
+          const rel = sourcePath.replace(/^\/mnt\//, '').replace(/^\//, '');
+          if (!rel) return '/backup';
+          if (currentRemotePath && currentRemotePath !== '/backup' && currentRemotePath !== 'backup' && currentRemotePath.replace(/^\//, '').endsWith(rel)) {
+            return currentRemotePath.startsWith('/') ? currentRemotePath : '/' + currentRemotePath;
+          }
+          return '/backup/' + rel;
+        },
         openCreateCloudSync() {
           this.isEditingCloudSync = false;
           const sel = document.getElementById('cloudsync-source-select');
@@ -260,18 +269,15 @@
               }
             }
           }
-          let defaultRemotePath = 'backup';
-          if (firstSrc) {
-            defaultRemotePath = 'backup/' + firstSrc.replace(/^\/mnt\//, '');
-          }
+          let defaultSrc = firstSrc || '';
           this.cloudSyncForm = {
             id: '',
             name: '',
             description: '',
-            source_path: firstSrc,
+            source_path: defaultSrc,
             remote_target: '',
             remote_credential: firstRem,
-            remote_path: defaultRemotePath,
+            remote_path: this.computeDefaultRemotePath(defaultSrc, ''),
             direction: 'PUSH',
             transfer_mode: 'COPY',
             dry_run: false,
@@ -301,6 +307,7 @@
           if (normalizedSrc && !normalizedSrc.startsWith('/mnt/') && normalizedSrc.startsWith('/')) {
             normalizedSrc = '/mnt' + normalizedSrc;
           }
+          let resolvedRemote = this.computeDefaultRemotePath(normalizedSrc, subPath);
           this.cloudSyncForm = {
             id: id,
             name: name,
@@ -308,7 +315,7 @@
             source_path: normalizedSrc,
             remote_target: target || '',
             remote_credential: remoteCred,
-            remote_path: subPath,
+            remote_path: resolvedRemote,
             direction: dir || 'PUSH',
             transfer_mode: mode || 'COPY',
             dry_run: dryRun === true || dryRun === 'true',

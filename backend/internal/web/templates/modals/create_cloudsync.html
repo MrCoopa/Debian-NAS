@@ -33,12 +33,12 @@
       <div class="form-group">
         <label>Local Source Dataset / Path</label>
         <select id="cloudsync-source-select" name="source_path" x-model="cloudSyncForm.source_path" required
-                @change="if (!isEditingCloudSync && cloudSyncForm.source_path) { cloudSyncForm.remote_path = 'backup/' + cloudSyncForm.source_path.replace(/^\/mnt\//, ''); }"
+                @change="cloudSyncForm.remote_path = computeDefaultRemotePath(cloudSyncForm.source_path, '')"
                 hx-get="/ui/partials/modals/cloudsync_sources"
                 hx-trigger="poolUpdate from:body, datasetUpdate from:body, refreshCloudSyncSources from:body"
                 hx-target="this"
                 hx-swap="innerHTML"
-                @htmx:after-swap="window.nasEnsureSelectValue && window.nasEnsureSelectValue($el, cloudSyncForm.source_path, v => cloudSyncForm.source_path = v)">
+                @htmx:after-swap="window.nasEnsureSelectValue && window.nasEnsureSelectValue($el, cloudSyncForm.source_path, v => { cloudSyncForm.source_path = v; if (!cloudSyncForm.remote_path || cloudSyncForm.remote_path === '/backup' || !cloudSyncForm.remote_path.includes('/')) cloudSyncForm.remote_path = computeDefaultRemotePath(v, ''); })">
           {{template "partials/cloudsync_sources_options.html" .}}
         </select>
       </div>
@@ -63,14 +63,20 @@
           </span>
         </div>
         <div class="form-group">
-          <label>Remote Folder / Subpath</label>
-          <input type="text" name="remote_path" x-model="cloudSyncForm.remote_path" placeholder="e.g. backup/SSD-MIRROR/mail-archiver">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <label>Remote Folder / Subpath</label>
+            <a href="javascript:void(0)" @click="cloudSyncForm.remote_path = computeDefaultRemotePath(cloudSyncForm.source_path, '')"
+               style="font-size: 0.70rem; color: #40c4ff; text-decoration: none;" title="Auf /backup/<Dataset> zurücksetzen">
+              🔄 Dataset-Pfad
+            </a>
+          </div>
+          <input type="text" name="remote_path" x-model="cloudSyncForm.remote_path" placeholder="e.g. /backup/SSD-MIRROR/Test">
           <div style="font-size: 0.72rem; color: #a0a0a0; margin-top: 0.35rem;">
             <span>Ziel: </span>
             <code style="color: #40c4ff;" x-text="(cloudSyncForm.remote_credential || 'Remote') + ':' + (cloudSyncForm.remote_path || '')"></code>
           </div>
           <div style="font-size: 0.69rem; color: #ffb74d; margin-top: 0.2rem; line-height: 1.35;">
-            💡 Rclone überträgt den <em>Inhalt</em> der Quelle. Wenn der Ordnername selbst auf der Cloud erhalten bleiben soll, gib ihn im Zielpfad an (z. B. <code style="color: #40c4ff;" x-text="'backup/' + (cloudSyncForm.source_path ? cloudSyncForm.source_path.replace(/^\/mnt\//, '') : 'ordner')"></code>).
+            💡 Das Ziel spiegelt automatisch das komplette Dataset (<code style="color: #40c4ff;" x-text="computeDefaultRemotePath(cloudSyncForm.source_path, '')"></code>), sodass alle Unterordner exakt erhalten bleiben.
           </div>
         </div>
       </div>

@@ -670,6 +670,16 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 		return fmt.Errorf("job is already running")
 	}
 
+	if job.SourcePath != "" {
+		rel := strings.TrimPrefix(job.SourcePath, "/mnt/")
+		rel = strings.TrimPrefix(rel, "/")
+		cleanRemote := strings.Trim(job.RemotePath, "/")
+		if rel != "" && (cleanRemote == "" || cleanRemote == "backup" || cleanRemote == "Backup" || strings.HasPrefix(rel, cleanRemote+"/")) {
+			job.RemotePath = "/backup/" + rel
+			m.saveJobsConfig()
+		}
+	}
+
 	target := job.GetTarget()
 	if target == "" {
 		target = job.RemoteTarget
@@ -863,6 +873,26 @@ func (m *Manager) SaveJob(job *SyncJob) error {
 		}
 	}
 
+	if job.SourcePath != "" {
+		rel := strings.TrimPrefix(job.SourcePath, "/mnt/")
+		rel = strings.TrimPrefix(rel, "/")
+		if rel != "" {
+			cleanRemote := strings.Trim(job.RemotePath, "/")
+			if cleanRemote == "" || cleanRemote == "backup" || cleanRemote == "Backup" || strings.HasPrefix(rel, cleanRemote+"/") {
+				job.RemotePath = "/backup/" + rel
+			} else if !strings.HasSuffix(cleanRemote, rel) && !strings.HasSuffix(cleanRemote, filepath.Base(rel)) {
+				basePrefix := "backup"
+				if parts := strings.Split(cleanRemote, "/"); len(parts) > 0 && parts[0] != "" {
+					basePrefix = parts[0]
+				}
+				job.RemotePath = "/" + basePrefix + "/" + rel
+			}
+		}
+	}
+	if job.RemotePath != "" && !strings.HasPrefix(job.RemotePath, "/") {
+		job.RemotePath = "/" + job.RemotePath
+	}
+
 	if job.RemoteCredential == "" && strings.Contains(job.RemoteTarget, ":") {
 		parts := strings.SplitN(job.RemoteTarget, ":", 2)
 		job.RemoteCredential = parts[0]
@@ -1025,6 +1055,15 @@ func (m *Manager) loadJobsConfig() {
 					changed = true
 				} else if runtime.GOOS == "linux" {
 					j.SourcePath = candidate
+					changed = true
+				}
+			}
+			if j.SourcePath != "" {
+				rel := strings.TrimPrefix(j.SourcePath, "/mnt/")
+				rel = strings.TrimPrefix(rel, "/")
+				cleanRemote := strings.Trim(j.RemotePath, "/")
+				if rel != "" && (cleanRemote == "" || cleanRemote == "backup" || cleanRemote == "Backup" || strings.HasPrefix(rel, cleanRemote+"/")) {
+					j.RemotePath = "/backup/" + rel
 					changed = true
 				}
 			}
