@@ -188,7 +188,7 @@
                     {{end}}
                   </div>
                   {{if and (eq $j.Status "FAILED") $j.LastMessage}}
-                    <div style="font-size: 0.68rem; color: #ff8a80; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 0.25rem;" title="{{$j.LastMessage}}">
+                    <div style="font-size: 0.68rem; color: #ff8a80; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 0.25rem; cursor: help;" title="{{$j.LastMessage}}">
                       {{$j.LastMessage}}
                     </div>
                   {{end}}

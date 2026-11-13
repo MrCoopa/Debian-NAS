@@ -678,6 +678,30 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 		return fmt.Errorf("Kein gültiges Cloud-Ziel konfiguriert (Doppelpunkt fehlt, z.B. hetzner:Backup). Bitte Cloud Credential wählen.")
 	}
 
+	if job.EncryptionEnabled && job.EncryptionPassword != "" {
+		cryptName := fmt.Sprintf("cs_crypt_%s", job.ID)
+		underlying := ""
+		if job.RemoteCredential != "" {
+			underlying = fmt.Sprintf("%s:%s", job.RemoteCredential, strings.TrimPrefix(job.RemotePath, "/"))
+		} else if job.RemoteTarget != "" {
+			underlying = job.RemoteTarget
+		}
+		if underlying != "" {
+			fnEnc := job.FilenameEncryption
+			if fnEnc == "" {
+				fnEnc = "standard"
+			}
+			_ = m.createRemoteLocked(CreateRemoteRequest{
+				Name:               cryptName,
+				Type:               "crypt",
+				Remote:             underlying,
+				Password:           job.EncryptionPassword,
+				Salt:               job.EncryptionSalt,
+				FilenameEncryption: fnEnc,
+			})
+		}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	m.running[jobID] = &runningTask{cancel: cancel}
 
@@ -721,11 +745,6 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 			return
 		}
 
-		args := []string{"--non-interactive"}
-		if m.rcloneConfig != "" {
-			args = append(args, "--config", m.rcloneConfig)
-		}
-
 		action := "sync"
 		switch job.TransferMode {
 		case ModeCopy:
@@ -736,12 +755,17 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 			action = "sync"
 		}
 
+		var args []string
+		args = append(args, action)
 		if job.Direction == DirectionPush {
-			args = append(args, action, job.SourcePath, target)
+			args = append(args, job.SourcePath, target)
 		} else {
-			args = append(args, action, target, job.SourcePath)
+			args = append(args, target, job.SourcePath)
 		}
 
+		if m.rcloneConfig != "" {
+			args = append(args, "--config", m.rcloneConfig)
+		}
 		if dryRun || job.DryRun {
 			args = append(args, "--dry-run")
 		}
