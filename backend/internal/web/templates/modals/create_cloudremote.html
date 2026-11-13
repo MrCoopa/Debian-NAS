@@ -1,0 +1,136 @@
+<div class="modal-backdrop" x-show="openCloudRemoteModal" x-cloak>
+  <div class="modal-box" @click.outside="openCloudRemoteModal = false" style="max-width: 580px;">
+    <div class="modal-header">
+      <h3>Add Cloud Credential (Rclone)</h3>
+      <button type="button" class="modal-close" @click="openCloudRemoteModal = false">&times;</button>
+    </div>
+    <form hx-post="/ui/actions/cloudsync/remotes/save" hx-target="#cloudsync-container" hx-swap="outerHTML" @htmx:after-request="if (event.target === $el) { const res = window.nasTriggerHasError ? window.nasTriggerHasError(event.detail.xhr) : { hasError: false }; if (event.detail.successful && !res.hasError) openCloudRemoteModal = false; }">
+      <div class="form-group">
+        <label>Credential Name (Remote Identifier)</label>
+        <input type="text" name="name" x-model="cloudRemoteForm.name" required placeholder="e.g. hetzner, hetzner-crypt, b2-backup" pattern="[a-zA-Z0-9_\-]+" title="Only alphanumeric, dashes, and underscores allowed">
+        <span class="text-dim" style="font-size: 0.72rem;">Unique identifier for this cloud remote in Rclone.</span>
+      </div>
+
+      <div class="form-group">
+        <label>Provider / Cloud Storage Type</label>
+        <select name="type" x-model="cloudRemoteForm.type" required>
+          <option value="sftp">Hetzner Storage Box / SFTP</option>
+          <option value="crypt">Client-Side Encryption (Crypt Wrapper)</option>
+          <option value="webdav">WebDAV / Nextcloud / ownCloud</option>
+          <option value="b2">Backblaze B2</option>
+          <option value="s3">Amazon S3 / S3-Compatible (MinIO, Wasabi)</option>
+        </select>
+      </div>
+
+      <!-- 1. SFTP / Hetzner Storage Box Fields -->
+      <div x-show="cloudRemoteForm.type === 'sftp'" style="background: rgba(255,255,255,0.02); border: 1px solid #333; border-radius: 4px; padding: 0.75rem; margin-bottom: 1rem;">
+        <div class="grid-2col" style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.75rem;">
+          <div class="form-group">
+            <label>SFTP Host</label>
+            <input type="text" name="host" x-model="cloudRemoteForm.host" placeholder="e.g. u123456.your-storagebox.de">
+          </div>
+          <div class="form-group">
+            <label>Port</label>
+            <input type="number" name="port" x-model="cloudRemoteForm.port" placeholder="23">
+          </div>
+        </div>
+        <div class="grid-2col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" name="user" x-model="cloudRemoteForm.user" placeholder="e.g. u123456">
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" name="pass" x-model="cloudRemoteForm.pass" placeholder="Storage Box Password">
+          </div>
+        </div>
+        <span class="text-dim" style="font-size: 0.72rem; color: #40c4ff;">Tip: For Hetzner Storage Box via SFTP, use Port 23. Passwords are automatically obscured bare-metal.</span>
+      </div>
+
+      <!-- 2. Crypt (Client-Side Encryption) Fields -->
+      <div x-show="cloudRemoteForm.type === 'crypt'" style="background: rgba(255,255,255,0.02); border: 1px solid #333; border-radius: 4px; padding: 0.75rem; margin-bottom: 1rem;" x-cloak>
+        <div class="form-group">
+          <label>Underlying Remote &amp; Folder</label>
+          <input type="text" name="remote" x-model="cloudRemoteForm.remote" placeholder="e.g. hetzner:Backup or mybox:encrypted">
+          <span class="text-dim" style="font-size: 0.72rem;">Format: <code>&lt;remote&gt;:&lt;folder&gt;</code>. Data placed in this Crypt remote will be encrypted before upload.</span>
+        </div>
+        <div class="grid-2col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+          <div class="form-group">
+            <label>Encryption Password</label>
+            <input type="password" name="password" x-model="cloudRemoteForm.password" placeholder="Passphrase">
+          </div>
+          <div class="form-group">
+            <label>Master Salt</label>
+            <input type="password" name="salt" x-model="cloudRemoteForm.salt" placeholder="Salt (beliebige Zeichenfolge)">
+          </div>
+        </div>
+        <span class="text-dim" style="font-size: 0.72rem; color: #a78bfa;">Analog to TrueNAS SCALE: Zero-Knowledge encryption protects both filenames and file contents with AES-256.</span>
+      </div>
+
+      <!-- 3. WebDAV Fields -->
+      <div x-show="cloudRemoteForm.type === 'webdav'" style="background: rgba(255,255,255,0.02); border: 1px solid #333; border-radius: 4px; padding: 0.75rem; margin-bottom: 1rem;" x-cloak>
+        <div class="form-group">
+          <label>WebDAV URL</label>
+          <input type="url" name="url" x-model="cloudRemoteForm.url" placeholder="https://uXXXXX.your-storagebox.de or Nextcloud WebDAV URL">
+        </div>
+        <div class="grid-2col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" name="user" x-model="cloudRemoteForm.user">
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" name="pass" x-model="cloudRemoteForm.pass">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Vendor</label>
+          <select name="vendor" x-model="cloudRemoteForm.vendor">
+            <option value="other">Other / Standard WebDAV</option>
+            <option value="nextcloud">Nextcloud</option>
+            <option value="owncloud">ownCloud</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 4. Backblaze B2 Fields -->
+      <div x-show="cloudRemoteForm.type === 'b2'" style="background: rgba(255,255,255,0.02); border: 1px solid #333; border-radius: 4px; padding: 0.75rem; margin-bottom: 1rem;" x-cloak>
+        <div class="form-group">
+          <label>Account ID / Key ID</label>
+          <input type="text" name="account" x-model="cloudRemoteForm.account" placeholder="Backblaze Key ID">
+        </div>
+        <div class="form-group">
+          <label>Application Key</label>
+          <input type="password" name="key" x-model="cloudRemoteForm.key" placeholder="Backblaze Application Key">
+        </div>
+      </div>
+
+      <!-- 5. Amazon S3 Fields -->
+      <div x-show="cloudRemoteForm.type === 's3'" style="background: rgba(255,255,255,0.02); border: 1px solid #333; border-radius: 4px; padding: 0.75rem; margin-bottom: 1rem;" x-cloak>
+        <div class="form-group">
+          <label>Endpoint URL (leave empty for AWS S3)</label>
+          <input type="text" name="endpoint" x-model="cloudRemoteForm.endpoint" placeholder="e.g. https://s3.eu-central-1.amazonaws.com or MinIO IP:Port">
+        </div>
+        <div class="grid-2col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+          <div class="form-group">
+            <label>Access Key ID</label>
+            <input type="text" name="access_key" x-model="cloudRemoteForm.access_key">
+          </div>
+          <div class="form-group">
+            <label>Secret Access Key</label>
+            <input type="password" name="secret_key" x-model="cloudRemoteForm.secret_key">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Region</label>
+          <input type="text" name="region" x-model="cloudRemoteForm.region" placeholder="e.g. eu-central-1">
+        </div>
+      </div>
+
+      <div class="modal-actions" style="margin-top: 1.25rem;">
+        <button type="button" class="btn btn-secondary" @click="openCloudRemoteModal = false">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Credential</button>
+      </div>
+    </form>
+  </div>
+</div>

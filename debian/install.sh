@@ -49,6 +49,14 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
   rclone \
   golang-go
 
+# Rclone bare-metal Installation sicherstellen (offizielles Skript für neueste Features)
+if ! command -v rclone &>/dev/null; then
+  echo "[+] Installiere Rclone bare-metal..."
+  curl -fsSL https://rclone.org/install.sh | bash || true
+fi
+mkdir -p /root/.config/rclone /etc/nas
+chmod 0700 /root/.config/rclone /etc/nas
+
 # Optional hardware & Windows 10/11 Network Discovery (wsdd2 for Trixie, wsdd for older Debian) tools
 DEBIAN_FRONTEND=noninteractive apt-get install -y wsdd2 || DEBIAN_FRONTEND=noninteractive apt-get install -y wsdd || DEBIAN_FRONTEND=noninteractive apt-get install -y wsdd-server || true
 DEBIAN_FRONTEND=noninteractive apt-get install -y hd-idle ledmon || true

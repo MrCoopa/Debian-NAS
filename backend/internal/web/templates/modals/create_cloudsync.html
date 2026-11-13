@@ -16,13 +16,17 @@
         <div class="form-group">
           <label>Direction</label>
           <select name="direction" x-model="cloudSyncForm.direction">
-            <option value="PUSH">PUSH (Local &rarr; Cloud)</option>
-            <option value="PULL">PULL (Cloud &rarr; Local)</option>
+            <option value="PUSH">PUSH (Local NAS &rarr; Cloud)</option>
+            <option value="PULL">PULL (Cloud &rarr; Local NAS)</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Bandwidth Limit</label>
-          <input type="text" name="bandwidth_limit" x-model="cloudSyncForm.bandwidth_limit" placeholder="e.g. 50M, 100M or 0">
+          <label>Transfer Mode (TrueNAS Standard)</label>
+          <select name="transfer_mode" x-model="cloudSyncForm.transfer_mode">
+            <option value="SYNC">SYNC (Mirror - delete extra files on dest)</option>
+            <option value="COPY">COPY (Safe - copy new/changed files only)</option>
+            <option value="MOVE">MOVE (Move - delete source after upload)</option>
+          </select>
         </div>
       </div>
 
@@ -38,16 +42,31 @@
         </select>
       </div>
 
+      <!-- Cloud Credential & Remote Subfolder -->
+      <div class="grid-2col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <label>Cloud Credential (Remote)</label>
+            <a href="javascript:void(0)" @click="openCreateCloudRemote()" style="font-size: 0.72rem; color: #40c4ff; text-decoration: none;">+ Add Credential</a>
+          </div>
+          <select id="cloudsync-remote-select" name="remote_credential" x-model="cloudSyncForm.remote_credential"
+                  hx-get="/ui/partials/modals/cloudsync_remotes"
+                  hx-trigger="cloudSyncUpdate from:body, refreshCloudSyncRemotes from:body"
+                  hx-target="this"
+                  hx-swap="innerHTML">
+            {{template "partials/cloudsync_remotes_options.html" .}}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Remote Folder / Subpath</label>
+          <input type="text" name="remote_path" x-model="cloudSyncForm.remote_path" placeholder="e.g. Backup/DATA or /">
+        </div>
+      </div>
+
       <div class="form-group">
-        <label>Remote Destination / Target</label>
-        <input type="text" name="remote_target" x-model="cloudSyncForm.remote_target" required placeholder="e.g. hetzner_storagebox:backup/DATA">
-        <span class="text-dim" style="font-size: 0.72rem;">Format: <code>&lt;remote&gt;:&lt;path&gt;</code>. Available remotes:
-          {{if not .CloudRemotes}}
-            <span class="text-dim">hetzner_storagebox (webdav), b2_backup (b2)</span>
-          {{else}}
-            {{range $idx, $r := .CloudRemotes}}{{if $idx}}, {{end}}<code>{{$r.Name}}</code> ({{$r.Type}}){{end}}
-          {{end}}
-        </span>
+        <label>Bandwidth Limit</label>
+        <input type="text" name="bandwidth_limit" x-model="cloudSyncForm.bandwidth_limit" placeholder="e.g. 50M, 100M or 0 (Unlimited)">
+        <span class="text-dim" style="font-size: 0.72rem;">Optional limit passed bare-metal to <code>--bwlimit</code> (e.g. 10M, 50M).</span>
       </div>
 
       <div class="form-group">
@@ -66,10 +85,14 @@
         <input type="text" name="frequency_text" x-model="cloudSyncForm.frequency_text" placeholder="e.g. At 03:45 (03:45 AM), only on Tuesday,...">
       </div>
 
-      <div class="form-group" style="margin-top: 0.5rem;">
+      <div class="form-group" style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;">
         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
           <input type="checkbox" name="enabled" x-model="cloudSyncForm.enabled" value="true" class="disk-checkbox">
           <span style="font-size: 0.82rem; color: #ffffff;">Enable task schedule automatically</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" name="dry_run" x-model="cloudSyncForm.dry_run" value="true" class="disk-checkbox">
+          <span style="font-size: 0.82rem; color: #a78bfa;">Dry Run mode (test run only, passes <code>--dry-run</code> without modifying data)</span>
         </label>
       </div>
 

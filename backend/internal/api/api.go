@@ -137,6 +137,9 @@ func (s *Server) Routes() http.Handler {
 
 	// 5. Cloud Sync (Rclone)
 	mux.HandleFunc("GET /api/v1/cloudsync/remotes", s.handleListCloudRemotes)
+	mux.HandleFunc("POST /api/v1/cloudsync/remotes", s.handleCreateCloudRemote)
+	mux.HandleFunc("DELETE /api/v1/cloudsync/remotes", s.handleDeleteCloudRemote)
+	mux.HandleFunc("POST /api/v1/cloudsync/remotes/test", s.handleTestCloudRemote)
 	mux.HandleFunc("GET /api/v1/cloudsync/jobs", s.handleListCloudJobs)
 	mux.HandleFunc("POST /api/v1/cloudsync/jobs", s.handleSaveCloudJob)
 	mux.HandleFunc("DELETE /api/v1/cloudsync/jobs", s.handleDeleteCloudJob)
@@ -168,6 +171,7 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("GET /ui/partials/modals/available_disks", s.handleUIPartialModalAvailableDisks)
 		mux.HandleFunc("GET /ui/partials/modals/importable_pools", s.handleUIPartialModalImportablePools)
 		mux.HandleFunc("GET /ui/partials/modals/cloudsync_sources", s.handleUIPartialModalCloudSyncSources)
+		mux.HandleFunc("GET /ui/partials/modals/cloudsync_remotes", s.handleUIPartialModalCloudSyncRemotes)
 
 		mux.HandleFunc("POST /ui/actions/system/arc", s.handleUIActionSetArc)
 		mux.HandleFunc("POST /ui/actions/zfs/snapshot-tasks/save", s.handleUIActionSaveSnapshotTask)
@@ -175,10 +179,14 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("POST /ui/actions/zfs/snapshot-tasks/run", s.handleUIActionRunSnapshotTask)
 		mux.HandleFunc("POST /ui/actions/zfs/snapshot-tasks/delete", s.handleUIActionDeleteSnapshotTask)
 
+		mux.HandleFunc("POST /ui/actions/cloudsync/remotes/save", s.handleUIActionSaveCloudRemote)
+		mux.HandleFunc("DELETE /ui/actions/cloudsync/remotes/delete", s.handleUIActionDeleteCloudRemote)
+		mux.HandleFunc("POST /ui/actions/cloudsync/remotes/test", s.handleUIActionTestCloudRemote)
 		mux.HandleFunc("POST /ui/actions/cloudsync/save", s.handleUIActionSaveCloudSync)
 		mux.HandleFunc("DELETE /ui/actions/cloudsync/delete", s.handleUIActionDeleteCloudSync)
 		mux.HandleFunc("POST /ui/actions/cloudsync/toggle", s.handleUIActionToggleCloudSync)
 		mux.HandleFunc("POST /ui/actions/cloudsync/run", s.handleUIActionRunCloudSync)
+		mux.HandleFunc("POST /ui/actions/cloudsync/dryrun", s.handleUIActionDryRunCloudSync)
 
 		mux.HandleFunc("POST /ui/actions/shares/save", s.handleUIActionSaveSmb)
 		mux.HandleFunc("POST /ui/actions/shares/smb", s.handleUIActionSaveSmb)
@@ -1632,6 +1640,61 @@ func (s *Server) handleListCloudRemotes(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.jsonResponse(w, http.StatusOK, remotes)
+}
+
+func (s *Server) handleCreateCloudRemote(w http.ResponseWriter, r *http.Request) {
+	var req cloudsync.CreateRemoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Invalid JSON payload: "+err.Error())
+		return
+	}
+	if err := s.cloudsync.CreateRemote(req); err != nil {
+		s.errorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "created", "name": req.Name})
+}
+
+func (s *Server) handleDeleteCloudRemote(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" && r.Body != nil {
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			name = strings.TrimSpace(req.Name)
+		}
+	}
+	if name == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Remote name required")
+		return
+	}
+	if err := s.cloudsync.DeleteRemote(name); err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "deleted", "name": name})
+}
+
+func (s *Server) handleTestCloudRemote(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" && r.Body != nil {
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			name = strings.TrimSpace(req.Name)
+		}
+	}
+	if name == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Remote name required")
+		return
+	}
+	if err := s.cloudsync.TestRemote(name); err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Connection test failed: "+err.Error())
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, map[string]string{"status": "connected", "name": name})
 }
 
 func (s *Server) handleListCloudJobs(w http.ResponseWriter, r *http.Request) {

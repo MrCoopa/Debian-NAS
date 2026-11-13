@@ -1112,6 +1112,97 @@ func TestUI_AuditFixes_ServicesDiskDrawerDangerDestroyAndCloudSync(t *testing.T)
 	}
 }
 
+func TestUI_CloudSync_RemotesAndTransferModesLifecycle(t *testing.T) {
+	srv := createTestServer(t)
+	handler := srv.Routes()
+
+	// 1. Get remotes dropdown partial
+	remotesReq := httptest.NewRequest("GET", "/ui/partials/modals/cloudsync_remotes", nil)
+	remotesRR := httptest.NewRecorder()
+	handler.ServeHTTP(remotesRR, remotesReq)
+	if remotesRR.Code != http.StatusOK {
+		t.Fatalf("GET /ui/partials/modals/cloudsync_remotes returned status %d", remotesRR.Code)
+	}
+
+	// 2. Add SFTP remote "hetzner_box"
+	sftpForm := url.Values{
+		"name": {"hetzner_box"},
+		"type": {"sftp"},
+		"host": {"u123456.your-storagebox.de"},
+		"user": {"u123456"},
+		"port": {"23"},
+		"pass": {"secret123"},
+	}
+	sftpReq := httptest.NewRequest("POST", "/ui/actions/cloudsync/remotes/save", strings.NewReader(sftpForm.Encode()))
+	sftpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	sftpRR := httptest.NewRecorder()
+	handler.ServeHTTP(sftpRR, sftpReq)
+	if sftpRR.Code != http.StatusOK {
+		t.Fatalf("POST /ui/actions/cloudsync/remotes/save (sftp) returned %d: %s", sftpRR.Code, sftpRR.Body.String())
+	}
+	if !strings.Contains(sftpRR.Body.String(), "hetzner_box") {
+		t.Errorf("Expected cloudsync partial to contain 'hetzner_box', got: %s", sftpRR.Body.String())
+	}
+
+	// 3. Test Remote connection
+	testReq := httptest.NewRequest("POST", "/ui/actions/cloudsync/remotes/test?name=hetzner_box", nil)
+	testRR := httptest.NewRecorder()
+	handler.ServeHTTP(testRR, testReq)
+	if testRR.Code != http.StatusOK {
+		t.Fatalf("POST /ui/actions/cloudsync/remotes/test returned %d", testRR.Code)
+	}
+
+	// 4. Add Crypt remote "hetzner_box_crypt"
+	cryptForm := url.Values{
+		"name":     {"hetzner_box_crypt"},
+		"type":     {"crypt"},
+		"remote":   {"hetzner_box:Backup"},
+		"password": {"MySuperSecretCryptPassphrase"},
+		"salt":     {"MySalt456"},
+	}
+	cryptReq := httptest.NewRequest("POST", "/ui/actions/cloudsync/remotes/save", strings.NewReader(cryptForm.Encode()))
+	cryptReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	cryptRR := httptest.NewRecorder()
+	handler.ServeHTTP(cryptRR, cryptReq)
+	if cryptRR.Code != http.StatusOK {
+		t.Fatalf("POST /ui/actions/cloudsync/remotes/save (crypt) returned %d", cryptRR.Code)
+	}
+
+	// 5. Create Cloud Sync Task using the new TrueNAS-style fields:
+	// transfer_mode=SYNC, remote_credential=hetzner_box_crypt, remote_path=documents, dry_run=true
+	jobForm := url.Values{
+		"description":       {"Encrypted Documents Backup"},
+		"source_path":       {"/mnt/DATA/docs"},
+		"remote_credential": {"hetzner_box_crypt"},
+		"remote_path":       {"documents"},
+		"direction":         {"PUSH"},
+		"transfer_mode":     {"SYNC"},
+		"dry_run":           {"true"},
+		"bandwidth_limit":   {"20M"},
+		"schedule":          {"0 3 * * *"},
+		"enabled":           {"true"},
+	}
+	jobReq := httptest.NewRequest("POST", "/ui/actions/cloudsync/save", strings.NewReader(jobForm.Encode()))
+	jobReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	jobRR := httptest.NewRecorder()
+	handler.ServeHTTP(jobRR, jobReq)
+	if jobRR.Code != http.StatusOK {
+		t.Fatalf("POST /ui/actions/cloudsync/save returned %d", jobRR.Code)
+	}
+	jobHTML := jobRR.Body.String()
+	if !strings.Contains(jobHTML, "Encrypted Documents Backup") || !strings.Contains(jobHTML, "SYNC") {
+		t.Errorf("Expected job table to show 'Encrypted Documents Backup' and 'SYNC', got: %s", jobHTML)
+	}
+
+	// 6. Delete the Crypt remote
+	delReq := httptest.NewRequest("DELETE", "/ui/actions/cloudsync/remotes/delete?name=hetzner_box_crypt", nil)
+	delRR := httptest.NewRecorder()
+	handler.ServeHTTP(delRR, delReq)
+	if delRR.Code != http.StatusOK {
+		t.Fatalf("DELETE /ui/actions/cloudsync/remotes/delete returned %d", delRR.Code)
+	}
+}
+
 func TestUI_LiveUsedDisplayAndPollingWiring(t *testing.T) {
 	srv := createTestServer(t)
 	handler := srv.Routes()

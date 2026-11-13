@@ -612,6 +612,12 @@ func (s *Server) handleUIPartialModalCloudSyncSources(w http.ResponseWriter, r *
 	}))
 }
 
+func (s *Server) handleUIPartialModalCloudSyncRemotes(w http.ResponseWriter, r *http.Request) {
+	s.renderUIPartial(w, "partials/cloudsync_remotes_options.html", s.buildPartialViewData(viewFetchMask{
+		cloud: true,
+	}, r))
+}
+
 // ==============================================================================
 // UI Action Handlers (HTMX Form submissions & button triggers)
 // ==============================================================================
@@ -1535,6 +1541,97 @@ func (s *Server) handleUIActionRunCloudSync(w http.ResponseWriter, r *http.Reque
 	s.handleUIPartialCloudSync(w, r)
 }
 
+func (s *Server) handleUIActionDryRunCloudSync(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	id := strings.TrimSpace(r.FormValue("id"))
+	if id == "" {
+		id = strings.TrimSpace(r.URL.Query().Get("id"))
+	}
+	if id == "" {
+		s.setHXTrigger(w, "Task ID is required", "error")
+		s.handleUIPartialCloudSync(w, r)
+		return
+	}
+
+	if err := s.cloudsync.TriggerJobWithOptions(id, true); err != nil {
+		s.setHXTrigger(w, "Failed to start Dry Run: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, "Cloud Sync Dry Run trial started", "info", "cloudSyncUpdate")
+	}
+	s.handleUIPartialCloudSync(w, r)
+}
+
+func (s *Server) handleUIActionSaveCloudRemote(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	port, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("port")))
+	req := cloudsync.CreateRemoteRequest{
+		Name:      strings.TrimSpace(r.FormValue("name")),
+		Type:      strings.TrimSpace(r.FormValue("type")),
+		Host:      strings.TrimSpace(r.FormValue("host")),
+		User:      strings.TrimSpace(r.FormValue("user")),
+		Port:      port,
+		Pass:      strings.TrimSpace(r.FormValue("pass")),
+		Remote:    strings.TrimSpace(r.FormValue("remote")),
+		Password:  strings.TrimSpace(r.FormValue("password")),
+		Salt:      strings.TrimSpace(r.FormValue("salt")),
+		URL:       strings.TrimSpace(r.FormValue("url")),
+		Vendor:    strings.TrimSpace(r.FormValue("vendor")),
+		Account:   strings.TrimSpace(r.FormValue("account")),
+		Key:       strings.TrimSpace(r.FormValue("key")),
+		Endpoint:  strings.TrimSpace(r.FormValue("endpoint")),
+		AccessKey: strings.TrimSpace(r.FormValue("access_key")),
+		SecretKey: strings.TrimSpace(r.FormValue("secret_key")),
+		Region:    strings.TrimSpace(r.FormValue("region")),
+	}
+
+	if err := s.cloudsync.CreateRemote(req); err != nil {
+		s.setHXTrigger(w, "Failed to save Cloud Credential: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Cloud Credential '%s' configured successfully", req.Name), "success", "cloudSyncUpdate", "refreshCloudSyncRemotes")
+	}
+	s.handleUIPartialCloudSync(w, r)
+}
+
+func (s *Server) handleUIActionDeleteCloudRemote(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		name = strings.TrimSpace(r.URL.Query().Get("name"))
+	}
+	if name == "" {
+		s.setHXTrigger(w, "Remote name is required", "error")
+		s.handleUIPartialCloudSync(w, r)
+		return
+	}
+
+	if err := s.cloudsync.DeleteRemote(name); err != nil {
+		s.setHXTrigger(w, "Failed to delete Cloud Credential: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Cloud Credential '%s' deleted", name), "info", "cloudSyncUpdate", "refreshCloudSyncRemotes")
+	}
+	s.handleUIPartialCloudSync(w, r)
+}
+
+func (s *Server) handleUIActionTestCloudRemote(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		name = strings.TrimSpace(r.URL.Query().Get("name"))
+	}
+	if name == "" {
+		s.setHXTrigger(w, "Remote name is required", "error")
+		s.handleUIPartialCloudSync(w, r)
+		return
+	}
+
+	if err := s.cloudsync.TestRemote(name); err != nil {
+		s.setHXTrigger(w, fmt.Sprintf("Connection test for '%s' failed: %v", name, err), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Connection test to '%s' SUCCESSFUL!", name), "success")
+	}
+	s.handleUIPartialCloudSync(w, r)
+}
+
 func (s *Server) handleUIActionDeleteCloudSync(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	id := strings.TrimSpace(r.FormValue("id"))
@@ -1574,10 +1671,21 @@ func (s *Server) handleUIActionSaveCloudSync(w http.ResponseWriter, r *http.Requ
 
 	sourcePath := strings.TrimSpace(r.FormValue("source_path"))
 	remoteTarget := strings.TrimSpace(r.FormValue("remote_target"))
+	remoteCred := strings.TrimSpace(r.FormValue("remote_credential"))
+	remotePath := strings.TrimSpace(r.FormValue("remote_path"))
+	if remoteTarget == "" && remoteCred != "" {
+		remoteTarget = fmt.Sprintf("%s:%s", remoteCred, strings.TrimPrefix(remotePath, "/"))
+	}
 	direction := cloudsync.SyncDirection(strings.ToUpper(strings.TrimSpace(r.FormValue("direction"))))
 	if direction != cloudsync.DirectionPull {
 		direction = cloudsync.DirectionPush
 	}
+
+	transferMode := cloudsync.TransferMode(strings.ToUpper(strings.TrimSpace(r.FormValue("transfer_mode"))))
+	if transferMode != cloudsync.ModeCopy && transferMode != cloudsync.ModeMove {
+		transferMode = cloudsync.ModeSync
+	}
+	dryRun := r.FormValue("dry_run") == "true" || r.FormValue("dry_run") == "on" || r.FormValue("dry_run") == "1"
 
 	schedule := strings.TrimSpace(r.FormValue("schedule"))
 	if schedule == "" {
@@ -1588,17 +1696,21 @@ func (s *Server) handleUIActionSaveCloudSync(w http.ResponseWriter, r *http.Requ
 	enabled := r.FormValue("enabled") == "true" || r.FormValue("enabled") == "on" || r.FormValue("enabled") == "1"
 
 	job := &cloudsync.SyncJob{
-		ID:             id,
-		Name:           name,
-		Description:    desc,
-		SourcePath:     sourcePath,
-		RemoteTarget:   remoteTarget,
-		Direction:      direction,
-		Schedule:       schedule,
-		FrequencyText:  freqText,
-		BandwidthLimit: bw,
-		Status:         cloudsync.StatusIdle,
-		Enabled:        enabled,
+		ID:               id,
+		Name:             name,
+		Description:      desc,
+		SourcePath:       sourcePath,
+		RemoteTarget:     remoteTarget,
+		RemoteCredential: remoteCred,
+		RemotePath:       remotePath,
+		Direction:        direction,
+		TransferMode:     transferMode,
+		DryRun:           dryRun,
+		Schedule:         schedule,
+		FrequencyText:    freqText,
+		BandwidthLimit:   bw,
+		Status:           cloudsync.StatusIdle,
+		Enabled:          enabled,
 	}
 
 	if err := s.cloudsync.SaveJob(job); err != nil {
