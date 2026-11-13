@@ -64,7 +64,19 @@
             <input type="password" name="salt" x-model="cloudRemoteForm.salt" placeholder="Salt (beliebige Zeichenfolge)">
           </div>
         </div>
-        <span class="text-dim" style="font-size: 0.72rem; color: #a78bfa;">Analog to TrueNAS SCALE: Zero-Knowledge encryption protects both filenames and file contents with AES-256.</span>
+        <div class="form-group">
+          <label>Filename Encryption (Dateinamen-Verschlüsselung)</label>
+          <select name="filename_encryption" x-model="cloudRemoteForm.filename_encryption">
+            <option value="standard">Standard (Dateinamen &amp; Ordner verschlüsseln - Empfohlen)</option>
+            <option value="off">Off (Dateinamen im Klartext belassen, nur Inhalt verschlüsseln)</option>
+            <option value="obfuscate">Obfuscate (Einfache Namensverschleierung)</option>
+          </select>
+          <span class="text-dim" style="font-size: 0.72rem; color: #a0a0a0;">
+            💡 <b>Off</b>: Verzeichnis- und Dateinamen bleiben auf dem Cloud-Speicher im Klartext lesbar. Nur der Dateiinhalt ist AES-256 verschlüsselt.<br>
+            💡 <b>Standard</b>: Sowohl Datei- und Verzeichnisnamen als auch Inhalte werden vollständig unkenntlich verschlüsselt.
+          </span>
+        </div>
+        <span class="text-dim" style="font-size: 0.72rem; color: #a78bfa;">Analog to TrueNAS SCALE: Zero-Knowledge Client-Side AES-256 Verschlüsselung.</span>
       </div>
 
       <!-- 3. WebDAV Fields -->
@@ -134,3 +146,4 @@
     </form>
   </div>
 </div>
+

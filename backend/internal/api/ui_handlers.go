@@ -1565,23 +1565,24 @@ func (s *Server) handleUIActionSaveCloudRemote(w http.ResponseWriter, r *http.Re
 	_ = r.ParseForm()
 	port, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("port")))
 	req := cloudsync.CreateRemoteRequest{
-		Name:      strings.TrimSpace(r.FormValue("name")),
-		Type:      strings.TrimSpace(r.FormValue("type")),
-		Host:      strings.TrimSpace(r.FormValue("host")),
-		User:      strings.TrimSpace(r.FormValue("user")),
-		Port:      port,
-		Pass:      strings.TrimSpace(r.FormValue("pass")),
-		Remote:    strings.TrimSpace(r.FormValue("remote")),
-		Password:  strings.TrimSpace(r.FormValue("password")),
-		Salt:      strings.TrimSpace(r.FormValue("salt")),
-		URL:       strings.TrimSpace(r.FormValue("url")),
-		Vendor:    strings.TrimSpace(r.FormValue("vendor")),
-		Account:   strings.TrimSpace(r.FormValue("account")),
-		Key:       strings.TrimSpace(r.FormValue("key")),
-		Endpoint:  strings.TrimSpace(r.FormValue("endpoint")),
-		AccessKey: strings.TrimSpace(r.FormValue("access_key")),
-		SecretKey: strings.TrimSpace(r.FormValue("secret_key")),
-		Region:    strings.TrimSpace(r.FormValue("region")),
+		Name:               strings.TrimSpace(r.FormValue("name")),
+		Type:               strings.TrimSpace(r.FormValue("type")),
+		Host:               strings.TrimSpace(r.FormValue("host")),
+		User:               strings.TrimSpace(r.FormValue("user")),
+		Port:               port,
+		Pass:               strings.TrimSpace(r.FormValue("pass")),
+		Remote:             strings.TrimSpace(r.FormValue("remote")),
+		Password:           strings.TrimSpace(r.FormValue("password")),
+		Salt:               strings.TrimSpace(r.FormValue("salt")),
+		FilenameEncryption: strings.TrimSpace(r.FormValue("filename_encryption")),
+		URL:                strings.TrimSpace(r.FormValue("url")),
+		Vendor:             strings.TrimSpace(r.FormValue("vendor")),
+		Account:            strings.TrimSpace(r.FormValue("account")),
+		Key:                strings.TrimSpace(r.FormValue("key")),
+		Endpoint:           strings.TrimSpace(r.FormValue("endpoint")),
+		AccessKey:          strings.TrimSpace(r.FormValue("access_key")),
+		SecretKey:          strings.TrimSpace(r.FormValue("secret_key")),
+		Region:             strings.TrimSpace(r.FormValue("region")),
 	}
 
 	if err := s.cloudsync.CreateRemote(req); err != nil {
@@ -1695,22 +1696,34 @@ func (s *Server) handleUIActionSaveCloudSync(w http.ResponseWriter, r *http.Requ
 	bw := strings.TrimSpace(r.FormValue("bandwidth_limit"))
 	enabled := r.FormValue("enabled") == "true" || r.FormValue("enabled") == "on" || r.FormValue("enabled") == "1"
 
+	encEnabled := r.FormValue("encryption_enabled") == "true" || r.FormValue("encryption_enabled") == "on" || r.FormValue("encryption_enabled") == "1"
+	encPassword := strings.TrimSpace(r.FormValue("encryption_password"))
+	encSalt := strings.TrimSpace(r.FormValue("encryption_salt"))
+	fnEnc := strings.ToLower(strings.TrimSpace(r.FormValue("filename_encryption")))
+	if fnEnc != "off" && fnEnc != "obfuscate" {
+		fnEnc = "standard"
+	}
+
 	job := &cloudsync.SyncJob{
-		ID:               id,
-		Name:             name,
-		Description:      desc,
-		SourcePath:       sourcePath,
-		RemoteTarget:     remoteTarget,
-		RemoteCredential: remoteCred,
-		RemotePath:       remotePath,
-		Direction:        direction,
-		TransferMode:     transferMode,
-		DryRun:           dryRun,
-		Schedule:         schedule,
-		FrequencyText:    freqText,
-		BandwidthLimit:   bw,
-		Status:           cloudsync.StatusIdle,
-		Enabled:          enabled,
+		ID:                 id,
+		Name:               name,
+		Description:        desc,
+		SourcePath:         sourcePath,
+		RemoteTarget:       remoteTarget,
+		RemoteCredential:   remoteCred,
+		RemotePath:         remotePath,
+		Direction:          direction,
+		TransferMode:       transferMode,
+		DryRun:             dryRun,
+		EncryptionEnabled:  encEnabled,
+		EncryptionPassword: encPassword,
+		EncryptionSalt:     encSalt,
+		FilenameEncryption: fnEnc,
+		Schedule:           schedule,
+		FrequencyText:      freqText,
+		BandwidthLimit:     bw,
+		Status:             cloudsync.StatusIdle,
+		Enabled:            enabled,
 	}
 
 	if err := s.cloudsync.SaveJob(job); err != nil {

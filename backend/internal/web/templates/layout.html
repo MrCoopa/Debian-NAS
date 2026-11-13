@@ -152,6 +152,7 @@
           remote: '',
           password: '',
           salt: '',
+          filename_encryption: 'standard',
           url: '',
           vendor: 'nextcloud',
           account: '',
@@ -172,6 +173,7 @@
             remote: '',
             password: '',
             salt: '',
+            filename_encryption: 'standard',
             url: '',
             vendor: 'nextcloud',
             account: '',
@@ -221,6 +223,10 @@
           direction: 'PUSH',
           transfer_mode: 'SYNC',
           dry_run: false,
+          encryption_enabled: false,
+          encryption_password: '',
+          encryption_salt: '',
+          filename_encryption: 'standard',
           schedule: '0 2 * * *',
           frequency_text: '',
           bandwidth_limit: '50M',
@@ -249,6 +255,10 @@
             direction: 'PUSH',
             transfer_mode: 'SYNC',
             dry_run: false,
+            encryption_enabled: false,
+            encryption_password: '',
+            encryption_salt: '',
+            filename_encryption: 'standard',
             schedule: '0 2 * * *',
             frequency_text: '',
             bandwidth_limit: '50M',
@@ -258,7 +268,7 @@
           this.triggerHtmxRefresh('refreshCloudSyncSources');
           this.triggerHtmxRefresh('refreshCloudSyncRemotes');
         },
-        openEditCloudSync(id, name, desc, src, target, cred, remotePath, dir, mode, dryRun, sched, bw, enabled, freqText) {
+        openEditCloudSync(id, name, desc, src, target, cred, remotePath, dir, mode, dryRun, sched, bw, enabled, freqText, encEnabled, encSalt, fnEnc) {
           this.isEditingCloudSync = true;
           this.cloudSyncForm = {
             id: id,
@@ -271,6 +281,10 @@
             direction: dir || 'PUSH',
             transfer_mode: mode || 'SYNC',
             dry_run: dryRun === true || dryRun === 'true',
+            encryption_enabled: encEnabled === true || encEnabled === 'true',
+            encryption_password: '',
+            encryption_salt: encSalt || '',
+            filename_encryption: fnEnc || 'standard',
             schedule: this.normalizeCloudSchedule(sched),
             frequency_text: freqText || '',
             bandwidth_limit: bw || '50M',

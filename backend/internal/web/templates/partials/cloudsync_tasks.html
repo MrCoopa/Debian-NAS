@@ -133,7 +133,7 @@
                 <td style="padding: 0.75rem 1rem;">
                   <strong style="color: #ffffff; font-size: 0.82rem; display: block; font-weight: 500;">{{$j.GetDescription}}</strong>
                   <span style="font-size: 0.72rem; color: #888; font-family: monospace;">
-                    {{$j.SourcePath}} &rarr; {{$j.GetTarget}}
+                    {{$j.SourcePath}} &rarr; {{$j.GetDisplayTarget}}
                   </span>
                 </td>
                 <td style="padding: 0.75rem 1rem; white-space: nowrap;">
@@ -144,6 +144,11 @@
                     {{$j.GetTransferMode}}
                   </span>
                   <span style="font-size: 0.68rem; color: #a0a0a0; margin-left: 0.3rem;">{{$j.Direction}}</span>
+                  {{if $j.EncryptionEnabled}}
+                    <span style="display: inline-block; padding: 0.1rem 0.35rem; font-size: 0.65rem; background: rgba(167, 139, 250, 0.2); color: #a78bfa; border: 1px solid rgba(167, 139, 250, 0.4); border-radius: 2px; margin-left: 0.25rem;" title="Client-Side Crypt: {{if eq $j.FilenameEncryption "off"}}Plain Filenames{{else}}Encrypted Filenames{{end}}">
+                      &#128274; {{if eq $j.FilenameEncryption "off"}}PLAIN-NAMES{{else}}CRYPT{{end}}
+                    </span>
+                  {{end}}
                   {{if $j.DryRun}}
                     <span style="display: inline-block; padding: 0.1rem 0.35rem; font-size: 0.65rem; background: rgba(167, 139, 250, 0.2); color: #a78bfa; border-radius: 2px; margin-left: 0.25rem;">DRY</span>
                   {{end}}
@@ -194,11 +199,14 @@
                               data-direction="{{$j.Direction}}"
                               data-transfermode="{{$j.GetTransferMode}}"
                               data-dryrun="{{if $j.DryRun}}true{{else}}false{{end}}"
+                              data-enc="{{if $j.EncryptionEnabled}}true{{else}}false{{end}}"
+                              data-salt="{{$j.EncryptionSalt}}"
+                              data-fnenc="{{$j.FilenameEncryption}}"
                               data-schedule="{{$j.Schedule}}"
                               data-bandwidth="{{$j.BandwidthLimit}}"
                               data-enabled="{{$j.Enabled}}"
                               data-freq="{{$j.FrequencyText}}"
-                              @click.stop="openCloudMenuId = ''; openEditCloudSync($el.dataset.id, $el.dataset.name, $el.dataset.description, $el.dataset.source, $el.dataset.target, $el.dataset.credential, $el.dataset.remotepath, $el.dataset.direction, $el.dataset.transfermode, $el.dataset.dryrun, $el.dataset.schedule, $el.dataset.bandwidth, $el.dataset.enabled === 'true', $el.dataset.freq)"
+                              @click.stop="openCloudMenuId = ''; openEditCloudSync($el.dataset.id, $el.dataset.name, $el.dataset.description, $el.dataset.source, $el.dataset.target, $el.dataset.credential, $el.dataset.remotepath, $el.dataset.direction, $el.dataset.transfermode, $el.dataset.dryrun, $el.dataset.schedule, $el.dataset.bandwidth, $el.dataset.enabled === 'true', $el.dataset.freq, $el.dataset.enc === 'true', $el.dataset.salt, $el.dataset.fnenc)"
                               style="width: 100%; display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.85rem; background: none; border: none; color: #fff; font-size: 0.78rem; cursor: pointer;">
                         <span style="color: #40c4ff;">&#9998;</span> Edit
                       </button>

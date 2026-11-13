@@ -1168,19 +1168,22 @@ func TestUI_CloudSync_RemotesAndTransferModesLifecycle(t *testing.T) {
 		t.Fatalf("POST /ui/actions/cloudsync/remotes/save (crypt) returned %d", cryptRR.Code)
 	}
 
-	// 5. Create Cloud Sync Task using the new TrueNAS-style fields:
-	// transfer_mode=SYNC, remote_credential=hetzner_box_crypt, remote_path=documents, dry_run=true
+	// 5. Create Cloud Sync Task with inline client-side encryption and filename encryption off:
 	jobForm := url.Values{
-		"description":       {"Encrypted Documents Backup"},
-		"source_path":       {"/mnt/DATA/docs"},
-		"remote_credential": {"hetzner_box_crypt"},
-		"remote_path":       {"documents"},
-		"direction":         {"PUSH"},
-		"transfer_mode":     {"SYNC"},
-		"dry_run":           {"true"},
-		"bandwidth_limit":   {"20M"},
-		"schedule":          {"0 3 * * *"},
-		"enabled":           {"true"},
+		"description":         {"Encrypted Documents Backup"},
+		"source_path":         {"/mnt/DATA/docs"},
+		"remote_credential":   {"hetzner_box"},
+		"remote_path":         {"documents"},
+		"direction":           {"PUSH"},
+		"transfer_mode":       {"SYNC"},
+		"dry_run":             {"true"},
+		"encryption_enabled":  {"true"},
+		"encryption_password": {"MasterKeyPassphrase123"},
+		"encryption_salt":     {"Salt456"},
+		"filename_encryption": {"off"},
+		"bandwidth_limit":     {"20M"},
+		"schedule":            {"0 3 * * *"},
+		"enabled":             {"true"},
 	}
 	jobReq := httptest.NewRequest("POST", "/ui/actions/cloudsync/save", strings.NewReader(jobForm.Encode()))
 	jobReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1190,8 +1193,8 @@ func TestUI_CloudSync_RemotesAndTransferModesLifecycle(t *testing.T) {
 		t.Fatalf("POST /ui/actions/cloudsync/save returned %d", jobRR.Code)
 	}
 	jobHTML := jobRR.Body.String()
-	if !strings.Contains(jobHTML, "Encrypted Documents Backup") || !strings.Contains(jobHTML, "SYNC") {
-		t.Errorf("Expected job table to show 'Encrypted Documents Backup' and 'SYNC', got: %s", jobHTML)
+	if !strings.Contains(jobHTML, "Encrypted Documents Backup") || !strings.Contains(jobHTML, "PLAIN-NAMES") {
+		t.Errorf("Expected job table to show 'Encrypted Documents Backup' and 'PLAIN-NAMES', got: %s", jobHTML)
 	}
 
 	// 6. Delete the Crypt remote

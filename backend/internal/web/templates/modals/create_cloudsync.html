@@ -63,6 +63,44 @@
         </div>
       </div>
 
+      <!-- TrueNAS-style Client-Side Encryption Section -->
+      <div style="background: rgba(167, 139, 250, 0.05); border: 1px solid rgba(167, 139, 250, 0.3); border-radius: 6px; padding: 0.85rem; margin-bottom: 1rem;">
+        <label style="display: flex; align-items: center; gap: 0.55rem; cursor: pointer; margin-bottom: 0;">
+          <input type="checkbox" name="encryption_enabled" x-model="cloudSyncForm.encryption_enabled" value="true" class="disk-checkbox">
+          <span style="font-size: 0.85rem; font-weight: 600; color: #a78bfa; display: flex; align-items: center; gap: 0.35rem;">
+            &#128274; Client-Side Encryption aktivieren (AES-256 Rclone Crypt)
+          </span>
+        </label>
+        <span class="text-dim" style="display: block; font-size: 0.72rem; color: #999; margin-top: 0.25rem; margin-left: 1.55rem;">
+          Verschlüsselt Daten lokal auf deinem NAS vor dem Upload. Auf dem Cloud-Speicher landen keine Klartextdaten.
+        </span>
+
+        <div x-show="cloudSyncForm.encryption_enabled" x-cloak style="margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px dashed rgba(167, 139, 250, 0.25);">
+          <div class="grid-2col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <div class="form-group">
+              <label>Encryption Password</label>
+              <input type="password" name="encryption_password" x-model="cloudSyncForm.encryption_password" placeholder="Passphrase eingeben" :required="cloudSyncForm.encryption_enabled && !isEditingCloudSync">
+            </div>
+            <div class="form-group">
+              <label>Master Salt</label>
+              <input type="password" name="encryption_salt" x-model="cloudSyncForm.encryption_salt" placeholder="Salt (beliebige Zeichenfolge)">
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom: 0.25rem;">
+            <label>Filename Encryption (Dateinamen-Verschlüsselung)</label>
+            <select name="filename_encryption" x-model="cloudSyncForm.filename_encryption">
+              <option value="standard">Standard (Dateinamen &amp; Ordner verschlüsseln - Maximale Sicherheit)</option>
+              <option value="off">Off (Dateinamen im Klartext belassen, nur Inhalt verschlüsseln)</option>
+              <option value="obfuscate">Obfuscate (Einfache Namensverschleierung)</option>
+            </select>
+            <span class="text-dim" style="font-size: 0.72rem; color: #bbb; display: block; margin-top: 0.25rem;">
+              💡 <b>Off</b>: Ordner- und Dateinamen bleiben auf Hetzner/Cloud lesbar &ndash; der Dateiinhalt ist AES-256 verschlüsselt.<br>
+              💡 <b>Standard</b>: Sowohl Dateinamen als auch Inhalte sind vollständig unkenntlich verschlüsselt.
+            </span>
+          </div>
+        </div>
+      </div>
+
       <div class="form-group">
         <label>Bandwidth Limit</label>
         <input type="text" name="bandwidth_limit" x-model="cloudSyncForm.bandwidth_limit" placeholder="e.g. 50M, 100M or 0 (Unlimited)">

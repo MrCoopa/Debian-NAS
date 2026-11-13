@@ -184,7 +184,46 @@ func TestCloudSync_RemoteManagementAndTransferModes(t *testing.T) {
 		}
 	}
 
-	// 5. Delete remote
+	// 5. Test Inline Task-Level Encryption & Filename Encryption
+	encJob := &SyncJob{
+		ID:                 "job-enc-test",
+		Name:               "Inline Encrypted Job",
+		SourcePath:         "/mnt/DATA/private",
+		RemoteCredential:   "my_hetzner",
+		RemotePath:         "backup/private",
+		Direction:          DirectionPush,
+		TransferMode:       ModeSync,
+		EncryptionEnabled:  true,
+		EncryptionPassword: "SecretPassphrase123",
+		EncryptionSalt:     "SaltVal",
+		FilenameEncryption: "off",
+		Schedule:           "0 1 * * *",
+		Enabled:            true,
+	}
+	if err := m.SaveJob(encJob); err != nil {
+		t.Fatalf("SaveJob for encrypted job failed: %v", err)
+	}
+	if encJob.GetTarget() != "cs_crypt_job-enc-test:" {
+		t.Fatalf("expected encrypted job target 'cs_crypt_job-enc-test:', got %q", encJob.GetTarget())
+	}
+	if !strings.Contains(encJob.GetDisplayTarget(), "Plain Names") {
+		t.Fatalf("expected GetDisplayTarget to contain 'Plain Names', got %q", encJob.GetDisplayTarget())
+	}
+
+	// Internal task crypt remotes must not pollute general ListRemotes
+	remotesWithEnc, _ := m.ListRemotes()
+	for _, r := range remotesWithEnc {
+		if strings.HasPrefix(r.Name, "cs_crypt_") {
+			t.Fatalf("expected internal cs_crypt_ remote to be excluded from ListRemotes, found: %s", r.Name)
+		}
+	}
+
+	// Delete job should clean up internal crypt remote
+	if err := m.DeleteJob(encJob.ID); err != nil {
+		t.Fatalf("DeleteJob failed: %v", err)
+	}
+
+	// 6. Delete remote
 	if err := m.DeleteRemote("my_hetzner"); err != nil {
 		t.Fatalf("DeleteRemote failed: %v", err)
 	}

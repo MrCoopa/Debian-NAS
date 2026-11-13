@@ -48,24 +48,25 @@ type Remote struct {
 }
 
 type CreateRemoteRequest struct {
-	Name      string            `json:"name"`
-	Type      string            `json:"type"` // sftp, crypt, webdav, b2, s3
-	Host      string            `json:"host,omitempty"`
-	User      string            `json:"user,omitempty"`
-	Port      int               `json:"port,omitempty"`
-	Pass      string            `json:"pass,omitempty"`
-	Remote    string            `json:"remote,omitempty"`
-	Password  string            `json:"password,omitempty"`
-	Salt      string            `json:"salt,omitempty"`
-	URL       string            `json:"url,omitempty"`
-	Vendor    string            `json:"vendor,omitempty"`
-	Account   string            `json:"account,omitempty"`
-	Key       string            `json:"key,omitempty"`
-	Endpoint  string            `json:"endpoint,omitempty"`
-	AccessKey string            `json:"access_key,omitempty"`
-	SecretKey string            `json:"secret_key,omitempty"`
-	Region    string            `json:"region,omitempty"`
-	Extra     map[string]string `json:"extra,omitempty"`
+	Name               string            `json:"name"`
+	Type               string            `json:"type"` // sftp, crypt, webdav, b2, s3
+	Host               string            `json:"host,omitempty"`
+	User               string            `json:"user,omitempty"`
+	Port               int               `json:"port,omitempty"`
+	Pass               string            `json:"pass,omitempty"`
+	Remote             string            `json:"remote,omitempty"`
+	Password           string            `json:"password,omitempty"`
+	Salt               string            `json:"salt,omitempty"`
+	FilenameEncryption string            `json:"filename_encryption,omitempty"` // standard, off, obfuscate
+	URL                string            `json:"url,omitempty"`
+	Vendor             string            `json:"vendor,omitempty"`
+	Account            string            `json:"account,omitempty"`
+	Key                string            `json:"key,omitempty"`
+	Endpoint           string            `json:"endpoint,omitempty"`
+	AccessKey          string            `json:"access_key,omitempty"`
+	SecretKey          string            `json:"secret_key,omitempty"`
+	Region             string            `json:"region,omitempty"`
+	Extra              map[string]string `json:"extra,omitempty"`
 }
 
 func (req CreateRemoteRequest) DetailsSummary() string {
@@ -80,6 +81,9 @@ func (req CreateRemoteRequest) DetailsSummary() string {
 		}
 		return fmt.Sprintf("%s:%d", req.Host, port)
 	case "crypt":
+		if strings.ToLower(req.FilenameEncryption) == "off" {
+			return fmt.Sprintf("Encrypted (Plain Filenames) -> %s", req.Remote)
+		}
 		return fmt.Sprintf("Encrypted -> %s", req.Remote)
 	case "webdav":
 		return req.URL
@@ -99,28 +103,35 @@ func (req CreateRemoteRequest) DetailsSummary() string {
 }
 
 type SyncJob struct {
-	ID               string        `json:"id"`
-	Name             string        `json:"name"`
-	Description      string        `json:"description,omitempty"`
-	SourcePath       string        `json:"source_path"`                 // e.g. "/mnt/DATA"
-	RemoteTarget     string        `json:"remote_target"`               // e.g. "hetzner_storagebox:backup/DATA"
-	RemoteCredential string        `json:"remote_credential,omitempty"` // e.g. "hetzner_storagebox"
-	RemotePath       string        `json:"remote_path,omitempty"`       // e.g. "backup/DATA"
-	Direction        SyncDirection `json:"direction"`
-	TransferMode     TransferMode  `json:"transfer_mode,omitempty"` // SYNC, COPY, MOVE
-	DryRun           bool          `json:"dry_run,omitempty"`
-	Schedule         string        `json:"schedule"` // e.g. "0 3 45 * *"
-	FrequencyText    string        `json:"frequency_text,omitempty"`
-	NextRunText      string        `json:"next_run_text,omitempty"`
-	LastRunText      string        `json:"last_run_text,omitempty"`
-	BandwidthLimit   string        `json:"bandwidth_limit"` // e.g. "50M"
-	Status           JobStatus     `json:"status"`
-	LastRun          time.Time     `json:"last_run"`
-	LastMessage      string        `json:"last_message"`
-	Enabled          bool          `json:"enabled"`
+	ID                 string        `json:"id"`
+	Name               string        `json:"name"`
+	Description        string        `json:"description,omitempty"`
+	SourcePath         string        `json:"source_path"`                 // e.g. "/mnt/DATA"
+	RemoteTarget       string        `json:"remote_target"`               // e.g. "hetzner_storagebox:backup/DATA"
+	RemoteCredential   string        `json:"remote_credential,omitempty"` // e.g. "hetzner_storagebox"
+	RemotePath         string        `json:"remote_path,omitempty"`       // e.g. "backup/DATA"
+	Direction          SyncDirection `json:"direction"`
+	TransferMode       TransferMode  `json:"transfer_mode,omitempty"` // SYNC, COPY, MOVE
+	DryRun             bool          `json:"dry_run,omitempty"`
+	EncryptionEnabled  bool          `json:"encryption_enabled,omitempty"`
+	EncryptionPassword string        `json:"encryption_password,omitempty"`
+	EncryptionSalt     string        `json:"encryption_salt,omitempty"`
+	FilenameEncryption string        `json:"filename_encryption,omitempty"` // "standard", "off", "obfuscate"
+	Schedule           string        `json:"schedule"`                      // e.g. "0 3 45 * *"
+	FrequencyText      string        `json:"frequency_text,omitempty"`
+	NextRunText        string        `json:"next_run_text,omitempty"`
+	LastRunText        string        `json:"last_run_text,omitempty"`
+	BandwidthLimit     string        `json:"bandwidth_limit"` // e.g. "50M"
+	Status             JobStatus     `json:"status"`
+	LastRun            time.Time     `json:"last_run"`
+	LastMessage        string        `json:"last_message"`
+	Enabled            bool          `json:"enabled"`
 }
 
 func (j *SyncJob) GetTarget() string {
+	if j.EncryptionEnabled {
+		return fmt.Sprintf("cs_crypt_%s:", j.ID)
+	}
 	if j.RemoteTarget != "" {
 		return j.RemoteTarget
 	}
@@ -129,6 +140,23 @@ func (j *SyncJob) GetTarget() string {
 		return fmt.Sprintf("%s:%s", j.RemoteCredential, sub)
 	}
 	return ""
+}
+
+func (j *SyncJob) GetDisplayTarget() string {
+	base := ""
+	if j.RemoteCredential != "" {
+		sub := strings.TrimPrefix(j.RemotePath, "/")
+		base = fmt.Sprintf("%s:%s", j.RemoteCredential, sub)
+	} else if j.RemoteTarget != "" {
+		base = j.RemoteTarget
+	}
+	if j.EncryptionEnabled {
+		if strings.ToLower(j.FilenameEncryption) == "off" {
+			return fmt.Sprintf("%s [🔒 Encrypted (Plain Names)]", base)
+		}
+		return fmt.Sprintf("%s [🔒 Encrypted (AES-256)]", base)
+	}
+	return base
 }
 
 func (j *SyncJob) GetTransferMode() string {
@@ -317,7 +345,14 @@ func (m *Manager) ListRemotes() ([]Remote, error) {
 	defer m.mu.RUnlock()
 
 	if m.mockMode {
-		return m.remotes, nil
+		var list []Remote
+		for _, r := range m.remotes {
+			if strings.HasPrefix(r.Name, "cs_crypt_") {
+				continue
+			}
+			list = append(list, r)
+		}
+		return list, nil
 	}
 
 	args := []string{"listremotes", "--long"}
@@ -328,7 +363,14 @@ func (m *Manager) ListRemotes() ([]Remote, error) {
 	cmd := exec.Command("rclone", args...)
 	out, err := cmd.Output()
 	if err != nil {
-		return m.remotes, nil // fallback to cached
+		var list []Remote
+		for _, r := range m.remotes {
+			if strings.HasPrefix(r.Name, "cs_crypt_") {
+				continue
+			}
+			list = append(list, r)
+		}
+		return list, nil // fallback to cached
 	}
 
 	var remotes []Remote
@@ -341,6 +383,9 @@ func (m *Manager) ListRemotes() ([]Remote, error) {
 		parts := strings.Fields(line)
 		if len(parts) >= 2 {
 			name := strings.TrimSuffix(parts[0], ":")
+			if strings.HasPrefix(name, "cs_crypt_") {
+				continue
+			}
 			remType := parts[1]
 			remotes = append(remotes, Remote{
 				Name:    name,
@@ -355,7 +400,10 @@ func (m *Manager) ListRemotes() ([]Remote, error) {
 func (m *Manager) CreateRemote(req CreateRemoteRequest) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.createRemoteLocked(req)
+}
 
+func (m *Manager) createRemoteLocked(req CreateRemoteRequest) error {
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
 		return fmt.Errorf("remote name cannot be empty")
@@ -413,6 +461,14 @@ func (m *Manager) CreateRemote(req CreateRemoteRequest) error {
 		if req.Salt != "" {
 			args = append(args, fmt.Sprintf("salt=%s", req.Salt))
 		}
+		fnEnc := strings.ToLower(strings.TrimSpace(req.FilenameEncryption))
+		if fnEnc == "off" {
+			args = append(args, "filename_encryption=off", "directory_name_encryption=false")
+		} else if fnEnc == "obfuscate" {
+			args = append(args, "filename_encryption=obfuscate")
+		} else {
+			args = append(args, "filename_encryption=standard", "directory_name_encryption=true")
+		}
 	case "webdav":
 		if req.URL == "" {
 			return fmt.Errorf("WebDAV URL is required")
@@ -468,7 +524,10 @@ func (m *Manager) CreateRemote(req CreateRemoteRequest) error {
 func (m *Manager) DeleteRemote(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.deleteRemoteLocked(name)
+}
 
+func (m *Manager) deleteRemoteLocked(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("remote name is required")
@@ -677,9 +736,52 @@ func (m *Manager) SaveJob(job *SyncJob) error {
 		if job.Status == "" || (job.Status == StatusIdle && existing.Status != "") {
 			job.Status = existing.Status
 		}
+		if job.Name == "" {
+			job.Name = existing.Name
+		}
+		if job.Description == "" {
+			job.Description = existing.Description
+		}
+		if job.EncryptionEnabled {
+			if job.EncryptionPassword == "" {
+				job.EncryptionPassword = existing.EncryptionPassword
+			}
+			if job.EncryptionSalt == "" {
+				job.EncryptionSalt = existing.EncryptionSalt
+			}
+			if job.FilenameEncryption == "" {
+				job.FilenameEncryption = existing.FilenameEncryption
+			}
+		}
 	}
 	if job.Status == "" {
 		job.Status = StatusIdle
+	}
+
+	// Manage task-level crypt remote
+	cryptName := fmt.Sprintf("cs_crypt_%s", job.ID)
+	if job.EncryptionEnabled {
+		if job.FilenameEncryption == "" {
+			job.FilenameEncryption = "standard"
+		}
+		underlying := ""
+		if job.RemoteCredential != "" {
+			underlying = fmt.Sprintf("%s:%s", job.RemoteCredential, strings.TrimPrefix(job.RemotePath, "/"))
+		} else if job.RemoteTarget != "" {
+			underlying = job.RemoteTarget
+		}
+		if underlying != "" {
+			_ = m.createRemoteLocked(CreateRemoteRequest{
+				Name:               cryptName,
+				Type:               "crypt",
+				Remote:             underlying,
+				Password:           job.EncryptionPassword,
+				Salt:               job.EncryptionSalt,
+				FilenameEncryption: job.FilenameEncryption,
+			})
+		}
+	} else {
+		_ = m.deleteRemoteLocked(cryptName)
 	}
 
 	m.jobs[job.ID] = job
@@ -692,6 +794,7 @@ func (m *Manager) DeleteJob(jobID string) error {
 	defer m.mu.Unlock()
 
 	delete(m.jobs, jobID)
+	_ = m.deleteRemoteLocked(fmt.Sprintf("cs_crypt_%s", jobID))
 	m.saveJobsConfig()
 	return nil
 }
