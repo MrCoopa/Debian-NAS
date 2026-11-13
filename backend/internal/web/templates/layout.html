@@ -232,6 +232,7 @@
           bandwidth_limit: '50M',
           enabled: true
         },
+        showCloudPassword: false,
         normalizeCloudSchedule(s) {
           if (s === '0 3 45 * * 2') return '45 3 * * 2';
           if (s === '0 2 00 * *') return '0 2 * * *';
@@ -294,8 +295,9 @@
           this.triggerHtmxRefresh('refreshCloudSyncSources');
           this.triggerHtmxRefresh('refreshCloudSyncRemotes');
         },
-        openEditCloudSync(id, name, desc, src, target, cred, remotePath, dir, mode, dryRun, sched, bw, enabled, freqText, encEnabled, encSalt, fnEnc) {
+        openEditCloudSync(id, name, desc, src, target, cred, remotePath, dir, mode, dryRun, sched, bw, enabled, freqText, encEnabled, encPassword, encSalt, fnEnc) {
           this.isEditingCloudSync = true;
+          this.showCloudPassword = false;
           let remoteCred = cred || '';
           let subPath = remotePath || '';
           if (!remoteCred && target && target.includes(':')) {
@@ -320,7 +322,7 @@
             transfer_mode: mode || 'COPY',
             dry_run: dryRun === true || dryRun === 'true',
             encryption_enabled: encEnabled === true || encEnabled === 'true',
-            encryption_password: '',
+            encryption_password: encPassword || '',
             encryption_salt: encSalt || '',
             filename_encryption: fnEnc || 'standard',
             schedule: this.normalizeCloudSchedule(sched),

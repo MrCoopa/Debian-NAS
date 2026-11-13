@@ -96,12 +96,18 @@
         <div x-show="cloudSyncForm.encryption_enabled" x-cloak style="margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px dashed rgba(167, 139, 250, 0.25);">
           <div class="grid-2col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
             <div class="form-group">
-              <label>Encryption Password</label>
-              <input type="password" name="encryption_password" x-model="cloudSyncForm.encryption_password" placeholder="Passphrase eingeben" :required="cloudSyncForm.encryption_enabled && !isEditingCloudSync">
+              <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                <label>Encryption Password</label>
+                <a href="javascript:void(0)" @click="showCloudPassword = !showCloudPassword" style="font-size: 0.70rem; color: #40c4ff; text-decoration: none;" x-text="showCloudPassword ? '🙈 Verbergen' : '👁️ Anzeigen'"></a>
+              </div>
+              <input :type="showCloudPassword ? 'text' : 'password'" name="encryption_password" x-model="cloudSyncForm.encryption_password" placeholder="Passphrase eingeben" :required="cloudSyncForm.encryption_enabled && !isEditingCloudSync">
             </div>
             <div class="form-group">
-              <label>Master Salt</label>
-              <input type="password" name="encryption_salt" x-model="cloudSyncForm.encryption_salt" placeholder="Salt (beliebige Zeichenfolge)">
+              <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                <label>Master Salt</label>
+                <a href="javascript:void(0)" @click="showCloudPassword = !showCloudPassword" style="font-size: 0.70rem; color: #40c4ff; text-decoration: none;" x-text="showCloudPassword ? '🙈 Verbergen' : '👁️ Anzeigen'"></a>
+              </div>
+              <input :type="showCloudPassword ? 'text' : 'password'" name="encryption_salt" x-model="cloudSyncForm.encryption_salt" placeholder="Salt (beliebige Zeichenfolge)">
             </div>
           </div>
           <div class="form-group" style="margin-bottom: 0.25rem;">
