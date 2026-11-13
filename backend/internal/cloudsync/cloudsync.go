@@ -477,6 +477,7 @@ func (m *Manager) createRemoteLocked(req CreateRemoteRequest) error {
 		if req.Pass != "" {
 			args = append(args, fmt.Sprintf("pass=%s", req.Pass))
 		}
+		args = append(args, "known_hosts_file=none")
 	case "crypt":
 		if req.Remote == "" {
 			return fmt.Errorf("underlying remote is required for crypt (e.g. hetzner_storagebox:backup)")
@@ -755,12 +756,26 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 			action = "sync"
 		}
 
+		srcPath := job.SourcePath
+		if _, err := os.Stat(srcPath); os.IsNotExist(err) {
+			candidate := "/mnt/" + strings.TrimPrefix(srcPath, "/")
+			if info, err2 := os.Stat(candidate); err2 == nil && info.IsDir() {
+				srcPath = candidate
+				m.mu.Lock()
+				job.SourcePath = candidate
+				m.saveJobsConfig()
+				m.mu.Unlock()
+			} else if !strings.HasPrefix(srcPath, "/mnt/") && runtime.GOOS == "linux" {
+				srcPath = candidate
+			}
+		}
+
 		var args []string
 		args = append(args, action)
 		if job.Direction == DirectionPush {
-			args = append(args, job.SourcePath, target)
+			args = append(args, srcPath, target)
 		} else {
-			args = append(args, target, job.SourcePath)
+			args = append(args, target, srcPath)
 		}
 
 		if m.rcloneConfig != "" {
@@ -837,6 +852,15 @@ func (m *Manager) SaveJob(job *SyncJob) error {
 	}
 	if err := cronutil.Validate(job.Schedule); err != nil {
 		return err
+	}
+
+	if job.SourcePath != "" && !strings.HasPrefix(job.SourcePath, "/mnt/") {
+		candidate := "/mnt/" + strings.TrimPrefix(job.SourcePath, "/")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			job.SourcePath = candidate
+		} else if runtime.GOOS == "linux" {
+			job.SourcePath = candidate
+		}
 	}
 
 	if job.RemoteCredential == "" && strings.Contains(job.RemoteTarget, ":") {
@@ -991,9 +1015,23 @@ func (m *Manager) loadJobsConfig() {
 	}
 	var list []*SyncJob
 	if err := json.Unmarshal(data, &list); err == nil {
+		changed := false
 		for _, j := range list {
 			j.Schedule = cronutil.NormalizeLegacySchedule(j.Schedule)
+			if j.SourcePath != "" && !strings.HasPrefix(j.SourcePath, "/mnt/") {
+				candidate := "/mnt/" + strings.TrimPrefix(j.SourcePath, "/")
+				if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+					j.SourcePath = candidate
+					changed = true
+				} else if runtime.GOOS == "linux" {
+					j.SourcePath = candidate
+					changed = true
+				}
+			}
 			m.jobs[j.ID] = j
+		}
+		if changed {
+			m.saveJobsConfig()
 		}
 	}
 }

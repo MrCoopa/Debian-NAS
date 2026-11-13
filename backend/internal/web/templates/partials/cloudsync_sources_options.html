@@ -3,17 +3,14 @@
 {{else}}
   {{range $p := .Pools}}
     <option value="/mnt/{{$p.Name}}">/mnt/{{$p.Name}} (Pool Root)</option>
-    <option value="/{{$p.Name}}">/{{$p.Name}} (Pool Root)</option>
   {{end}}
   {{range $ds := .Datasets}}
     {{if and (eq $ds.Type "filesystem") (contains $ds.Name "/")}}
-      {{if $ds.Mountpoint}}
+      {{if and $ds.Mountpoint (ne $ds.Mountpoint "-") (ne $ds.Mountpoint "none") (ne $ds.Mountpoint "legacy") (hasPrefix $ds.Mountpoint "/mnt/")}}
         <option value="{{$ds.Mountpoint}}">{{$ds.Mountpoint}}</option>
+      {{else}}
+        <option value="/mnt/{{$ds.Name}}">/mnt/{{$ds.Name}}</option>
       {{end}}
-      <option value="/mnt/{{$ds.Name}}">/mnt/{{$ds.Name}}</option>
-      <option value="/{{$ds.Name}}">/{{$ds.Name}}</option>
     {{end}}
   {{end}}
 {{end}}
-
-

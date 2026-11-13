@@ -293,11 +293,15 @@
             remoteCred = parts[0];
             subPath = subPath || parts.slice(1).join(':');
           }
+          let normalizedSrc = src || '';
+          if (normalizedSrc && !normalizedSrc.startsWith('/mnt/') && normalizedSrc.startsWith('/')) {
+            normalizedSrc = '/mnt' + normalizedSrc;
+          }
           this.cloudSyncForm = {
             id: id,
             name: name,
             description: desc || name,
-            source_path: src,
+            source_path: normalizedSrc,
             remote_target: target || '',
             remote_credential: remoteCred,
             remote_path: subPath,
@@ -316,7 +320,7 @@
           this.openCloudSyncModal = true;
           this.$nextTick(() => {
             const srcSel = document.getElementById('cloudsync-source-select');
-            if (srcSel && window.nasEnsureSelectValue) window.nasEnsureSelectValue(srcSel, src, v => this.cloudSyncForm.source_path = v);
+            if (srcSel && window.nasEnsureSelectValue) window.nasEnsureSelectValue(srcSel, normalizedSrc, v => this.cloudSyncForm.source_path = v);
             const remSel = document.getElementById('cloudsync-remote-select');
             if (remSel && window.nasEnsureSelectValue) window.nasEnsureSelectValue(remSel, remoteCred, v => this.cloudSyncForm.remote_credential = v);
           });
