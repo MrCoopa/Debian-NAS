@@ -741,6 +741,9 @@
             <div class="page-title-group">
               <h1>Physical Disks &amp; S.M.A.R.T.</h1>
             </div>
+            <div class="page-actions" style="display: flex; gap: 0.5rem;">
+              <button type="button" class="btn btn-secondary btn-sm" hx-get="/ui/partials/disks" hx-target="#disks-container" hx-swap="outerHTML">↻ Refresh</button>
+            </div>
           </div>
 
           {{template "partials/disks_table.html" .}}

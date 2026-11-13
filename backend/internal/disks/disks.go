@@ -61,6 +61,7 @@ type DiskInfo struct {
 	IsSystemDisk           bool      `json:"is_system_disk"`           // true = contains OS mount (/ or /boot)
 	LastIOStats            string    `json:"-"`                        // snapshot of /sys/block/<name>/stat to prevent waking standby drives
 	LastStateCheck         time.Time `json:"last_state_check"`
+	LastSmartCheck         time.Time `json:"-"`
 }
 
 func syncDiskFields(d *DiskInfo) {
@@ -1081,6 +1082,7 @@ func (m *Manager) ForceStandby(devPath string) error {
 	target.TemperatureC = -1
 	target.LastIOStats = readBlockDevStat(target.Name)
 	target.LastStateCheck = time.Now()
+	syncDiskFields(target)
 	return nil
 }
 
@@ -1175,7 +1177,7 @@ func (m *Manager) WipeDisk(devPath, mode string) error {
 }
 
 func (m *Manager) startMonitorLoop() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(4 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -1186,15 +1188,24 @@ func (m *Manager) startMonitorLoop() {
 	}
 }
 
+// PollStatesNow triggers an immediate state check of all disks without waking sleeping drives.
+func (m *Manager) PollStatesNow() {
+	if m.mockMode {
+		return
+	}
+	m.pollDiskStatesOnce()
+}
+
 type diskPollSnapshot struct {
-	name         string
-	path         string
-	byIDPath     string
-	serial       string
-	isRotational bool
-	prevState    DiskState
-	needAPMProbe bool
-	lastIOStats  string
+	name           string
+	path           string
+	byIDPath       string
+	serial         string
+	isRotational   bool
+	prevState      DiskState
+	needAPMProbe   bool
+	lastIOStats    string
+	lastSmartCheck time.Time
 }
 
 type diskApplyTarget struct {
@@ -1211,14 +1222,15 @@ func (m *Manager) pollDiskStatesOnce() {
 	for _, d := range m.cachedDisks {
 		_, hasSaved := m.lookupSavedConfigLocked(d.Name, d.ByIDPath, d.Serial)
 		snaps = append(snaps, diskPollSnapshot{
-			name:         d.Name,
-			path:         d.Path,
-			byIDPath:     d.ByIDPath,
-			serial:       d.Serial,
-			isRotational: d.IsRotational,
-			prevState:    d.State,
-			needAPMProbe: d.IsRotational && !hasSaved && d.AdvPowerManagement == "",
-			lastIOStats:  d.LastIOStats,
+			name:           d.Name,
+			path:           d.Path,
+			byIDPath:       d.ByIDPath,
+			serial:         d.Serial,
+			isRotational:   d.IsRotational,
+			prevState:      d.State,
+			needAPMProbe:   d.IsRotational && !hasSaved && d.AdvPowerManagement == "",
+			lastIOStats:    d.LastIOStats,
+			lastSmartCheck: d.LastSmartCheck,
 		})
 	}
 	m.mu.RUnlock()
@@ -1246,16 +1258,25 @@ func (m *Manager) pollDiskStatesOnce() {
 			continue
 		}
 
+		didReadSmart := false
 		if snap.isRotational {
 			state = m.checkStandbySafe(snap.path)
 			if state == StateActive {
-				temp, hours, realloc, pending, status, lastTest = m.readSmartAttributesSafe(snap.path)
-				if snap.needAPMProbe {
-					probedAPM = m.readHardwareAPMSafe(snap.path)
+				needSmart := snap.prevState != StateActive || snap.lastSmartCheck.IsZero() || time.Since(snap.lastSmartCheck) >= 5*time.Minute
+				if needSmart {
+					temp, hours, realloc, pending, status, lastTest = m.readSmartAttributesSafe(snap.path)
+					didReadSmart = true
+					if snap.needAPMProbe {
+						probedAPM = m.readHardwareAPMSafe(snap.path)
+					}
 				}
 			}
 		} else {
-			temp, hours, realloc, pending, status, lastTest = m.readSmartAttributesSafe(snap.path)
+			needSmart := snap.lastSmartCheck.IsZero() || time.Since(snap.lastSmartCheck) >= 5*time.Minute
+			if needSmart {
+				temp, hours, realloc, pending, status, lastTest = m.readSmartAttributesSafe(snap.path)
+				didReadSmart = true
+			}
 		}
 
 		m.mu.Lock()
@@ -1273,27 +1294,32 @@ func (m *Manager) pollDiskStatesOnce() {
 					d.LastIOStats = curIOStat
 				}
 				if state == StateActive {
-					if temp > 0 {
-						d.TemperatureC = temp
-					} else if !snap.isRotational && temp >= 0 {
-						d.TemperatureC = temp
+					if didReadSmart {
+						if temp > 0 {
+							d.TemperatureC = temp
+						} else if !snap.isRotational && temp >= 0 {
+							d.TemperatureC = temp
+						}
 					}
 				} else {
 					d.TemperatureC = -1
 				}
-				if hours > 0 {
-					d.PowerOnHours = hours
-				}
-				d.ReallocatedSectors = realloc
-				d.PendingSectors = pending
-				if status != "" && !strings.HasPrefix(d.SmartStatus, "TESTING") {
-					d.SmartStatus = status
-				}
-				if lastTest != "" && !strings.HasPrefix(d.SmartStatus, "TESTING") {
-					d.SmartLastTest = lastTest
-				}
-				if d.AdvPowerManagement == "" && probedAPM != "" {
-					d.AdvPowerManagement = probedAPM
+				if didReadSmart {
+					d.LastSmartCheck = time.Now()
+					if hours > 0 {
+						d.PowerOnHours = hours
+					}
+					d.ReallocatedSectors = realloc
+					d.PendingSectors = pending
+					if status != "" && !strings.HasPrefix(d.SmartStatus, "TESTING") {
+						d.SmartStatus = status
+					}
+					if lastTest != "" && !strings.HasPrefix(d.SmartStatus, "TESTING") {
+						d.SmartLastTest = lastTest
+					}
+					if d.AdvPowerManagement == "" && probedAPM != "" {
+						d.AdvPowerManagement = probedAPM
+					}
 				}
 				d.LastStateCheck = time.Now()
 				syncDiskFields(d)

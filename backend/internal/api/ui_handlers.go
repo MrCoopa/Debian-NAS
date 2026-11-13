@@ -459,6 +459,9 @@ func (s *Server) handleUIPartialPools(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUIPartialDisks(w http.ResponseWriter, r *http.Request) {
+	if s.disks != nil {
+		s.disks.PollStatesNow()
+	}
 	s.renderUIPartial(w, "partials/disks_table.html", s.buildPartialViewData(viewFetchMask{
 		pools: true, disks: true,
 	}))
@@ -1437,7 +1440,7 @@ func (s *Server) handleUIActionForceStandby(w http.ResponseWriter, r *http.Reque
 	if err := s.disks.ForceStandby(path); err != nil {
 		s.setHXTrigger(w, "Standby error: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, fmt.Sprintf("Drive %s placed in standby mode", path), "success")
+		s.setHXTrigger(w, fmt.Sprintf("Drive %s placed in standby mode", path), "success", "diskUpdate")
 	}
 	s.handleUIPartialDisks(w, r)
 }
