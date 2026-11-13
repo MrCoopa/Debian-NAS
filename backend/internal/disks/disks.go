@@ -1675,7 +1675,23 @@ func applyHardwareAPM(devPath, hdparmArg string) error {
 	out, err := cmd.CombinedOutput()
 	outStr := strings.TrimSpace(string(out))
 	lower := strings.ToLower(outStr)
+
+	// If APM is being disabled (255), also apply smartctl -s apm,off (vital for Western Digital and enterprise SATA/SAS drives)
+	if hdparmArg == "255" {
+		sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer sCancel()
+		_ = exec.CommandContext(sCtx, "smartctl", "-s", "apm,off", devPath).Run()
+	}
+
 	if err != nil || strings.Contains(lower, "not supported") || strings.Contains(lower, "failed") || strings.Contains(lower, "inappropriate ioctl") {
+		// Fallback: If hdparm failed but APM disable was requested and smartctl succeeded, treat as success
+		if hdparmArg == "255" {
+			sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer sCancel()
+			if sErr := exec.CommandContext(sCtx, "smartctl", "-s", "apm,off", devPath).Run(); sErr == nil {
+				return nil
+			}
+		}
 		if outStr != "" {
 			return fmt.Errorf("APM level %s rejected by %s: %s", hdparmArg, devPath, outStr)
 		}

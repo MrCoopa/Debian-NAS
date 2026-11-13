@@ -247,6 +247,14 @@ Debian NAS wurde von Grund auf dafür entwickelt, **echten, funktionierenden HDD
      3. **Pool `failmode=continue`:** Unter **Storage Pools -> Properties** kann `failmode=continue` gewählt werden. ZFS wiederholt I/O-Anfragen geduldig und suspendiert den Pool bei Anlaufverzögerungen niemals.
      4. **1-Klick Resume:** Sollte ein Pool im Notfall suspendiert sein, lässt er sich mit einem Klick auf **⚡ Resume Pool** (oder per CLI `zpool clear <pool>`) sofort wiederbeleben.
 
+6. **Globale APM-Deaktivierung (Firmware-Timer & unkontrollierte Wake-ups verhindern):**
+   * **Problemstellung:** Interne Advanced Power Management (APM) Timer moderner Festplatten-Firmwares (speziell Western Digital Red / Plus / Pro / Ultrastar) parken Leseköpfe oder führen zyklische interne Checks durch, die alle 30 Minuten zu einem ungewollten Aufwachen der Festplatte führen. Dies kollidiert mit `hd-idle`. Zudem vergessen SATA/SAS-Platten diese Einstellung bei einem Stromverlust oder Reboot.
+   * **Lösung in Debian NAS:** Ein automatisierter `@reboot`-Root-Cronjob deaktiviert APM bei jedem Bootvorgang global auf allen mechanischen Festplatten via:
+     ```bash
+     @reboot for dev in /dev/sd[a-z]; do /usr/sbin/smartctl -s apm,off $dev 2>/dev/null; done
+     ```
+     Fehlermeldungen bei SSDs oder inkompatiblen Controllern werden lautlos ignoriert.
+
 ---
 
 ## Netzwerkdienste & Windows Discovery

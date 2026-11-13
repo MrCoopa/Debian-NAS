@@ -141,6 +141,17 @@ for i in /sys/class/scsi_host/host*/link_power_management_policy; do
   [ -f "$i" ] && echo max_performance > "$i" 2>/dev/null || true
 done
 
+# 8. Globale APM-Deaktivierung im Autostart (@reboot Cronjob) gegen unkontrollierte Firmware-Wakeups (z. B. WD 30-Minuten-Timer)
+CRON_CMD='@reboot for dev in /dev/sd[a-z]; do /usr/sbin/smartctl -s apm,off $dev 2>/dev/null; done'
+(crontab -l 2>/dev/null | grep -Fv "/usr/sbin/smartctl -s apm,off" || true; echo "$CRON_CMD") | crontab -
+systemctl enable --now cron 2>/dev/null || true
+# Sofortige Anwendung auf alle vorhandenen Block-Devices
+for dev in /dev/sd[a-z]; do
+  if [ -e "$dev" ]; then
+    /usr/sbin/smartctl -s apm,off "$dev" 2>/dev/null || true
+  fi
+done
+
 echo "[+] 4/6: Debian NAS Daemon unter /opt/debian-nas einrichten & kompilieren..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
