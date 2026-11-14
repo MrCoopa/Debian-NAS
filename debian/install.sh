@@ -166,14 +166,14 @@ for i in /sys/class/scsi_host/host*/link_power_management_policy; do
   [ -f "$i" ] && echo max_performance > "$i" 2>/dev/null || true
 done
 
-# 8. Globale APM- & EPC-Deaktivierung im Autostart (@reboot Cronjob) gegen Firmware-Wakeups (z. B. WD 30-Minuten-Timer & Seagate EPC)
-CRON_CMD='@reboot for dev in /dev/sd[a-z]; do /usr/sbin/smartctl -s apm,off $dev 2>/dev/null; which sdparm >/dev/null 2>&1 && sdparm --flexible --set=STANDBY=0 $dev 2>/dev/null || true; done'
+# 8. Globale APM- & EPC-Deaktivierung im Autostart (@reboot Cronjob) gegen Firmware-Wakeups (z. B. WD 30-Minuten-Timer & Seagate EPC, inkl. -d sat für LSI 9500-8i)
+CRON_CMD='@reboot for dev in /dev/sd[a-z]; do /usr/sbin/smartctl -s apm,off $dev 2>/dev/null || /usr/sbin/smartctl -d sat -s apm,off $dev 2>/dev/null || true; which sdparm >/dev/null 2>&1 && sdparm --flexible --set=STANDBY=0 $dev 2>/dev/null || true; done'
 (crontab -l 2>/dev/null | grep -Fv "/usr/sbin/smartctl -s apm,off" || true; echo "$CRON_CMD") | crontab -
 systemctl enable --no-reload --now cron 2>/dev/null || true
 # Sofortige Anwendung auf alle vorhandenen Block-Devices
 for dev in /dev/sd[a-z]; do
   if [ -e "$dev" ]; then
-    /usr/sbin/smartctl -s apm,off "$dev" 2>/dev/null || true
+    /usr/sbin/smartctl -s apm,off "$dev" 2>/dev/null || /usr/sbin/smartctl -d sat -s apm,off "$dev" 2>/dev/null || true
     if command -v sdparm >/dev/null 2>&1; then
       sdparm --flexible --set=STANDBY=0 "$dev" 2>/dev/null || true
       sdparm --flexible --clear=SCT "$dev" 2>/dev/null || true

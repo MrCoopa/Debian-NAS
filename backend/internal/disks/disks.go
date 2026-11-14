@@ -762,12 +762,7 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 		}
 
 		slotIdx := len(disks) + 1
-		busType := "SATA 6.0 Gb/s"
-		if strings.HasPrefix(name, "nvme") {
-			busType = "PCIe Gen4 x4 NVMe"
-		} else if strings.Contains(byID, "sas-") {
-			busType = "SAS 12.0 Gb/s (LSI HBA)"
-		}
+		busType := m.detectDiskBusType(name, sysPath, byID)
 
 		isSystem := sysMap[name] || sysMap[devPath] || sysMap[filepath.Base(byID)]
 		vdevType := "unassigned (Ready for Pool)"
@@ -825,6 +820,31 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 	}
 
 	return disks, nil
+}
+
+// detectDiskBusType identifies whether a block device is connected via NVMe, an LSI/Broadcom SAS HBA (mpt3sas/mpi3mr), or onboard SATA.
+func (m *Manager) detectDiskBusType(name, sysPath, byID string) string {
+	if strings.HasPrefix(name, "nvme") {
+		return "PCIe Gen4 x4 NVMe"
+	}
+	isSasHba := strings.Contains(byID, "sas-")
+	if !isSasHba {
+		if sasAddr := m.readSysfsString(filepath.Join(sysPath, "device", "sas_address")); sasAddr != "" {
+			isSasHba = true
+		} else if resolved, err := filepath.EvalSymlinks(sysPath); err == nil {
+			lowerRes := strings.ToLower(resolved)
+			if strings.Contains(lowerRes, "end_device-") || strings.Contains(lowerRes, "sas") || strings.Contains(lowerRes, "mpt") || strings.Contains(lowerRes, "mpi3") {
+				isSasHba = true
+			}
+		}
+	}
+	if isSasHba {
+		if strings.Contains(byID, "ata-") {
+			return "SATA via LSI SAS HBA (12 Gb/s)"
+		}
+		return "SAS 12.0 Gb/s (LSI HBA)"
+	}
+	return "SATA 6.0 Gb/s"
 }
 
 // parseSmartctlStandbyOutput determines DiskState from 'smartctl -n standby -i' output and exit code.
@@ -1055,11 +1075,19 @@ func (m *Manager) TriggerSmartTest(devPath, testType string) error {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "smartctl", "-t", testType, diskPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		msg := strings.TrimSpace(string(out))
-		if msg != "" {
-			return fmt.Errorf("smartctl -t %s %s failed: %s", testType, diskPath, msg)
+		// Fallback for SATA drives behind LSI SAS HBAs (e.g. 9500-8i / mpt3sas) requiring explicit -d sat
+		satCtx, satCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer satCancel()
+		if satOut, satErr := exec.CommandContext(satCtx, "smartctl", "-d", "sat", "-t", testType, diskPath).CombinedOutput(); satErr == nil {
+			out, err = satOut, nil
 		}
-		return fmt.Errorf("smartctl -t %s %s failed: %w", testType, diskPath, err)
+		if err != nil {
+			msg := strings.TrimSpace(string(out))
+			if msg != "" {
+				return fmt.Errorf("smartctl -t %s %s failed: %s", testType, diskPath, msg)
+			}
+			return fmt.Errorf("smartctl -t %s %s failed: %w", testType, diskPath, err)
+		}
 	}
 
 	target.SmartStatus = fmt.Sprintf("TESTING (%s Self-Test running...)", strings.ToUpper(testType))
@@ -1953,21 +1981,32 @@ func applyHardwareAPM(devPath, hdparmArg string) error {
 	outStr := strings.TrimSpace(string(out))
 	lower := strings.ToLower(outStr)
 
-	// If APM is being disabled (255), also apply smartctl -s apm,off (vital for Western Digital and enterprise SATA/SAS drives)
+	// If APM is being disabled (255), also apply smartctl -s apm,off (vital for Western Digital and enterprise SATA/SAS drives on LSI HBAs)
 	if hdparmArg == "255" {
 		sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer sCancel()
-		_ = exec.CommandContext(sCtx, "smartctl", "-s", "apm,off", devPath).Run()
+		if sErr := exec.CommandContext(sCtx, "smartctl", "-s", "apm,off", devPath).Run(); sErr != nil {
+			satCtx, satCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer satCancel()
+			_ = exec.CommandContext(satCtx, "smartctl", "-d", "sat", "-s", "apm,off", devPath).Run()
+		}
 	}
 
 	if err != nil || strings.Contains(lower, "not supported") || strings.Contains(lower, "failed") || strings.Contains(lower, "inappropriate ioctl") {
-		// Fallback: If hdparm failed but APM disable was requested and smartctl succeeded, treat as success
+		// Fallback for LSI SAS HBAs (9500-8i / mpt3sas): apply APM via smartctl SAT pass-through
+		smartArg := "apm," + hdparmArg
 		if hdparmArg == "255" {
-			sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer sCancel()
-			if sErr := exec.CommandContext(sCtx, "smartctl", "-s", "apm,off", devPath).Run(); sErr == nil {
-				return nil
-			}
+			smartArg = "apm,off"
+		}
+		sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer sCancel()
+		if sErr := exec.CommandContext(sCtx, "smartctl", "-s", smartArg, devPath).Run(); sErr == nil {
+			return nil
+		}
+		satCtx, satCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer satCancel()
+		if satErr := exec.CommandContext(satCtx, "smartctl", "-d", "sat", "-s", smartArg, devPath).Run(); satErr == nil {
+			return nil
 		}
 		if outStr != "" {
 			return fmt.Errorf("APM level %s rejected by %s: %s", hdparmArg, devPath, outStr)
