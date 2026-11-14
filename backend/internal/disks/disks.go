@@ -628,13 +628,20 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 			rotational = true
 		}
 
-		// Ensure SCSI block timeout is at least 60s for standard block drives (sd[a-z]) to prevent ZFS pool suspension during spin-up
+		// Ensure SCSI block timeout is at least 180s and allow_restart=1 for standard block drives (sd[a-z])
+		// so SAS HBAs (e.g. LSI 9500-8i) automatically issue START STOP UNIT on 'Sense Key: Not Ready' instead of failing I/O to ZFS
 		if strings.HasPrefix(name, "sd") && runtime.GOOS == "linux" {
 			timeoutPath := filepath.Join(sysPath, "device", "timeout")
 			if tData, err := os.ReadFile(timeoutPath); err == nil {
 				curSec, _ := strconv.Atoi(strings.TrimSpace(string(tData)))
-				if curSec > 0 && curSec < 60 {
-					_ = os.WriteFile(timeoutPath, []byte("60\n"), 0644)
+				if curSec > 0 && curSec < 180 {
+					_ = os.WriteFile(timeoutPath, []byte("180\n"), 0644)
+				}
+			}
+			allowRestartPath := filepath.Join(sysPath, "device", "allow_restart")
+			if rData, err := os.ReadFile(allowRestartPath); err == nil {
+				if strings.TrimSpace(string(rData)) != "1" {
+					_ = os.WriteFile(allowRestartPath, []byte("1\n"), 0644)
 				}
 			}
 		}

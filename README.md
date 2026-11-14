@@ -37,7 +37,7 @@ Ein kompromisslos schnelles, leichtgewichtiges NAS-Betriebssystem-Frontend und D
   * System- und Statusabfragen wecken schlafende Festplatten **niemals** auf (`smartctl -n standby` und non-intrusives `hdparm -C`).
   * Alle ZFS-Datasets werden standardmäßig mit **`atime=off`** angelegt, sodass Lesezugriffe die Festplatten nicht permanent wachhalten.
   * Automatisches Spindown-Management via `hd-idle` und konfigurierbare Timer (Default 30 Minuten).
-  * 60s SCSI-Block-Timeout und `failmode=wait` verhindern ZFS-Pool-Suspends beim 15–20s Anlauf großer Enterprise-HDDs.
+  * 180s SCSI-Block-Timeout, `allow_restart=1` (für LSI SAS HBAs wie 9500-8i bei `Sense Key: Not Ready`) und `failmode=wait` verhindern ZFS-Pool-Suspends beim 15–20s Anlauf großer Enterprise-HDDs.
 * **Notifications, Jobs & System Center (Glocken-Icon Dropdown):**
   * Live-Tracking von ZFS Scrubs (inkl. Fortschrittsbalken), Cloud Sync Tasks, S.M.A.R.T.-Tests, Warnungen und Ereignis-Log.
 * **Single-Binary-Architektur (Go):**
@@ -120,8 +120,8 @@ zpool destroy DATA
 2. **S.M.A.R.T.-Daemon Schutz (`smartd`):** Automatisch konfiguriert mit `-n standby`.
 3. **ZFS `atime=off`:** Verhindert Metadaten-Schreibzugriffe bei reinem Lesen.
 4. **Spindown-Timer via `hd-idle`:** 30 Minuten Standard-Timer (`1800s`), granular konfigurierbar.
-5. **Schutz vor ZFS "SUSPENDED" beim Aufwachen:**
-   * 60s SCSI-Block-Timeout (`/etc/udev/rules.d/99-hdd-timeout.rules`).
+5. **Schutz vor ZFS "SUSPENDED" beim Aufwachen (LSI HBA `allow_restart=1` & 180s Timeout):**
+   * 180s SCSI-Block-Timeout & `ATTR{device/allow_restart}="1"` (`/etc/udev/rules.d/99-hdd-timeout.rules`): Zwingt den Linux-SCSI-Treiber bei `Sense Key: Not Ready` (während die Spindel am SAS-Controller anläuft), automatisch einen Motor-Startbefehl zu senden und geduldig zu warten, statt einen I/O-Error an ZFS zu melden.
    * SATA ALPM auf `max_performance`.
    * ZFS Pool `failmode=wait`.
 6. **Globale APM- & EPC-Deaktivierung:**
@@ -172,7 +172,7 @@ An uncompromisingly fast, lightweight NAS operating system frontend and daemon b
   * All ZFS datasets are created with **`atime=off`** by default so read operations do not permanently keep hard drives awake.
   * Automatic spindown management via `hd-idle` with configurable per-disk timers (5m to 2h, or Always On; default 30m).
   * Global firmware APM & EPC disabling on boot to prevent disks from waking themselves up every 30 minutes.
-  * 60-second SCSI device timeout (`udev`) and `failmode=wait` to safely bridge 15–20s spin-up delays of large helium enterprise drives without ZFS I/O freezes.
+  * 180-second SCSI device timeout, `allow_restart=1` (`udev` fix for LSI SAS HBAs returning `Sense Key: Not Ready` during spin-up), and `failmode=wait` to safely bridge 15–20s spin-up delays of large helium enterprise drives without ZFS I/O freezes.
 * **Notifications, Jobs & System Center (Topbar Bell Dropdown):**
   * **Live Status Indicator:** Real-time badge dot (pulsing blue when jobs are active, red for critical alerts, amber for warnings, green for all healthy).
   * **Running Jobs:** Live tracking of ZFS Scrubs (with percentage progress bars), Rclone Cloud Sync tasks, and S.M.A.R.T. self-tests.
@@ -265,8 +265,8 @@ zpool destroy DATA
 2. **S.M.A.R.T. Daemon Protection (`smartd`):** Configured with `-n standby` to prevent periodic spin-ups.
 3. **ZFS `atime=off`:** Default on all datasets to avoid metadata writes on read operations.
 4. **Spindown Timers via `hd-idle`:** Configured to 30 minutes (`1800s`) by default, with per-disk configuration via WebUI.
-5. **Protection Against ZFS "SUSPENDED" on Wake-Up:**
-   * 60s SCSI device timeout (`/etc/udev/rules.d/99-hdd-timeout.rules`) gives 12TB–24TB enterprise drives time to reach full RPM without premature I/O errors.
+5. **Protection Against ZFS "SUSPENDED" on Wake-Up (LSI HBA `allow_restart=1` & 180s Timeout):**
+   * 180s SCSI device timeout & `ATTR{device/allow_restart}="1"` (`/etc/udev/rules.d/99-hdd-timeout.rules`) instructs the Linux SCSI disk driver to intercept `Sense Key: Not Ready` from SAS HBAs (like LSI 9500-8i), send a motor start command, and wait for full RPM without reporting premature I/O errors to ZFS.
    * SATA ALPM set to `max_performance` prevents link dropouts.
    * Pool `failmode=wait` prevents kernel dropouts during spin-up delays.
 6. **Global APM & EPC Disabling:**

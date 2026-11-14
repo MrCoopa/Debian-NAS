@@ -132,14 +132,16 @@ if [ -f /etc/smartd.conf ]; then
 fi
 systemctl enable --now smartd 2>/dev/null || systemctl enable --now smartmontools 2>/dev/null || true
 
-# 6. ZFS Spindown-Sicherheit: SCSI/SATA Device Timeout auf 60s setzen & ZFS failmode=wait erzwingen (verhindert 'SUSPENDED' bei trägem Spin-up)
+# 6. ZFS Spindown-Sicherheit: SCSI/SATA Device Timeout auf 180s & allow_restart=1 setzen (LSI HBA 'Not Ready' Spin-up Fix) & ZFS failmode=wait erzwingen
 rm -f /etc/udev/rules.d/99-zfs-spindown-timeout.rules 2>/dev/null || true
 cat << 'EOF' > /etc/udev/rules.d/99-hdd-timeout.rules
-ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd[a-z]", ATTR{device/timeout}="60"
+ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd[a-z]", ATTR{device/timeout}="180", ATTR{device/allow_restart}="1"
 EOF
 udevadm control --reload-rules 2>/dev/null || true
 udevadm trigger 2>/dev/null || true
-for d in /sys/block/sd*/device/timeout; do [ -f "$d" ] && echo 60 > "$d" 2>/dev/null || true; done
+for d in /sys/block/sd*/device/timeout; do [ -f "$d" ] && echo 180 > "$d" 2>/dev/null || true; done
+for r in /sys/block/sd*/device/allow_restart; do [ -f "$r" ] && echo 1 > "$r" 2>/dev/null || true; done
+for sr in /sys/class/scsi_disk/*/allow_restart; do [ -f "$sr" ] && echo 1 > "$sr" 2>/dev/null || true; done
 if command -v zpool >/dev/null 2>&1; then
   for p in $(zpool list -H -o name 2>/dev/null); do
     zpool set failmode=wait "$p" 2>/dev/null || true
