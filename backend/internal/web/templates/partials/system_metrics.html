@@ -96,7 +96,7 @@
                 <strong class="font-mono text-blue">{{$p.Name}}</strong>
                 <span class="badge-status {{if eq $p.Health "ONLINE"}}green{{else if eq $p.Health "DEGRADED"}}amber{{else}}red{{end}}" style="font-size: 0.65rem; margin-left: 0.3rem;">{{$p.Health}}</span>
                 {{if eq $p.Health "SUSPENDED"}}
-                  <button type="button" class="btn btn-danger btn-sm" style="font-size: 0.62rem; padding: 0.1rem 0.4rem; margin-left: 0.4rem; background: #d32f2f; border-color: #f44336;" hx-post="/ui/actions/zfs/pools/clear" hx-vals='{"pool": "{{$p.Name}}"}' hx-target="#dashboard-grid" hx-swap="outerHTML">Resume</button>
+                  <button type="button" class="btn btn-danger btn-sm" style="font-size: 0.62rem; padding: 0.1rem 0.4rem; margin-left: 0.4rem; background: #d32f2f; border-color: #f44336;" hx-post="/ui/actions/zfs/pools/clear" hx-vals='{"pool": "{{$p.Name}}"}' hx-target="#pools-container" hx-swap="outerHTML">Resume</button>
                 {{end}}
               </td>
               <td class="font-mono text-white">{{formatBytes $p.FreeBytes}}</td>

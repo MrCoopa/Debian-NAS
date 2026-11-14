@@ -1,6 +1,7 @@
 package disks
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -258,5 +259,29 @@ func TestDiskStandbyZeroIOPreservation(t *testing.T) {
 	syncDiskFields(sdc)
 	if sdc.PowerState != "STANDBY" {
 		t.Errorf("expected PowerState to stay STANDBY, got %s", sdc.PowerState)
+	}
+}
+
+func TestBlockIOInFlightAndSmartctlStandbyParser(t *testing.T) {
+	if hasBlockIOInFlight("100 0 800 50 20 0 160 10 0 40 60") {
+		t.Errorf("expected in_flight=0 to return false")
+	}
+	if !hasBlockIOInFlight("100 0 800 50 20 0 160 10 2 40 60") {
+		t.Errorf("expected in_flight=2 to return true")
+	}
+
+	// 1. Standby exit code 2
+	if st, ok := parseSmartctlStandbyOutput([]byte("Device is in STANDBY mode, exit(2)\n"), 2, errors.New("exit status 2")); !ok || st != StateStandby {
+		t.Errorf("expected StateStandby for exit 2 standby output, got (%v, %v)", st, ok)
+	}
+	// 2. Active drive with historical error log entry (bitmask exit code 64) must be recognized as ACTIVE without falling back to hdparm -C
+	activeBitmaskOut := []byte("Device Model:     WDC WD120EFBX-68B0EN0\nSerial Number:    WD-12345\nPower mode is:    ACTIVE or IDLE\n")
+	if st, ok := parseSmartctlStandbyOutput(activeBitmaskOut, 64, errors.New("exit status 64")); !ok || st != StateActive {
+		t.Errorf("expected StateActive for bitmask 64 active output, got (%v, %v)", st, ok)
+	}
+	// 3. LSI HBA requiring -d sat (exit code 2 with open failure) must return ok=false so caller retries with -d sat
+	hbaOpenErrOut := []byte("Smartctl open device: /dev/sdb failed: Unable to detect device type\nPlease specify device type with the -d option.\n")
+	if _, ok := parseSmartctlStandbyOutput(hbaOpenErrOut, 2, errors.New("exit status 2")); ok {
+		t.Errorf("expected ok=false when smartctl fails to detect device type on HBA")
 	}
 }

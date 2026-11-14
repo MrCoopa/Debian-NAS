@@ -84,6 +84,16 @@
         <option value="254">254 - Max Performance</option>
       </select>
     </div>
+    <div>
+      <span class="text-dim" style="display: block; font-size: 0.72rem; margin-bottom: 0.2rem;">Extended Power Conditions (EPC):</span>
+      <select style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: var(--pf-bg-input); border: 1px solid var(--pf-border-color); color: var(--pf-text-primary); border-radius: 4px;"
+              x-model="activeDisk.extended_power_conditions"
+              :disabled="!activeDisk.path"
+              @change="runDrawerDiskAction('/ui/actions/disks/epc', { path: activeDisk.path, mode: activeDisk.extended_power_conditions })">
+        <option value="Disabled">Disabled (No Spindown Timer)</option>
+        <option value="Enabled">Enabled (Drive Internal Timers)</option>
+      </select>
+    </div>
   </div>
 </div>
 

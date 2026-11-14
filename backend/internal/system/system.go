@@ -828,8 +828,16 @@ func (c *Collector) readLoadAvg() []float64 {
 
 func (c *Collector) readCPUTemperature() int {
 	// Look through /sys/class/thermal/thermal_zone*/temp or /sys/class/hwmon/hwmon*/temp1_input
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 8; i++ {
 		tempPath := fmt.Sprintf("/sys/class/thermal/thermal_zone%d/temp", i)
+		if b, err := os.ReadFile(tempPath); err == nil {
+			if val, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && val > 0 {
+				return val / 1000 // Millidegrees to Celsius
+			}
+		}
+	}
+	for i := 0; i < 8; i++ {
+		tempPath := fmt.Sprintf("/sys/class/hwmon/hwmon%d/temp1_input", i)
 		if b, err := os.ReadFile(tempPath); err == nil {
 			if val, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && val > 0 {
 				return val / 1000 // Millidegrees to Celsius
@@ -841,7 +849,7 @@ func (c *Collector) readCPUTemperature() int {
 
 func (c *Collector) readMemInfo() MemoryInfo {
 	c.ensureArcPathsLocked()
-	var total, avail uint64
+	var total, memAvailable, memFree uint64
 	f, err := os.Open(c.memInfoPath)
 	if err == nil {
 		defer f.Close()
@@ -855,18 +863,25 @@ func (c *Collector) readMemInfo() MemoryInfo {
 				switch fields[0] {
 				case "MemTotal:":
 					total = valBytes
-				case "MemAvailable:", "MemFree:":
-					if avail == 0 {
-						avail = valBytes
-					}
+				case "MemAvailable:":
+					memAvailable = valBytes
+				case "MemFree:":
+					memFree = valBytes
 				}
 			}
 		}
 	}
 
+	avail := memAvailable
+	if avail == 0 {
+		avail = memFree
+	}
 	if total == 0 {
 		total = 16 * 1024 * 1024 * 1024
 		avail = 1 * 1024 * 1024 * 1024
+	}
+	if avail > total {
+		avail = total
 	}
 
 	used := total - avail

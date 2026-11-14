@@ -198,16 +198,17 @@
               <!-- Quick Action Toolbar inside expanded row -->
               <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1.25rem; padding-top: 0.75rem; border-top: 1px solid rgba(255, 255, 255, 0.08); align-items: center; justify-content: flex-end;">
                 <button type="button" class="btn btn-secondary btn-sm"
-                        {{if eq $d.State "STANDBY"}}disabled title="Disk is sleeping"{{end}}
+                        {{if or (eq $d.State "STANDBY") (eq $d.State "SLEEP") (eq $d.State "SLEEPING")}}disabled title="Disk is sleeping"{{end}}
                         hx-post="/ui/actions/disks/smart-test" hx-vals='{"path": "{{$d.Path}}", "type": "short"}' hx-target="#disks-container" hx-swap="outerHTML">
                   SMART Short Test
                 </button>
                 <button type="button" class="btn btn-secondary btn-sm"
-                        {{if eq $d.State "STANDBY"}}disabled title="Disk is sleeping"{{end}}
+                        {{if or (eq $d.State "STANDBY") (eq $d.State "SLEEP") (eq $d.State "SLEEPING")}}disabled title="Disk is sleeping"{{end}}
                         hx-post="/ui/actions/disks/smart-test" hx-vals='{"path": "{{$d.Path}}", "type": "long"}' hx-target="#disks-container" hx-swap="outerHTML">
                   SMART Long Test
                 </button>
                 <button type="button" class="btn btn-secondary btn-sm"
+                        {{if or (eq $d.State "STANDBY") (eq $d.State "SLEEP") (eq $d.State "SLEEPING")}}disabled title="Disk is already in standby"{{end}}
                         hx-post="/ui/actions/disks/standby" hx-vals='{"path": "{{$d.Path}}"}' hx-target="#disks-container" hx-swap="outerHTML">
                   Force Standby (0W)
                 </button>

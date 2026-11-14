@@ -459,7 +459,7 @@ func (s *Server) handleUIPartialPools(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUIPartialDisks(w http.ResponseWriter, r *http.Request) {
-	if s.disks != nil {
+	if s.disks != nil && r.Method == http.MethodGet {
 		s.disks.PollStatesNow()
 	}
 	s.renderUIPartial(w, "partials/disks_table.html", s.buildPartialViewData(viewFetchMask{

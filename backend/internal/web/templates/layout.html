@@ -346,7 +346,7 @@
         openCloudMenuId: '',
         expandedDisks: {},
         drawerOpen: false,
-        activeDisk: { name: '', path: '', by_id_path: '', zfs_pool: '', vdev_type: '', power_on_hours: 0, smart_last_test: '', smart_status: '', spindown_seconds: 900, adv_power_management: 'Disabled', state: '', is_system_disk: false },
+        activeDisk: { name: '', path: '', by_id_path: '', zfs_pool: '', vdev_type: '', power_on_hours: 0, smart_last_test: '', smart_status: '', spindown_seconds: 900, adv_power_management: 'Disabled', extended_power_conditions: 'Disabled', state: '', is_system_disk: false },
         triggerHtmxRefresh(eventName) {
           if (window.htmx) {
             this.$nextTick(() => window.htmx.trigger(document.body, eventName));
@@ -546,13 +546,13 @@
               (d.by_id_path && d.by_id_path.endsWith('/' + targetKey))
             );
             if (match) {
-              this.activeDisk = Object.assign({ spindown_seconds: 900, adv_power_management: 'Disabled', smart_last_test: '', smart_status: 'PASSED' }, match);
+              this.activeDisk = Object.assign({ spindown_seconds: 900, adv_power_management: 'Disabled', extended_power_conditions: 'Disabled', smart_last_test: '', smart_status: 'PASSED' }, match);
             }
           } catch (_) {}
         },
         openDiskDrawer(diskOrName) {
           if (diskOrName && typeof diskOrName === 'object') {
-            this.activeDisk = Object.assign({ spindown_seconds: 900, adv_power_management: 'Disabled' }, diskOrName);
+            this.activeDisk = Object.assign({ spindown_seconds: 900, adv_power_management: 'Disabled', extended_power_conditions: 'Disabled' }, diskOrName);
             this.drawerOpen = true;
             this.refreshActiveDisk(diskOrName.name || diskOrName.path);
             return;
@@ -571,6 +571,7 @@
             smart_status: '',
             spindown_seconds: 900,
             adv_power_management: 'Disabled',
+            extended_power_conditions: 'Disabled',
             state: 'ACTIVE',
             is_system_disk: false
           };

@@ -469,6 +469,10 @@ func (m *Manager) RunSnapshotTask(id string) (*SnapshotTask, string, error) {
 		m.mu.Unlock()
 		return nil, "", fmt.Errorf("snapshot task '%s' not found", id)
 	}
+	if strings.ToUpper(t.State) == "RUNNING" {
+		m.mu.Unlock()
+		return nil, "", fmt.Errorf("snapshot task '%s' is already running", id)
+	}
 	taskCopy := cloneSnapshotTask(t)
 	t.State = "RUNNING"
 	t.LastMessage = "Creating snapshot..."

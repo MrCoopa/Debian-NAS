@@ -722,6 +722,7 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 	} else {
 		job.LastMessage = "Sync in progress..."
 	}
+	jobSnap := *job
 	m.mu.Unlock()
 
 	go func() {
@@ -757,7 +758,7 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 		}
 
 		action := "sync"
-		switch job.TransferMode {
+		switch jobSnap.TransferMode {
 		case ModeCopy:
 			action = "copy"
 		case ModeMove:
@@ -766,7 +767,7 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 			action = "sync"
 		}
 
-		srcPath := job.SourcePath
+		srcPath := jobSnap.SourcePath
 		if _, err := os.Stat(srcPath); os.IsNotExist(err) {
 			candidate := "/mnt/" + strings.TrimPrefix(srcPath, "/")
 			if info, err2 := os.Stat(candidate); err2 == nil && info.IsDir() {
@@ -782,7 +783,7 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 
 		var args []string
 		args = append(args, action)
-		if job.Direction == DirectionPush {
+		if jobSnap.Direction == DirectionPush {
 			args = append(args, srcPath, target)
 		} else {
 			args = append(args, target, srcPath)
@@ -792,11 +793,11 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 			args = append(args, "--config", m.rcloneConfig)
 		}
 		args = append(args, "--create-empty-src-dirs")
-		if dryRun || job.DryRun {
+		if dryRun || jobSnap.DryRun {
 			args = append(args, "--dry-run")
 		}
-		if job.BandwidthLimit != "" && job.BandwidthLimit != "0" {
-			args = append(args, "--bwlimit", job.BandwidthLimit)
+		if jobSnap.BandwidthLimit != "" && jobSnap.BandwidthLimit != "0" {
+			args = append(args, "--bwlimit", jobSnap.BandwidthLimit)
 		}
 		args = append(args, "--stats", "1s", "--stats-one-line")
 
@@ -828,11 +829,12 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 				job.LastMessage = "Completed successfully"
 			}
 		}
+		lastMsg := job.LastMessage
 		m.saveJobsConfig()
 		m.mu.Unlock()
 
 		if runtime.GOOS == "linux" {
-			_ = exec.Command("logger", "-t", "debian-nas-cloudsync", fmt.Sprintf("Job %s (%s): %s", job.ID, action, job.LastMessage)).Run()
+			_ = exec.Command("logger", "-t", "debian-nas-cloudsync", fmt.Sprintf("Job %s (%s): %s", jobSnap.ID, action, lastMsg)).Run()
 		}
 	}()
 
@@ -845,7 +847,11 @@ func (m *Manager) ListJobs() ([]*SyncJob, error) {
 
 	var list []*SyncJob
 	for _, j := range m.jobs {
-		list = append(list, j)
+		if j == nil {
+			continue
+		}
+		cp := *j
+		list = append(list, &cp)
 	}
 	sort.Slice(list, func(i, j int) bool {
 		return list[i].ID < list[j].ID
@@ -998,8 +1004,19 @@ func (m *Manager) DeleteJob(jobID string) error {
 	return nil
 }
 
+func sameCronMinute(a, b time.Time) bool {
+	if a.IsZero() || b.IsZero() {
+		return false
+	}
+	return a.Year() == b.Year() &&
+		a.Month() == b.Month() &&
+		a.Day() == b.Day() &&
+		a.Hour() == b.Hour() &&
+		a.Minute() == b.Minute()
+}
+
 func (m *Manager) startScheduler() {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -1010,7 +1027,9 @@ func (m *Manager) startScheduler() {
 			if !job.Enabled || job.Status == StatusRunning {
 				continue
 			}
-			// Simple schedule match e.g. "0 3 45 * *" (hour 3, min 45)
+			if sameCronMinute(job.LastRun, now) {
+				continue
+			}
 			if matchSchedule(job.Schedule, now) {
 				jobsToRun = append(jobsToRun, id)
 			}
@@ -1048,6 +1067,13 @@ func (m *Manager) loadJobsConfig() {
 	if err := json.Unmarshal(data, &list); err == nil {
 		changed := false
 		for _, j := range list {
+			if j.Status == StatusRunning {
+				j.Status = StatusIdle
+				if strings.Contains(j.LastMessage, "in progress") {
+					j.LastMessage = "Interrupted by daemon restart"
+				}
+				changed = true
+			}
 			j.Schedule = cronutil.NormalizeLegacySchedule(j.Schedule)
 			if j.SourcePath != "" && !strings.HasPrefix(j.SourcePath, "/mnt/") {
 				candidate := "/mnt/" + strings.TrimPrefix(j.SourcePath, "/")

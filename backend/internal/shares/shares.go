@@ -770,8 +770,14 @@ func (m *Manager) writeNfsExportsLocked() error {
 
 	var sb strings.Builder
 	sb.WriteString("# Managed by Debian NAS\n")
-	for _, exp := range m.nfsExports {
-		if exp.Enabled {
+	var paths []string
+	for p := range m.nfsExports {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		exp := m.nfsExports[p]
+		if exp != nil && exp.Enabled {
 			options := exp.Options
 			if options == "" {
 				if exp.ReadOnly {
@@ -957,10 +963,12 @@ func (m *Manager) DeleteUser(username string) error {
 	if err := validate.Username(username); err != nil {
 		return fmt.Errorf("invalid username: %w", err)
 	}
-
-	delete(m.users, username)
+	if username == "root" {
+		return fmt.Errorf("refusing to delete system account 'root'")
+	}
 
 	if m.mockMode {
+		delete(m.users, username)
 		return nil
 	}
 
@@ -972,6 +980,8 @@ func (m *Manager) DeleteUser(username string) error {
 			return fmt.Errorf("refusing to delete system account with UID %d", uid)
 		}
 	}
+
+	delete(m.users, username)
 
 	_, _ = runCmdWithTimeout(5*time.Second, "smbpasswd", "-x", username)
 	out, err := runCmdWithTimeout(10*time.Second, "userdel", username)

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -62,10 +63,12 @@ type DiskInfo struct {
 	HasEPC                 bool      `json:"has_epc"`                  // true if Extended Power Conditions (EPC) supported
 	ExtendedPowerConditions string   `json:"extended_power_conditions"` // "Disabled", "Enabled", "Default"
 	EPCStatus              string    `json:"epc_status"`               // "Supported", "Enabled", "Not Supported"
-	IsSystemDisk           bool      `json:"is_system_disk"`           // true = contains OS mount (/ or /boot)
-	LastIOStats            string    `json:"-"`                        // snapshot of /sys/block/<name>/stat to prevent waking standby drives
-	LastStateCheck         time.Time `json:"last_state_check"`
-	LastSmartCheck         time.Time `json:"-"`
+	IsSystemDisk            bool      `json:"is_system_disk"`            // true = contains OS mount (/ or /boot)
+	LastIOStats             string    `json:"-"`                         // snapshot of /sys/block/<name>/stat to prevent waking standby drives
+	LastWakeTime            time.Time `json:"-"`                         // timestamp when drive transitioned from standby/sleep to active
+	pendingHardwareSync     bool      `json:"-"`                         // true if saved APM/EPC/Spindown was deferred while disk was sleeping
+	LastStateCheck          time.Time `json:"last_state_check"`
+	LastSmartCheck          time.Time `json:"-"`
 }
 
 func syncDiskFields(d *DiskInfo) {
@@ -167,6 +170,7 @@ func NormalizeAPMLevel(raw string) (displayVal string, hdparmArg string, err err
 
 type Manager struct {
 	mu               sync.RWMutex
+	pollMu           sync.Mutex
 	mockMode         bool
 	cachedDisks      map[string]*DiskInfo
 	savedConfigs     map[string]DiskPowerConfig
@@ -479,6 +483,16 @@ func readBlockDevStat(name string) string {
 	return strings.TrimSpace(string(data))
 }
 
+// hasBlockIOInFlight checks whether field 9 (index 8, in_flight I/O requests) in /sys/block/<dev>/stat is > 0.
+func hasBlockIOInFlight(stat string) bool {
+	fields := strings.Fields(stat)
+	if len(fields) < 9 {
+		return false
+	}
+	inFlight, err := strconv.ParseUint(fields[8], 10, 64)
+	return err == nil && inFlight > 0
+}
+
 // linuxBlockDeviceSetChangedLocked reports whether /sys/block managed devices differ from cachedDisks.
 // Caller must hold m.mu.RLock or m.mu.Lock.
 func (m *Manager) linuxBlockDeviceSetChangedLocked() bool {
@@ -664,7 +678,7 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 			lastIOStat = existing.LastIOStats
 		}
 
-		if hasExisting && (existing.State == StateStandby || existing.State == StateSleep) && curIOStat != "" && lastIOStat != "" && curIOStat == lastIOStat {
+		if hasExisting && (existing.State == StateStandby || existing.State == StateSleep) && curIOStat != "" && lastIOStat != "" && curIOStat == lastIOStat && !hasBlockIOInFlight(curIOStat) {
 			// Zero block I/O has occurred since the disk went to standby.
 			// Never ping hardware with smartctl or hdparm, preserve sleeping state!
 			state = existing.State
@@ -676,12 +690,16 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 			state = m.checkStandbySafe(devPath)
 			if state == StateActive {
 				temp, powerHours, realloc, pending, smartStatus, smartLastTest = m.readSmartAttributesSafe(devPath)
-			} else {
+			}
+			if curIOStat != "" {
 				lastIOStat = curIOStat
 			}
 		} else {
 			state = StateActive
 			temp, powerHours, realloc, pending, smartStatus, smartLastTest = m.readSmartAttributesSafe(devPath)
+			if curIOStat != "" {
+				lastIOStat = curIOStat
+			}
 		}
 
 		poolName := poolMap[name]
@@ -694,13 +712,19 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 			spindownSec = 900
 		}
 		advPowerMgmt := "Disabled"
+		epcMode := "Disabled"
 		locateLed := false
+		var lastWakeTime time.Time
+		var pendingHwSync bool
 		if saved, ok := m.lookupSavedConfigLocked(name, byID, serial); ok {
 			if saved.SpindownSeconds != nil && *saved.SpindownSeconds >= 0 {
 				spindownSec = *saved.SpindownSeconds
 			}
 			if saved.AdvPowerManagement != "" {
 				advPowerMgmt = saved.AdvPowerManagement
+			}
+			if saved.ExtendedPowerConditions != "" {
+				epcMode = saved.ExtendedPowerConditions
 			}
 		} else if existing, exists := m.cachedDisks[name]; exists {
 			if existing.SpindownSeconds >= 0 {
@@ -711,6 +735,9 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 			} else if rotational && state == StateActive {
 				advPowerMgmt = m.readHardwareAPMSafe(devPath)
 			}
+			if existing.ExtendedPowerConditions != "" {
+				epcMode = existing.ExtendedPowerConditions
+			}
 			locateLed = existing.LocateLed
 			if smartLastTest == "" && existing.SmartLastTest != "" {
 				smartLastTest = existing.SmartLastTest
@@ -720,6 +747,8 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 		}
 		if existing, exists := m.cachedDisks[name]; exists {
 			locateLed = existing.LocateLed
+			lastWakeTime = existing.LastWakeTime
+			pendingHwSync = existing.pendingHardwareSync
 			if smartLastTest == "" && existing.SmartLastTest != "" {
 				smartLastTest = existing.SmartLastTest
 			}
@@ -742,35 +771,39 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 		}
 
 		disk := &DiskInfo{
-			Name:               name,
-			Device:             name,
-			Path:               devPath,
-			ByIDPath:           byID,
-			Vendor:             vendor,
-			Model:              fullModel,
-			Serial:             serial,
-			SizeBytes:          sizeBytes,
-			SizeHuman:          formatBytes(sizeBytes),
-			IsRotational:       rotational,
-			State:              state,
-			TemperatureC:       temp,
-			SpindownSeconds:    spindownSec,
-			AdvPowerManagement: advPowerMgmt,
-			ZfsPool:            poolName,
-			Pool:               poolName,
-			Slot:               slotIdx,
-			Enclosure:          fmt.Sprintf("Bay %02d (Front Hot-Swap)", slotIdx),
-			BusType:            busType,
-			SmartStatus:        smartStatus,
-			SmartLastTest:      smartLastTest,
-			PowerOnHours:       powerHours,
-			ReallocatedSectors: realloc,
-			PendingSectors:     pending,
-			LocateLed:          locateLed,
-			VdevType:           vdevType,
-			IsSystemDisk:       isSystem,
-			LastIOStats:        lastIOStat,
-			LastStateCheck:     time.Now(),
+			Name:                    name,
+			Device:                  name,
+			Path:                    devPath,
+			ByIDPath:                byID,
+			Vendor:                  vendor,
+			Model:                   fullModel,
+			Serial:                  serial,
+			SizeBytes:               sizeBytes,
+			SizeHuman:               formatBytes(sizeBytes),
+			IsRotational:            rotational,
+			State:                   state,
+			TemperatureC:            temp,
+			SpindownSeconds:         spindownSec,
+			AdvPowerManagement:      advPowerMgmt,
+			ExtendedPowerConditions: epcMode,
+			EPCStatus:               epcMode,
+			ZfsPool:                 poolName,
+			Pool:                    poolName,
+			Slot:                    slotIdx,
+			Enclosure:               fmt.Sprintf("Bay %02d (Front Hot-Swap)", slotIdx),
+			BusType:                 busType,
+			SmartStatus:             smartStatus,
+			SmartLastTest:           smartLastTest,
+			PowerOnHours:            powerHours,
+			ReallocatedSectors:      realloc,
+			PendingSectors:          pending,
+			LocateLed:               locateLed,
+			VdevType:                vdevType,
+			IsSystemDisk:            isSystem,
+			LastIOStats:             lastIOStat,
+			LastWakeTime:            lastWakeTime,
+			pendingHardwareSync:     pendingHwSync,
+			LastStateCheck:          time.Now(),
 		}
 		syncDiskFields(disk)
 
@@ -787,6 +820,43 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 	return disks, nil
 }
 
+// parseSmartctlStandbyOutput determines DiskState from 'smartctl -n standby -i' output and exit code.
+func parseSmartctlStandbyOutput(out []byte, exitCode int, runErr error) (DiskState, bool) {
+	lower := strings.ToLower(string(out))
+	if strings.Contains(lower, "device is in sleep") || strings.Contains(lower, "power mode is:   sleep") {
+		return StateSleep, true
+	}
+	if strings.Contains(lower, "standby") || strings.Contains(lower, "standby_z") ||
+		strings.Contains(lower, "standby_y") || strings.Contains(lower, "idle_b") ||
+		strings.Contains(lower, "idle_c") || strings.Contains(lower, "low-power mode") {
+		return StateStandby, true
+	}
+	if strings.Contains(lower, "sleep") && !strings.Contains(lower, "never") {
+		return StateSleep, true
+	}
+	openFailed := strings.Contains(lower, "unable to detect device type") ||
+		strings.Contains(lower, "open device:") ||
+		strings.Contains(lower, "specify device type with the -d option")
+	if exitCode == 2 && !openFailed {
+		return StateStandby, true
+	}
+	if runErr == nil && !openFailed && len(out) > 0 {
+		return StateActive, true
+	}
+	// smartctl uses a bitmask exit code (e.g. bit 6 = 64 for historical error log entries, bit 5 = 32 for past threshold).
+	// If smartctl successfully identified the drive without reporting standby/sleep, the drive is ACTIVE.
+	if !openFailed && (exitCode&2) == 0 && (strings.Contains(lower, "device model:") ||
+		strings.Contains(lower, "model number:") ||
+		strings.Contains(lower, "product:") ||
+		strings.Contains(lower, "serial number:") ||
+		strings.Contains(lower, "user capacity:") ||
+		strings.Contains(lower, "active") ||
+		strings.Contains(lower, "idle")) {
+		return StateActive, true
+	}
+	return StateUnknown, false
+}
+
 // checkStandbySafe queries drive status without spinning up sleeping HDDs.
 // It prioritizes smartctl with '-n standby' because 'hdparm -C' sends ATA CHECK POWER MODE,
 // which causes a mandatory spin-up on Western Digital and SAS drive firmwares.
@@ -795,21 +865,31 @@ func (m *Manager) checkStandbySafe(devPath string) DiskState {
 	defer sCancel()
 	smartCmd := exec.CommandContext(sCtx, "smartctl", "-n", "standby", "-i", devPath)
 	smartOut, smartErr := smartCmd.CombinedOutput()
-	if smartCmd.ProcessState != nil && smartCmd.ProcessState.ExitCode() == 2 {
-		return StateStandby
+	exitCode := 0
+	if smartCmd.ProcessState != nil {
+		exitCode = smartCmd.ProcessState.ExitCode()
 	}
-	smartLower := strings.ToLower(string(smartOut))
-	if strings.Contains(smartLower, "standby") || strings.Contains(smartLower, "standby_z") || strings.Contains(smartLower, "idle_b") || strings.Contains(smartLower, "idle_c") {
-		return StateStandby
-	}
-	if strings.Contains(smartLower, "sleep") {
-		return StateSleep
-	}
-	if smartErr == nil {
-		return StateActive
+	if state, ok := parseSmartctlStandbyOutput(smartOut, exitCode, smartErr); ok {
+		return state
 	}
 
-	// Fallback to hdparm -C if smartctl is not installed or returned an unexpected exit code
+	// If smartctl could not auto-detect the device behind an LSI SAS HBA (mpt3sas), try explicit '-d sat'
+	if !errors.Is(smartErr, exec.ErrNotFound) {
+		satCtx, satCancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer satCancel()
+		satCmd := exec.CommandContext(satCtx, "smartctl", "-d", "sat", "-n", "standby", "-i", devPath)
+		satOut, satErr := satCmd.CombinedOutput()
+		satExit := 0
+		if satCmd.ProcessState != nil {
+			satExit = satCmd.ProcessState.ExitCode()
+		}
+		if state, ok := parseSmartctlStandbyOutput(satOut, satExit, satErr); ok {
+			return state
+		}
+		return StateUnknown
+	}
+
+	// Fallback to hdparm -C ONLY if smartctl binary is not installed on the system
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "hdparm", "-C", devPath)
@@ -837,6 +917,15 @@ func (m *Manager) readSmartAttributesSafe(devPath string) (temp, powerOnHours, r
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "smartctl", "-n", "standby", "-a", devPath)
 	out, _ := cmd.Output()
+	outLower := strings.ToLower(string(out))
+	if len(out) == 0 || strings.Contains(outLower, "unable to detect device type") || strings.Contains(outLower, "specify device type") {
+		satCtx, satCancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer satCancel()
+		satCmd := exec.CommandContext(satCtx, "smartctl", "-d", "sat", "-n", "standby", "-a", devPath)
+		if satOut, _ := satCmd.Output(); len(satOut) > 0 {
+			out = satOut
+		}
+	}
 	if len(out) == 0 {
 		return
 	}
@@ -1284,40 +1373,49 @@ func (m *Manager) PollStatesNow() {
 }
 
 type diskPollSnapshot struct {
-	name           string
-	path           string
-	byIDPath       string
-	serial         string
-	isRotational   bool
-	prevState      DiskState
-	needAPMProbe   bool
-	lastIOStats    string
-	lastSmartCheck time.Time
+	name                string
+	path                string
+	byIDPath            string
+	serial              string
+	isRotational        bool
+	prevState           DiskState
+	needAPMProbe        bool
+	lastIOStats         string
+	lastWakeTime        time.Time
+	lastSmartCheck      time.Time
+	pendingHardwareSync bool
 }
 
 type diskApplyTarget struct {
-	path           string
-	state          DiskState
-	spindownSec    *int
-	advPowerMgmt   string
-	isRotational   bool
+	name         string
+	path         string
+	state        DiskState
+	spindownSec  *int
+	advPowerMgmt string
+	epcMode      string
+	isRotational bool
 }
 
 func (m *Manager) pollDiskStatesOnce() {
+	m.pollMu.Lock()
+	defer m.pollMu.Unlock()
+
 	m.mu.RLock()
 	snaps := make([]diskPollSnapshot, 0, len(m.cachedDisks))
 	for _, d := range m.cachedDisks {
 		_, hasSaved := m.lookupSavedConfigLocked(d.Name, d.ByIDPath, d.Serial)
 		snaps = append(snaps, diskPollSnapshot{
-			name:           d.Name,
-			path:           d.Path,
-			byIDPath:       d.ByIDPath,
-			serial:         d.Serial,
-			isRotational:   d.IsRotational,
-			prevState:      d.State,
-			needAPMProbe:   d.IsRotational && !hasSaved && d.AdvPowerManagement == "",
-			lastIOStats:    d.LastIOStats,
-			lastSmartCheck: d.LastSmartCheck,
+			name:                d.Name,
+			path:                d.Path,
+			byIDPath:            d.ByIDPath,
+			serial:              d.Serial,
+			isRotational:        d.IsRotational,
+			prevState:           d.State,
+			needAPMProbe:        d.IsRotational && !hasSaved && d.AdvPowerManagement == "",
+			lastIOStats:         d.LastIOStats,
+			lastWakeTime:        d.LastWakeTime,
+			lastSmartCheck:      d.LastSmartCheck,
+			pendingHardwareSync: d.pendingHardwareSync,
 		})
 	}
 	m.mu.RUnlock()
@@ -1330,14 +1428,51 @@ func (m *Manager) pollDiskStatesOnce() {
 		var hours, realloc, pending int
 		var status, lastTest, probedAPM string
 		curIOStat := readBlockDevStat(snap.name)
+		ioChanged := curIOStat != "" && snap.lastIOStats != "" && curIOStat != snap.lastIOStats
+		ioInFlight := hasBlockIOInFlight(curIOStat)
 
-		if (snap.prevState == StateStandby || snap.prevState == StateSleep) && curIOStat != "" && snap.lastIOStats != "" && curIOStat == snap.lastIOStats {
-			// Zero block I/O has occurred since the disk went to standby.
-			// Never ping hardware with smartctl or hdparm, preserve sleeping state!
+		if snap.prevState == StateStandby || snap.prevState == StateSleep {
+			if curIOStat != "" && snap.lastIOStats != "" && !ioChanged && !ioInFlight {
+				// Zero block I/O has occurred since the disk went to standby.
+				// Never ping hardware with smartctl or hdparm, preserve sleeping state!
+				m.mu.Lock()
+				if d, exists := m.cachedDisks[snap.name]; exists {
+					d.State = snap.prevState
+					d.TemperatureC = -1
+					d.LastStateCheck = time.Now()
+					syncDiskFields(d)
+				}
+				m.mu.Unlock()
+				continue
+			}
+			if ioChanged || ioInFlight {
+				// Block I/O has been issued to a sleeping drive (e.g. ZFS / Jellyfin read).
+				// Transition immediately to ACTIVE in the UI without issuing smartctl commands
+				// during the ~15s motor spin-up window (avoids HBA queue contention and false STANDBY exit codes).
+				m.mu.Lock()
+				if d, exists := m.cachedDisks[snap.name]; exists && !d.LastStateCheck.After(scanStarted) {
+					d.State = StateActive
+					d.LastWakeTime = time.Now()
+					d.LastSmartCheck = time.Time{}
+					if curIOStat != "" {
+						d.LastIOStats = curIOStat
+					}
+					d.LastStateCheck = time.Now()
+					syncDiskFields(d)
+				}
+				m.mu.Unlock()
+				continue
+			}
+		}
+
+		inSpinupGrace := snap.isRotational && !snap.lastWakeTime.IsZero() && time.Since(snap.lastWakeTime) < 20*time.Second
+		if inSpinupGrace {
 			m.mu.Lock()
-			if d, exists := m.cachedDisks[snap.name]; exists {
-				d.State = snap.prevState
-				d.TemperatureC = -1
+			if d, exists := m.cachedDisks[snap.name]; exists && !d.LastStateCheck.After(scanStarted) {
+				d.State = StateActive
+				if curIOStat != "" {
+					d.LastIOStats = curIOStat
+				}
 				d.LastStateCheck = time.Now()
 				syncDiskFields(d)
 			}
@@ -1347,7 +1482,15 @@ func (m *Manager) pollDiskStatesOnce() {
 
 		didReadSmart := false
 		if snap.isRotational {
-			state = m.checkStandbySafe(snap.path)
+			if ioChanged || ioInFlight {
+				// Disk actively served block I/O since the previous poll; it is definitely ACTIVE.
+				state = StateActive
+			} else {
+				state = m.checkStandbySafe(snap.path)
+				if state == StateUnknown && snap.prevState != StateUnknown {
+					state = snap.prevState
+				}
+			}
 			if state == StateActive {
 				needSmart := snap.prevState != StateActive || snap.lastSmartCheck.IsZero() || time.Since(snap.lastSmartCheck) >= 5*time.Minute
 				if needSmart {
@@ -1369,15 +1512,11 @@ func (m *Manager) pollDiskStatesOnce() {
 		m.mu.Lock()
 		d, exists := m.cachedDisks[snap.name]
 		if exists {
-			wokeFromSleep := snap.isRotational &&
-				(snap.prevState == StateStandby || snap.prevState == StateSleep) &&
-				state == StateActive
-
 			if !d.LastStateCheck.After(scanStarted) {
-				if snap.isRotational {
+				if snap.isRotational && state != StateUnknown {
 					d.State = state
 				}
-				if state == StateStandby || state == StateSleep {
+				if curIOStat != "" {
 					d.LastIOStats = curIOStat
 				}
 				if state == StateActive {
@@ -1412,14 +1551,17 @@ func (m *Manager) pollDiskStatesOnce() {
 				syncDiskFields(d)
 			}
 
-			// Re-apply explicit saved APM / Spindown if drive spun up externally from standby
-			if wokeFromSleep {
+			// Apply deferred hardware config once if the drive was asleep at daemon startup and has now finished spinning up
+			if d.pendingHardwareSync && d.State == StateActive && (d.LastWakeTime.IsZero() || time.Since(d.LastWakeTime) >= 20*time.Second) {
+				d.pendingHardwareSync = false
 				if saved, ok := m.lookupSavedConfigLocked(d.Name, d.ByIDPath, d.Serial); ok {
 					wakeApply = append(wakeApply, diskApplyTarget{
+						name:         d.Name,
 						path:         d.Path,
 						state:        StateActive,
 						spindownSec:  saved.SpindownSeconds,
 						advPowerMgmt: saved.AdvPowerManagement,
+						epcMode:      saved.ExtendedPowerConditions,
 						isRotational: d.IsRotational,
 					})
 				}
@@ -1729,10 +1871,12 @@ func (m *Manager) snapshotSavedApplyTargetsLocked() []diskApplyTarget {
 			continue
 		}
 		out = append(out, diskApplyTarget{
+			name:         d.Name,
 			path:         d.Path,
 			state:        d.State,
 			spindownSec:  cfg.SpindownSeconds,
 			advPowerMgmt: cfg.AdvPowerManagement,
+			epcMode:      cfg.ExtendedPowerConditions,
 			isRotational: d.IsRotational,
 		})
 	}
@@ -1742,12 +1886,26 @@ func (m *Manager) snapshotSavedApplyTargetsLocked() []diskApplyTarget {
 func (m *Manager) applyDiskConfigsToHardware(targets []diskApplyTarget) {
 	for _, t := range targets {
 		if t.state == StateStandby || t.state == StateSleep {
+			if t.name != "" {
+				m.mu.Lock()
+				if d, ok := m.cachedDisks[t.name]; ok {
+					d.pendingHardwareSync = true
+				}
+				m.mu.Unlock()
+			}
 			continue
 		}
 		if t.advPowerMgmt != "" {
 			if _, arg, err := NormalizeAPMLevel(t.advPowerMgmt); err == nil {
 				_ = applyHardwareAPM(t.path, arg)
 			}
+		}
+		if t.epcMode != "" {
+			if normEPC, err := NormalizeEPCMode(t.epcMode); err == nil && normEPC != "Default" {
+				_ = applyHardwareEPC(t.path, normEPC == "Disabled")
+			}
+		} else if strings.EqualFold(t.advPowerMgmt, "Disabled") || t.advPowerMgmt == "255" {
+			_ = applyHardwareEPC(t.path, true)
 		}
 		if t.spindownSec != nil && *t.spindownSec >= 0 {
 			_ = applyHardwareSpindown(t.path, *t.spindownSec)
@@ -1788,12 +1946,11 @@ func applyHardwareAPM(devPath, hdparmArg string) error {
 	outStr := strings.TrimSpace(string(out))
 	lower := strings.ToLower(outStr)
 
-	// If APM is being disabled (255), also apply smartctl -s apm,off and sdparm EPC disable (vital for Western Digital and enterprise SATA/SAS drives)
+	// If APM is being disabled (255), also apply smartctl -s apm,off (vital for Western Digital and enterprise SATA/SAS drives)
 	if hdparmArg == "255" {
 		sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer sCancel()
 		_ = exec.CommandContext(sCtx, "smartctl", "-s", "apm,off", devPath).Run()
-		_ = applyHardwareEPC(devPath, true)
 	}
 
 	if err != nil || strings.Contains(lower, "not supported") || strings.Contains(lower, "failed") || strings.Contains(lower, "inappropriate ioctl") {
