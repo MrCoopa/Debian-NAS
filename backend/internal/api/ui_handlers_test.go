@@ -87,6 +87,9 @@ func TestUI_RootAndPartials(t *testing.T) {
 	if userCookie == nil || userCookie.Value != "root" {
 		t.Fatalf("Expected nas_user cookie to be 'root', got: %v", userCookie)
 	}
+	if userCookie.MaxAge != 3*3600 {
+		t.Errorf("Expected nas_user cookie MaxAge to be 10800 (3h), got: %d", userCookie.MaxAge)
+	}
 
 	// 4. Authenticated Root Layout
 	req := httptest.NewRequest("GET", "/", nil)

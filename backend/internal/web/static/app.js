@@ -254,4 +254,10 @@ console.log("Debian Storage Appliance: Go + HTMX + Alpine.js initialized.");
       detail: { message: "Network error reaching NAS backend.", type: "error" }
     }));
   });
+
+  // Automatic session logout after 3 hours
+  var SESSION_TIMEOUT_MS = 3 * 60 * 60 * 1000;
+  setTimeout(function () {
+    window.location.href = "/logout?reason=timeout";
+  }, SESSION_TIMEOUT_MS);
 })();

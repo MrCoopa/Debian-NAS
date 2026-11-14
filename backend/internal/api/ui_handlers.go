@@ -804,7 +804,9 @@ func (s *Server) handleUILogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := s.buildViewData(r)
-	if r.URL.Query().Get("error") != "" {
+	if r.URL.Query().Get("error") == "expired" {
+		data.ErrorMessage = "Your session has expired (3-hour limit). Please sign in again."
+	} else if r.URL.Query().Get("error") != "" {
 		data.ErrorMessage = "Invalid username or password. Please try again."
 	}
 
@@ -844,14 +846,15 @@ func (s *Server) handleUILoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Valid login! Set cookie for 30 days
+	// Valid login! Set cookie for 3 hours (10800s)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "nas_user",
 		Value:    username,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   86400 * 30, // 30 days
+		MaxAge:   3 * 3600, // 3 hours
+		Expires:  time.Now().Add(3 * time.Hour),
 	})
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -866,6 +869,10 @@ func (s *Server) handleUILogout(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
+	if r.URL.Query().Get("reason") == "timeout" {
+		http.Redirect(w, r, "/login?error=expired", http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
