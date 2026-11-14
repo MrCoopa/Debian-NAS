@@ -44,6 +44,9 @@ type NotificationItem struct {
 	TargetTab string `json:"target_tab"` // e.g. "pools", "disks", "protection", "shares", "system"
 }
 
+func (n NotificationItem) Level() string  { return n.Severity }
+func (n NotificationItem) Detail() string { return n.Message }
+
 // JobItem represents a running or completed background job (ZFS Scrub, Cloud Sync, Periodic Snapshot, SMART Self-Test).
 type JobItem struct {
 	ID         string  `json:"id"`
@@ -57,6 +60,8 @@ type JobItem struct {
 	Timestamp  string  `json:"timestamp"`
 	TargetTab  string  `json:"target_tab"`
 }
+
+func (j JobItem) Status() string { return j.State }
 
 // ViewData is passed to the root layout and all partials
 type ViewData struct {

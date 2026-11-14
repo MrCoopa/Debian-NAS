@@ -137,9 +137,9 @@
           <div style="display: flex; flex-direction: column; gap: 0.4rem;">
             {{range $a := .SystemAlerts}}
               <div @click="setTab('{{if $a.TargetTab}}{{$a.TargetTab}}{{else}}dashboard{{end}}'); notifOpen = false"
-                   style="cursor: pointer; padding: 0.55rem 0.7rem; border-radius: 6px; background: {{if eq $a.Level "error"}}rgba(239, 68, 68, 0.12){{else}}rgba(245, 158, 11, 0.12){{end}}; border: 1px solid {{if eq $a.Level "error"}}rgba(239, 68, 68, 0.35){{else}}rgba(245, 158, 11, 0.35){{end}};">
+                   style="cursor: pointer; padding: 0.55rem 0.7rem; border-radius: 6px; background: {{if eq $a.Severity "error"}}rgba(239, 68, 68, 0.12){{else}}rgba(245, 158, 11, 0.12){{end}}; border: 1px solid {{if eq $a.Severity "error"}}rgba(239, 68, 68, 0.35){{else}}rgba(245, 158, 11, 0.35){{end}};">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
-                  <span style="font-size: 0.78rem; font-weight: 700; color: {{if eq $a.Level "error"}}#fca5a5{{else}}#fde68a{{end}};">
+                  <span style="font-size: 0.78rem; font-weight: 700; color: {{if eq $a.Severity "error"}}#fca5a5{{else}}#fde68a{{end}};">
                     {{$a.Title}}
                   </span>
                   <span style="font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; background: rgba(0,0,0,0.3); color: #9ca3af;">
@@ -147,7 +147,7 @@
                   </span>
                 </div>
                 <div style="font-size: 0.74rem; color: #d1d5db; margin-top: 3px; line-height: 1.35;">
-                  {{$a.Detail}}
+                  {{$a.Message}}
                 </div>
               </div>
             {{end}}
@@ -209,15 +209,15 @@
           <div style="display: flex; flex-direction: column; gap: 0.35rem;">
             {{range $j := .CompletedJobs}}
               <div @click="setTab('{{if $j.TargetTab}}{{$j.TargetTab}}{{else}}protection{{end}}'); notifOpen = false"
-                   style="cursor: pointer; padding: 0.48rem 0.65rem; border-radius: 6px; background: #252529; border: 1px solid {{if eq $j.Status "FAILED"}}rgba(239, 68, 68, 0.4){{else}}#333336{{end}};">
+                   style="cursor: pointer; padding: 0.48rem 0.65rem; border-radius: 6px; background: #252529; border: 1px solid {{if eq $j.State "FAILED"}}rgba(239, 68, 68, 0.4){{else}}#333336{{end}};">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
                   <span style="font-size: 0.76rem; font-weight: 600; color: #f3f4f6;">{{$j.Name}}</span>
                   <div style="display: flex; align-items: center; gap: 0.35rem;">
                     <span style="font-size: 0.63rem; color: #9ca3af;">{{$j.Timestamp}}</span>
                     <span style="font-size: 0.63rem; font-weight: 700; padding: 1px 5px; border-radius: 3px;
-                      {{if eq $j.Status "FAILED"}}background: rgba(239, 68, 68, 0.2); color: #fca5a5;
+                      {{if eq $j.State "FAILED"}}background: rgba(239, 68, 68, 0.2); color: #fca5a5;
                       {{else}}background: rgba(16, 185, 129, 0.16); color: #6ee7b7;{{end}}">
-                      {{$j.Status}}
+                      {{$j.State}}
                     </span>
                   </div>
                 </div>
@@ -244,15 +244,15 @@
         {{if .RecentEvents}}
           <div style="display: flex; flex-direction: column; gap: 0.35rem;">
             {{range $ev := .RecentEvents}}
-              <div style="padding: 0.45rem 0.65rem; border-radius: 5px; background: #252529; border-left: 3px solid {{if eq $ev.Level "error"}}#ef4444{{else if eq $ev.Level "warning"}}#f59e0b{{else}}#10b981{{end}};">
+              <div style="padding: 0.45rem 0.65rem; border-radius: 5px; background: #252529; border-left: 3px solid {{if eq $ev.Severity "error"}}#ef4444{{else if eq $ev.Severity "warning"}}#f59e0b{{else}}#10b981{{end}};">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
-                  <span style="font-size: 0.74rem; font-weight: 600; color: {{if eq $ev.Level "error"}}#fca5a5{{else}}#e5e7eb{{end}};">
+                  <span style="font-size: 0.74rem; font-weight: 600; color: {{if eq $ev.Severity "error"}}#fca5a5{{else}}#e5e7eb{{end}};">
                     {{$ev.Title}}
                   </span>
                   <span style="font-size: 0.64rem; color: #9ca3af; font-family: monospace;">{{$ev.Timestamp}}</span>
                 </div>
                 <div style="font-size: 0.72rem; color: #d1d5db; margin-top: 2px;">
-                  {{$ev.Detail}}
+                  {{$ev.Message}}
                 </div>
               </div>
             {{end}}
