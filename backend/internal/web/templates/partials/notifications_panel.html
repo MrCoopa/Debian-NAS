@@ -8,7 +8,7 @@
   <button type="button"
           class="omv-icon-btn"
           :class="{ 'active': notifOpen }"
-          title="Jobs, Warnungen &amp; System-Infos"
+          title="Notifications, Jobs &amp; System Alerts"
           @click="notifOpen = !notifOpen"
           style="position: relative;">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -37,15 +37,15 @@
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
           <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
         </svg>
-        <span style="font-size: 0.88rem; font-weight: 700; color: #ffffff;">System-Center &amp; Jobs</span>
+        <span style="font-size: 0.88rem; font-weight: 700; color: #ffffff;">Notifications &amp; Jobs</span>
         {{if .RunningJobCount}}
           <span style="font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: rgba(56, 189, 248, 0.18); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35);">
-            {{.RunningJobCount}} aktiv
+            {{.RunningJobCount}} active
           </span>
         {{end}}
         {{if .AlertCount}}
           <span style="font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4);">
-            {{.AlertCount}} {{if eq .AlertCount 1}}Warnung{{else}}Warnungen{{end}}
+            {{.AlertCount}} {{if eq .AlertCount 1}}alert{{else}}alerts{{end}}
           </span>
         {{end}}
       </div>
@@ -55,33 +55,33 @@
                   hx-post="/ui/actions/notifications/clear"
                   hx-target="#notifications-panel"
                   hx-swap="outerHTML"
-                  title="Ereignis-Protokoll leeren"
+                  title="Clear recent activity log"
                   style="background: rgba(255,255,255,0.05); border: 1px solid #3c3c40; color: #9ca3af; font-size: 0.7rem; padding: 2px 7px; border-radius: 4px; cursor: pointer;">
-            Protokoll leeren
+            Clear Log
           </button>
         {{end}}
       </div>
     </div>
 
-    <!-- Wichtige System-Infos (Quick Telemetry Strip) -->
+    <!-- Quick System Telemetry Strip -->
     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: #333336; border-bottom: 1px solid #333336; font-size: 0.72rem;">
-      <div style="background: #1b1b1e; padding: 0.45rem 0.6rem; text-align: center; cursor: pointer;" @click="setTab('disks'); notifOpen = false" title="Laufwerke anzeigen">
+      <div style="background: #1b1b1e; padding: 0.45rem 0.6rem; text-align: center; cursor: pointer;" @click="setTab('disks'); notifOpen = false" title="View Physical Disks">
         <div style="color: #9ca3af; font-size: 0.65rem; text-transform: uppercase;">Disks Standby</div>
         <div style="font-weight: 700; color: #38bdf8; margin-top: 1px;">{{if .StandbyCount}}{{.StandbyCount}}{{else}}0{{end}} / {{if .TotalDisks}}{{.TotalDisks}}{{else}}0{{end}}</div>
       </div>
-      <div style="background: #1b1b1e; padding: 0.45rem 0.6rem; text-align: center; cursor: pointer;" @click="setTab('pools'); notifOpen = false" title="ZFS Pools anzeigen">
+      <div style="background: #1b1b1e; padding: 0.45rem 0.6rem; text-align: center; cursor: pointer;" @click="setTab('pools'); notifOpen = false" title="View ZFS Pools">
         <div style="color: #9ca3af; font-size: 0.65rem; text-transform: uppercase;">Pools</div>
         <div style="font-weight: 700; color: {{if .HasCriticalAlert}}#ef4444{{else}}#10b981{{end}}; margin-top: 1px;">
           {{if .Pools}}{{len .Pools}}{{else}}0{{end}} {{if .HasCriticalAlert}}WARN{{else}}OK{{end}}
         </div>
       </div>
-      <div style="background: #1b1b1e; padding: 0.45rem 0.6rem; text-align: center; cursor: pointer;" @click="setTab('protection'); notifOpen = false" title="Jobs &amp; Data Protection anzeigen">
+      <div style="background: #1b1b1e; padding: 0.45rem 0.6rem; text-align: center; cursor: pointer;" @click="setTab('protection'); notifOpen = false" title="View Data Protection &amp; Jobs">
         <div style="color: #9ca3af; font-size: 0.65rem; text-transform: uppercase;">Jobs</div>
         <div style="font-weight: 700; color: {{if .RunningJobCount}}#38bdf8{{else}}#d1d5db{{end}}; margin-top: 1px;">
-          {{if .RunningJobCount}}{{.RunningJobCount}}{{else}}0{{end}} aktiv / {{if .CompletedCount}}{{.CompletedCount}}{{else}}0{{end}} fertig
+          {{if .RunningJobCount}}{{.RunningJobCount}}{{else}}0{{end}} active / {{if .CompletedCount}}{{.CompletedCount}}{{else}}0{{end}} done
         </div>
       </div>
-      <div style="background: #1b1b1e; padding: 0.45rem 0.6rem; text-align: center; cursor: pointer;" @click="setTab('system'); notifOpen = false" title="System-Details anzeigen">
+      <div style="background: #1b1b1e; padding: 0.45rem 0.6rem; text-align: center; cursor: pointer;" @click="setTab('system'); notifOpen = false" title="View System Details">
         <div style="color: #9ca3af; font-size: 0.65rem; text-transform: uppercase;">Uptime</div>
         <div style="font-weight: 700; color: #d1d5db; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
           {{if .System.Uptime}}{{.System.Uptime}}{{else}}Online{{end}}
@@ -95,7 +95,7 @@
               @click="notifTab = 'all'"
               :style="notifTab === 'all' ? 'border-bottom: 2px solid #008be5; color: #ffffff; font-weight: 600;' : 'border-bottom: 2px solid transparent; color: #9ca3af;'"
               style="background: none; border: none; padding: 0.5rem 0.65rem; font-size: 0.75rem; cursor: pointer;">
-        Alle
+        All
       </button>
       <button type="button"
               @click="notifTab = 'jobs'"
@@ -110,7 +110,7 @@
               @click="notifTab = 'alerts'"
               :style="notifTab === 'alerts' ? 'border-bottom: 2px solid #008be5; color: #ffffff; font-weight: 600;' : 'border-bottom: 2px solid transparent; color: #9ca3af;'"
               style="background: none; border: none; padding: 0.5rem 0.65rem; font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 4px;">
-        Fehler &amp; Warnungen
+        Alerts &amp; Errors
         {{if .AlertCount}}
           <span style="background: #ef4444; color: #fff; font-size: 0.62rem; padding: 0 5px; border-radius: 999px;">{{.AlertCount}}</span>
         {{end}}
@@ -119,17 +119,17 @@
               @click="notifTab = 'events'"
               :style="notifTab === 'events' ? 'border-bottom: 2px solid #008be5; color: #ffffff; font-weight: 600;' : 'border-bottom: 2px solid transparent; color: #9ca3af;'"
               style="background: none; border: none; padding: 0.5rem 0.65rem; font-size: 0.75rem; cursor: pointer;">
-        Protokoll
+        Event Log
       </button>
     </div>
 
     <!-- Scrollable Content Body -->
     <div style="max-height: 440px; overflow-y: auto; padding: 0.65rem 0.85rem; display: flex; flex-direction: column; gap: 0.75rem;">
 
-      <!-- 1. FEHLER & WARNUNGEN (SystemAlerts) -->
+      <!-- 1. ALERTS & ERRORS (SystemAlerts) -->
       <div x-show="notifTab === 'all' || notifTab === 'alerts'">
         <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #9ca3af; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between;">
-          <span>Fehler &amp; System-Warnungen</span>
+          <span>System Alerts &amp; Errors</span>
           <span>{{if .SystemAlerts}}{{len .SystemAlerts}}{{else}}0{{end}}</span>
         </div>
 
@@ -157,16 +157,16 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.2">
               <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
-            <span>Keine aktiven Fehler oder Warnungen – alle Pools &amp; Dienste fehlerfrei.</span>
+            <span>No active errors or warnings — all pools &amp; services healthy.</span>
           </div>
         {{end}}
       </div>
 
-      <!-- 2. LAUFENDE & ABGESCHLOSSENE JOBS -->
+      <!-- 2. RUNNING & COMPLETED JOBS -->
       <div x-show="notifTab === 'all' || notifTab === 'jobs'">
-        <!-- Laufende Jobs -->
+        <!-- Running Jobs -->
         <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #9ca3af; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between;">
-          <span>Laufende Jobs ({{if .RunningJobs}}{{len .RunningJobs}}{{else}}0{{end}})</span>
+          <span>Running Jobs ({{if .RunningJobs}}{{len .RunningJobs}}{{else}}0{{end}})</span>
         </div>
 
         {{if .RunningJobs}}
@@ -196,13 +196,13 @@
           </div>
         {{else}}
           <div style="padding: 0.45rem 0.7rem; border-radius: 6px; background: #252529; border: 1px solid #333336; font-size: 0.75rem; color: #9ca3af; margin-bottom: 0.7rem;">
-            Aktuell laufen keine Hintergrund-Jobs (Scrub, Cloud Sync, SMART-Test).
+            No background jobs currently running (Scrub, Cloud Sync, SMART Self-Test).
           </div>
         {{end}}
 
-        <!-- Abgeschlossene Jobs -->
+        <!-- Completed Jobs -->
         <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #9ca3af; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between;">
-          <span>Abgeschlossene Jobs ({{if .CompletedJobs}}{{len .CompletedJobs}}{{else}}0{{end}})</span>
+          <span>Completed Jobs ({{if .CompletedJobs}}{{len .CompletedJobs}}{{else}}0{{end}})</span>
         </div>
 
         {{if .CompletedJobs}}
@@ -229,15 +229,15 @@
           </div>
         {{else}}
           <div style="padding: 0.45rem 0.7rem; border-radius: 6px; background: #252529; border: 1px solid #333336; font-size: 0.75rem; color: #9ca3af;">
-            Noch keine abgeschlossenen Hintergrund-Jobs in dieser Sitzung protokolliert.
+            No completed background jobs recorded yet.
           </div>
         {{end}}
       </div>
 
-      <!-- 3. SYSTEM-PROTOKOLL & LETZTE AKTIONEN (RecentEvents) -->
+      <!-- 3. RECENT ACTIVITY & EVENT LOG (RecentEvents) -->
       <div x-show="notifTab === 'all' || notifTab === 'events'">
         <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #9ca3af; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between;">
-          <span>Letzte System-Aktionen &amp; Ereignisse</span>
+          <span>Recent System Activity &amp; Events</span>
           <span>{{if .RecentEvents}}{{len .RecentEvents}}{{else}}0{{end}}</span>
         </div>
 
@@ -259,7 +259,7 @@
           </div>
         {{else}}
           <div style="padding: 0.45rem 0.7rem; border-radius: 6px; background: #252529; border: 1px solid #333336; font-size: 0.75rem; color: #9ca3af;">
-            Keine kürzlichen Benutzer-Aktionen im Ereignis-Protokoll.
+            No recent user actions in the activity log.
           </div>
         {{end}}
       </div>

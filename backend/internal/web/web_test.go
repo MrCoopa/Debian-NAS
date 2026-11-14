@@ -353,7 +353,7 @@ func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
 		},
 		{
 			file:    "templates/partials/notifications_panel.html",
-			want:    []string{`id="notifications-panel"`, `hx-get="/ui/partials/notifications"`, `hx-post="/ui/actions/notifications/clear"`, `hx-swap="outerHTML"`, `Laufende Jobs`, `Abgeschlossene Jobs`, `Fehler &amp; System-Warnungen`},
+			want:    []string{`id="notifications-panel"`, `hx-get="/ui/partials/notifications"`, `hx-post="/ui/actions/notifications/clear"`, `hx-swap="outerHTML"`, `Running Jobs`, `Completed Jobs`, `System Alerts &amp; Errors`},
 			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`, `x-data=`},
 		},
 		{
