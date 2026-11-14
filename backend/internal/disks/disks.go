@@ -709,7 +709,7 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 
 		spindownSec := 0
 		if rotational {
-			spindownSec = 900
+			spindownSec = 1800
 		}
 		advPowerMgmt := "Disabled"
 		epcMode := "Disabled"

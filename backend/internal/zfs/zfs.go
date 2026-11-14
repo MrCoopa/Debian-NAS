@@ -325,12 +325,35 @@ func NewManager(mockMode bool) *Manager {
 
 	if m.mockMode {
 		m.initMockZFS()
+	} else {
+		m.ensurePoolsFailmodeWait()
 	}
 	m.mu.Lock()
 	m.initSnapshotTasksLocked()
 	m.mu.Unlock()
 	go m.startSnapshotScheduler()
 	return m
+}
+
+// ensurePoolsFailmodeWait ensures all active writable ZFS pools have failmode=wait configured
+// so ZFS waits patiently during 15-20s HDD spin-ups from Standby_Z instead of returning I/O errors to applications.
+func (m *Manager) ensurePoolsFailmodeWait() {
+	out, err := runCommandOutput(fastZfsTimeout, "zpool", "list", "-H", "-o", "name,failmode,readonly")
+	if err != nil || len(out) == 0 {
+		return
+	}
+	for _, rawLine := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(strings.TrimSpace(rawLine))
+		if len(fields) < 2 {
+			continue
+		}
+		poolName := fields[0]
+		failmode := strings.ToLower(fields[1])
+		readonly := len(fields) >= 3 && strings.ToLower(fields[2]) == "on"
+		if !readonly && failmode != "wait" {
+			_, _ = runCommand(fastZfsTimeout, "zpool", "set", "failmode=wait", poolName)
+		}
+	}
 }
 
 func (m *Manager) initMockZFS() {
@@ -2162,6 +2185,7 @@ func (m *Manager) CreatePool(name, vdevType string, disks []string, ashift int, 
 		"create", "-f",
 		"-m", "/mnt/" + name,
 		"-o", fmt.Sprintf("ashift=%d", ashift),
+		"-o", "failmode=wait",
 		"-O", "atime=off",
 		"-O", "compression=" + compression,
 		"-O", "xattr=sa",
@@ -2777,7 +2801,13 @@ func (m *Manager) ImportPool(nameOrID, newName string, force bool, readonly ...b
 		return nil
 	}
 
-	return executeZfsPoolImport(runCommand, collectTargetMounts, nameOrID, newName, force, readonly...)
+	if err := executeZfsPoolImport(runCommand, collectTargetMounts, nameOrID, newName, force, readonly...); err != nil {
+		return err
+	}
+	if len(readonly) == 0 || !readonly[0] {
+		m.ensurePoolsFailmodeWait()
+	}
+	return nil
 }
 
 type zfsMountpointProp struct {

@@ -113,11 +113,11 @@ systemctl enable --now nfs-kernel-server 2>/dev/null || true
 mkdir -p /etc/nas
 chmod 0700 /etc/nas
 
-# 4. hd-idle Spindown nach 15 Minuten (900 Sekunden) standardmäßig aktivieren
+# 4. hd-idle Spindown nach 30 Minuten (1800 Sekunden) standardmäßig aktivieren
 cat << 'EOF' > /etc/default/hd-idle
 # hd-idle default configuration
 START_HD_IDLE=true
-HD_IDLE_OPTS="-i 900 -l /var/log/hd-idle.log"
+HD_IDLE_OPTS="-i 1800 -l /var/log/hd-idle.log"
 EOF
 systemctl enable --now hd-idle || true
 
@@ -132,7 +132,7 @@ if [ -f /etc/smartd.conf ]; then
 fi
 systemctl enable --now smartd 2>/dev/null || systemctl enable --now smartmontools 2>/dev/null || true
 
-# 6. ZFS Spindown-Sicherheit: SCSI/SATA Device Timeout auf 60s setzen (verhindert 'SUSPENDED' bei trägem Spin-up)
+# 6. ZFS Spindown-Sicherheit: SCSI/SATA Device Timeout auf 60s setzen & ZFS failmode=wait erzwingen (verhindert 'SUSPENDED' bei trägem Spin-up)
 rm -f /etc/udev/rules.d/99-zfs-spindown-timeout.rules 2>/dev/null || true
 cat << 'EOF' > /etc/udev/rules.d/99-hdd-timeout.rules
 ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd[a-z]", ATTR{device/timeout}="60"
@@ -140,6 +140,11 @@ EOF
 udevadm control --reload-rules 2>/dev/null || true
 udevadm trigger 2>/dev/null || true
 for d in /sys/block/sd*/device/timeout; do [ -f "$d" ] && echo 60 > "$d" 2>/dev/null || true; done
+if command -v zpool >/dev/null 2>&1; then
+  for p in $(zpool list -H -o name 2>/dev/null); do
+    zpool set failmode=wait "$p" 2>/dev/null || true
+  done
+fi
 
 # 7. SATA Link Power Management (ALPM) auf max_performance für fehlerfreien Standby-Wakeup
 for i in /sys/class/scsi_host/host*/link_power_management_policy; do
