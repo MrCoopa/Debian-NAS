@@ -101,25 +101,26 @@ EOF
 fi
 
 systemctl restart smbd nmbd || true
-systemctl enable --now wsdd2 2>/dev/null || systemctl enable --now wsdd 2>/dev/null || systemctl enable --now wsdd-server 2>/dev/null || true
+systemctl enable --no-reload --now wsdd2 2>/dev/null || systemctl enable --no-reload --now wsdd 2>/dev/null || systemctl enable --no-reload --now wsdd-server 2>/dev/null || true
 systemctl restart wsdd2 2>/dev/null || systemctl restart wsdd 2>/dev/null || systemctl restart wsdd-server 2>/dev/null || true
 
 # 2. NFS Exports Ordner & Dienste aktivieren
 mkdir -p /etc/exports.d
-systemctl enable --now rpcbind 2>/dev/null || true
-systemctl enable --now nfs-kernel-server 2>/dev/null || true
+systemctl enable --no-reload --now rpcbind 2>/dev/null || true
+systemctl enable --no-reload --now nfs-kernel-server 2>/dev/null || true
 
 # 3. Config-Verzeichnis für nasd (restriktive Rechte 0700)
 mkdir -p /etc/nas
 chmod 0700 /etc/nas
 
-# 4. hd-idle Spindown nach 30 Minuten (1800 Sekunden) standardmäßig aktivieren
+# 4. hd-idle Spindown nach 30 Minuten (1800 Sekunden) mit '-c ata' (SAT ATA Standby statt SCSI Stop Unit für LSI SAS HBAs) aktivieren
 cat << 'EOF' > /etc/default/hd-idle
 # hd-idle default configuration
 START_HD_IDLE=true
-HD_IDLE_OPTS="-i 1800 -l /var/log/hd-idle.log"
+HD_IDLE_OPTS="-i 1800 -c ata -l /var/log/hd-idle.log"
 EOF
-systemctl enable --now hd-idle || true
+systemctl enable --no-reload --now hd-idle 2>/dev/null || true
+systemctl restart hd-idle 2>/dev/null || true
 
 # 5. smartmontools / smartd mit -n idle / -n standby (Festplatten in Standby & EPC nicht aufwecken)
 if [ -f /etc/smartd.conf ]; then
@@ -130,9 +131,9 @@ if [ -f /etc/smartd.conf ]; then
     fi
   fi
 fi
-systemctl enable --now smartd 2>/dev/null || systemctl enable --now smartmontools 2>/dev/null || true
+systemctl enable --no-reload --now smartd 2>/dev/null || systemctl enable --no-reload --now smartmontools 2>/dev/null || true
 
-# 6. ZFS Spindown-Sicherheit: SCSI/SATA Device Timeout auf 180s & allow_restart=1 setzen (LSI HBA 'Not Ready' Spin-up Fix) & ZFS failmode=wait erzwingen
+# 6. ZFS Spindown-Sicherheit: SCSI/SATA Device Timeout auf 180s, allow_restart=1 & zfs_vdev_failfast_mask=0 setzen (LSI HBA 'Not Ready' Fix) & ZFS failmode=wait erzwingen
 rm -f /etc/udev/rules.d/99-zfs-spindown-timeout.rules 2>/dev/null || true
 cat << 'EOF' > /etc/udev/rules.d/99-hdd-timeout.rules
 ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd[a-z]", ATTR{device/timeout}="180", ATTR{device/allow_restart}="1"
@@ -142,9 +143,21 @@ udevadm trigger 2>/dev/null || true
 for d in /sys/block/sd*/device/timeout; do [ -f "$d" ] && echo 180 > "$d" 2>/dev/null || true; done
 for r in /sys/block/sd*/device/allow_restart; do [ -f "$r" ] && echo 1 > "$r" 2>/dev/null || true; done
 for sr in /sys/class/scsi_disk/*/allow_restart; do [ -f "$sr" ] && echo 1 > "$sr" 2>/dev/null || true; done
+if [ -f /sys/module/zfs/parameters/zfs_vdev_failfast_mask ]; then
+  echo 0 > /sys/module/zfs/parameters/zfs_vdev_failfast_mask 2>/dev/null || true
+fi
+mkdir -p /etc/modprobe.d
+if [ -f /etc/modprobe.d/zfs.conf ]; then
+  if ! grep -q "zfs_vdev_failfast_mask" /etc/modprobe.d/zfs.conf; then
+    echo "options zfs zfs_vdev_failfast_mask=0" >> /etc/modprobe.d/zfs.conf
+  fi
+else
+  echo "options zfs zfs_vdev_failfast_mask=0" > /etc/modprobe.d/zfs.conf
+fi
 if command -v zpool >/dev/null 2>&1; then
   for p in $(zpool list -H -o name 2>/dev/null); do
     zpool set failmode=wait "$p" 2>/dev/null || true
+    zpool clear "$p" 2>/dev/null || true
   done
 fi
 
@@ -156,7 +169,7 @@ done
 # 8. Globale APM- & EPC-Deaktivierung im Autostart (@reboot Cronjob) gegen Firmware-Wakeups (z. B. WD 30-Minuten-Timer & Seagate EPC)
 CRON_CMD='@reboot for dev in /dev/sd[a-z]; do /usr/sbin/smartctl -s apm,off $dev 2>/dev/null; which sdparm >/dev/null 2>&1 && sdparm --flexible --set=STANDBY=0 $dev 2>/dev/null || true; done'
 (crontab -l 2>/dev/null | grep -Fv "/usr/sbin/smartctl -s apm,off" || true; echo "$CRON_CMD") | crontab -
-systemctl enable --now cron 2>/dev/null || true
+systemctl enable --no-reload --now cron 2>/dev/null || true
 # Sofortige Anwendung auf alle vorhandenen Block-Devices
 for dev in /dev/sd[a-z]; do
   if [ -e "$dev" ]; then

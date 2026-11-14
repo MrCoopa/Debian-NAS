@@ -174,7 +174,7 @@ func TestDiskPowerSettings_NormalizationPersistenceAndHdIdle(t *testing.T) {
 		t.Fatal(err)
 	}
 	hdStr := string(hdData)
-	if !strings.Contains(hdStr, "-i 0") || !strings.Contains(hdStr, "-a sdb -i 600") {
+	if !strings.Contains(hdStr, "-i 0 -c ata") || !strings.Contains(hdStr, "-a sdb -i 600") {
 		t.Errorf("unexpected hd-idle config: %s", hdStr)
 	}
 

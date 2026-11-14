@@ -336,11 +336,24 @@ func NewManager(mockMode bool) *Manager {
 }
 
 // ensurePoolsFailmodeWait ensures all active writable ZFS pools have failmode=wait configured
-// so ZFS waits patiently during 15-20s HDD spin-ups from Standby_Z instead of returning I/O errors to applications.
+// and disables zfs_vdev_failfast_mask (REQ_FAILFAST_DEV / flags 0x100) so the Linux SCSI layer
+// and ZFS wait and retry during 15-25s HDD spin-ups behind SAS HBAs (e.g. Broadcom/LSI 9500-8i)
+// instead of immediately failing I/O at cmd_age=0s on 'Sense Key: Not Ready'.
 func (m *Manager) ensurePoolsFailmodeWait() {
-	out, err := runCommandOutput(fastZfsTimeout, "zpool", "list", "-H", "-o", "name,failmode,readonly")
+	if runtime.GOOS == "linux" {
+		const failfastPath = "/sys/module/zfs/parameters/zfs_vdev_failfast_mask"
+		if data, err := os.ReadFile(failfastPath); err == nil {
+			if strings.TrimSpace(string(data)) != "0" {
+				_ = os.WriteFile(failfastPath, []byte("0\n"), 0644)
+			}
+		}
+	}
+	out, err := runCommandOutput(fastZfsTimeout, "zpool", "list", "-H", "-o", "name,failmode,readonly,health")
 	if err != nil || len(out) == 0 {
-		return
+		out, err = runCommandOutput(fastZfsTimeout, "zpool", "list", "-H", "-o", "name,failmode,readonly")
+		if err != nil || len(out) == 0 {
+			return
+		}
 	}
 	for _, rawLine := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		fields := strings.Fields(strings.TrimSpace(rawLine))
@@ -350,8 +363,15 @@ func (m *Manager) ensurePoolsFailmodeWait() {
 		poolName := fields[0]
 		failmode := strings.ToLower(fields[1])
 		readonly := len(fields) >= 3 && strings.ToLower(fields[2]) == "on"
+		health := ""
+		if len(fields) >= 4 {
+			health = strings.ToUpper(fields[3])
+		}
 		if !readonly && failmode != "wait" {
 			_, _ = runCommand(fastZfsTimeout, "zpool", "set", "failmode=wait", poolName)
+		}
+		if health == "SUSPENDED" {
+			_, _ = runCommand(fastZfsTimeout, "zpool", "clear", poolName)
 		}
 	}
 }
@@ -814,7 +834,18 @@ func (m *Manager) scanLinuxPools() ([]*Pool, error) {
 		}
 	}
 
-	return parseZpoolList(out, m.scanPoolStatus), nil
+	pools := parseZpoolList(out, m.scanPoolStatus)
+	for _, p := range pools {
+		if p != nil && strings.EqualFold(string(p.Health), "SUSPENDED") {
+			// Auto-resume pools that were transiently suspended during SAS HBA HDD spin-up
+			if _, clearErr := runCommand(fastZfsTimeout, "zpool", "clear", p.Name); clearErr == nil {
+				p.Health = HealthOnline
+				p.Vdevs, p.Scrub = m.scanPoolStatus(p.Name)
+				syncPoolFields(p)
+			}
+		}
+	}
+	return pools, nil
 }
 
 func parseZpoolList(out []byte, fetchStatus func(poolName string) ([]Vdev, ScrubStatus)) []*Pool {

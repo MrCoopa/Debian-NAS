@@ -2050,7 +2050,11 @@ func (m *Manager) syncHdIdleConfigLocked() {
 	}
 	sort.Strings(names)
 
-	opts := []string{"-i", "0"}
+	// Use '-c ata' so hd-idle sends ATA STANDBY IMMEDIATE (0xE0 via SAT pass-through) instead of
+	// SCSI START STOP UNIT (STOP). On Broadcom/LSI SAS HBAs (e.g. 9500-8i / mpt3sas), SCSI STOP puts
+	// the SATL into a stopped state that immediately rejects ZFS Read(16)/Write(16) with Sense 04h/00h
+	// ('Logical unit not ready, cause not reportable', cmd_age=0s), whereas ATA Standby wakes transparently on I/O.
+	opts := []string{"-i", "0", "-c", "ata"}
 	for _, name := range names {
 		d := m.cachedDisks[name]
 		if d == nil || !d.IsRotational || d.SpindownSeconds <= 0 {
