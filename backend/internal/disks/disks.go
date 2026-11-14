@@ -614,13 +614,13 @@ func (m *Manager) scanLinuxDisks() ([]*DiskInfo, error) {
 			rotational = true
 		}
 
-		// Ensure SCSI block timeout is at least 120s for rotational HDDs to prevent ZFS pool suspension during spin-up
-		if rotational && runtime.GOOS == "linux" {
+		// Ensure SCSI block timeout is at least 60s for standard block drives (sd[a-z]) to prevent ZFS pool suspension during spin-up
+		if strings.HasPrefix(name, "sd") && runtime.GOOS == "linux" {
 			timeoutPath := filepath.Join(sysPath, "device", "timeout")
 			if tData, err := os.ReadFile(timeoutPath); err == nil {
 				curSec, _ := strconv.Atoi(strings.TrimSpace(string(tData)))
-				if curSec > 0 && curSec < 120 {
-					_ = os.WriteFile(timeoutPath, []byte("120\n"), 0644)
+				if curSec > 0 && curSec < 60 {
+					_ = os.WriteFile(timeoutPath, []byte("60\n"), 0644)
 				}
 			}
 		}

@@ -132,14 +132,14 @@ if [ -f /etc/smartd.conf ]; then
 fi
 systemctl enable --now smartd 2>/dev/null || systemctl enable --now smartmontools 2>/dev/null || true
 
-# 6. ZFS Spindown-Sicherheit: SCSI/SATA Device Timeout auf 120s setzen (verhindert 'SUSPENDED' bei trägem Spin-up)
-cat << 'EOF' > /etc/udev/rules.d/99-zfs-spindown-timeout.rules
-# Increase SCSI disk timeout to 120s for rotational drives to prevent ZFS pool suspension during spin-up
-ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd[a-z]*", ATTR{queue/rotational}=="1", ATTR{device/timeout}="120"
+# 6. ZFS Spindown-Sicherheit: SCSI/SATA Device Timeout auf 60s setzen (verhindert 'SUSPENDED' bei trägem Spin-up)
+rm -f /etc/udev/rules.d/99-zfs-spindown-timeout.rules 2>/dev/null || true
+cat << 'EOF' > /etc/udev/rules.d/99-hdd-timeout.rules
+ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd[a-z]", ATTR{device/timeout}="60"
 EOF
 udevadm control --reload-rules 2>/dev/null || true
 udevadm trigger 2>/dev/null || true
-for d in /sys/block/sd*/device/timeout; do [ -f "$d" ] && echo 120 > "$d" 2>/dev/null || true; done
+for d in /sys/block/sd*/device/timeout; do [ -f "$d" ] && echo 60 > "$d" 2>/dev/null || true; done
 
 # 7. SATA Link Power Management (ALPM) auf max_performance für fehlerfreien Standby-Wakeup
 for i in /sys/class/scsi_host/host*/link_power_management_policy; do
