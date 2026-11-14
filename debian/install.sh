@@ -24,7 +24,7 @@ if [ -f /etc/apt/sources.list ]; then
   sed -i 's/main contrib$/main contrib non-free non-free-firmware/' /etc/apt/sources.list || true
 fi
 
-echo "[+] 2/6: Kern-Pakete installieren (OpenZFS, Samba, NFS, hd-idle, smartmontools, ledmon, fio, rclone)..."
+echo "[+] 2/6: Kern-Pakete installieren (OpenZFS, Samba, NFS, hd-idle, smartmontools, fio, rclone)..."
 apt-get update
 
 # Check if ZFS is already installed (e.g. Proxmox VE native ZFS)
@@ -61,7 +61,7 @@ chmod 0700 /root/.config/rclone /etc/nas
 
 # Optional hardware & Windows 10/11 Network Discovery (wsdd2 for Trixie, wsdd for older Debian) tools
 DEBIAN_FRONTEND=noninteractive apt-get install -y wsdd2 || DEBIAN_FRONTEND=noninteractive apt-get install -y wsdd || DEBIAN_FRONTEND=noninteractive apt-get install -y wsdd-server || true
-DEBIAN_FRONTEND=noninteractive apt-get install -y hd-idle ledmon || true
+DEBIAN_FRONTEND=noninteractive apt-get install -y hd-idle || true
 
 echo "[+] 3/6: System-Optimierungen für HDD-Standby & ZFS..."
 # 0. Gruppe nasusers für Samba/NAS-Speicherzugriffe anlegen
