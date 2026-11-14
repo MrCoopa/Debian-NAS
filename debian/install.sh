@@ -11,6 +11,30 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# Debian 13 (Trixie) dmesg-Spam-Unterdrückung für Bare-Metal-Server:
+# 1. systemd-ssh-generator wirft ohne VM-VSOCK bei jedem daemon-reload "Failed to query local AF_VSOCK CID"
+mkdir -p /etc/systemd/system-generators
+if [ ! -e /dev/vsock ] && [ ! -L /etc/systemd/system-generators/systemd-ssh-generator ]; then
+  ln -sf /dev/null /etc/systemd/system-generators/systemd-ssh-generator || true
+fi
+# 2. systemd-sysv-generator warnt bei jedem daemon-reload über das veraltete SysV-Skript /etc/init.d/openipmi
+if [ -f /etc/init.d/openipmi ] && [ ! -f /lib/systemd/system/openipmi.service ] && [ ! -f /usr/lib/systemd/system/openipmi.service ] && [ ! -f /etc/systemd/system/openipmi.service ]; then
+  cat << 'EOF' > /etc/systemd/system/openipmi.service
+[Unit]
+Description=OpenIPMI Driver Initialization
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/etc/init.d/openipmi start
+ExecStop=/etc/init.d/openipmi stop
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+fi
+
 echo "[+] 1/6: Debian Repositories aktualisieren (contrib & non-free-firmware)..."
 apt-get update
 apt-get install -y curl wget git
