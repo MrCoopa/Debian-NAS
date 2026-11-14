@@ -35,6 +35,9 @@ type Server struct {
 	snapPageMu  sync.RWMutex
 	snapPages   map[string]int
 	snapFilters map[string]string
+	eventMu     sync.RWMutex
+	events      []NotificationItem
+	nextEventID int
 }
 
 func NewServer(
@@ -151,6 +154,8 @@ func (s *Server) Routes() http.Handler {
 	if s.web != nil {
 		mux.HandleFunc("GET /ui/partials/system", s.handleUIPartialSystem)
 		mux.HandleFunc("GET /ui/partials/topbar", s.handleUIPartialTop)
+		mux.HandleFunc("GET /ui/partials/notifications", s.handleUIPartialNotifications)
+		mux.HandleFunc("POST /ui/actions/notifications/clear", s.handleUIActionClearNotifications)
 		mux.HandleFunc("GET /ui/partials/pools", s.handleUIPartialPools)
 		mux.HandleFunc("GET /ui/partials/disks", s.handleUIPartialDisks)
 		mux.HandleFunc("GET /ui/partials/datasets", s.handleUIPartialDatasets)

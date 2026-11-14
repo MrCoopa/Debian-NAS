@@ -1,0 +1,269 @@
+<div id="notifications-panel"
+     hx-get="/ui/partials/notifications"
+     hx-trigger="refreshNotifications from:body, poolUpdate from:body, diskUpdate from:body, shareUpdate from:body, datasetUpdate from:body, snapshotUpdate from:body, cloudsyncUpdate from:body, every 5s [!document.hidden]"
+     hx-swap="outerHTML"
+     style="position: relative; display: inline-flex; align-items: center;">
+
+  <!-- Notifications & Jobs Bell Button -->
+  <button type="button"
+          class="omv-icon-btn"
+          :class="{ 'active': notifOpen }"
+          title="Jobs, Warnungen &amp; System-Infos"
+          @click="notifOpen = !notifOpen"
+          style="position: relative;">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"/>
+    </svg>
+    {{if .HasCriticalAlert}}
+      <span class="omv-badge-dot" style="background: #ef4444; box-shadow: 0 0 6px #ef4444;"></span>
+    {{else if .RunningJobCount}}
+      <span class="omv-badge-dot" style="background: #38bdf8; box-shadow: 0 0 6px #38bdf8;"></span>
+    {{else if .AlertCount}}
+      <span class="omv-badge-dot" style="background: #f59e0b; box-shadow: 0 0 6px #f59e0b;"></span>
+    {{else}}
+      <span class="omv-badge-dot" style="background: #10b981;"></span>
+    {{end}}
+  </button>
+
+  <!-- Dropdown Panel -->
+  <div x-show="notifOpen"
+       x-cloak
+       style="position: absolute; right: 0; top: 100%; margin-top: 8px; width: 430px; max-width: calc(100vw - 24px); background: #1e1e21; border: 1px solid #3c3c40; border-radius: 8px; box-shadow: 0 12px 32px rgba(0,0,0,0.75); z-index: 150; overflow: hidden; color: #e5e7eb;">
+
+    <!-- Header -->
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; background: #252529; border-bottom: 1px solid #333336;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+        </svg>
+        <span style="font-size: 0.88rem; font-weight: 700; color: #ffffff;">System-Center &amp; Jobs</span>
+        {{if .RunningJobCount}}
+          <span style="font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: rgba(56, 189, 248, 0.18); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35);">
+            {{.RunningJobCount}} aktiv
+          </span>
+        {{end}}
+        {{if .AlertCount}}
+          <span style="font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4);">
+            {{.AlertCount}} {{if eq .AlertCount 1}}Warnung{{else}}Warnungen{{end}}
+          </span>
+        {{end}}
+      </div>
+      <div style="display: flex; align-items: center; gap: 0.4rem;">
+        {{if .RecentEvents}}
+          <button type="button"
+                  hx-post="/ui/actions/notifications/clear"
+                  hx-target="#notifications-panel"
+                  hx-swap="outerHTML"
+                  title="Ereignis-Protokoll leeren"
+                  style="background: rgba(255,255,255,0.05); border: 1px solid #3c3c40; color: #9ca3af; font-size: 0.7rem; padding: 2px 7px; border-radius: 4px; cursor: pointer;">
+            Protokoll leeren
+          </button>
+        {{end}}
+      </div>
+    </div>
+
+    <!-- Wichtige System-Infos (Quick Telemetry Strip) -->
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: #333336; border-bottom: 1px solid #333336; font-size: 0.72rem;">
+      <div style="background: #1b1b1e; padding: 0.45rem 0.6rem; text-align: center; cursor: pointer;" @click="setTab('disks'); notifOpen = false" title="Laufwerke anzeigen">
+        <div style="color: #9ca3af; font-size: 0.65rem; text-transform: uppercase;">Disks Standby</div>
+        <div style="font-weight: 700; color: #38bdf8; margin-top: 1px;">{{if .StandbyCount}}{{.StandbyCount}}{{else}}0{{end}} / {{if .TotalDisks}}{{.TotalDisks}}{{else}}0{{end}}</div>
+      </div>
+      <div style="background: #1b1b1e; padding: 0.45rem 0.6rem; text-align: center; cursor: pointer;" @click="setTab('pools'); notifOpen = false" title="ZFS Pools anzeigen">
+        <div style="color: #9ca3af; font-size: 0.65rem; text-transform: uppercase;">Pools</div>
+        <div style="font-weight: 700; color: {{if .HasCriticalAlert}}#ef4444{{else}}#10b981{{end}}; margin-top: 1px;">
+          {{if .Pools}}{{len .Pools}}{{else}}0{{end}} {{if .HasCriticalAlert}}WARN{{else}}OK{{end}}
+        </div>
+      </div>
+      <div style="background: #1b1b1e; padding: 0.45rem 0.6rem; text-align: center; cursor: pointer;" @click="setTab('protection'); notifOpen = false" title="Jobs &amp; Data Protection anzeigen">
+        <div style="color: #9ca3af; font-size: 0.65rem; text-transform: uppercase;">Jobs</div>
+        <div style="font-weight: 700; color: {{if .RunningJobCount}}#38bdf8{{else}}#d1d5db{{end}}; margin-top: 1px;">
+          {{if .RunningJobCount}}{{.RunningJobCount}}{{else}}0{{end}} aktiv / {{if .CompletedCount}}{{.CompletedCount}}{{else}}0{{end}} fertig
+        </div>
+      </div>
+      <div style="background: #1b1b1e; padding: 0.45rem 0.6rem; text-align: center; cursor: pointer;" @click="setTab('system'); notifOpen = false" title="System-Details anzeigen">
+        <div style="color: #9ca3af; font-size: 0.65rem; text-transform: uppercase;">Uptime</div>
+        <div style="font-weight: 700; color: #d1d5db; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          {{if .System.Uptime}}{{.System.Uptime}}{{else}}Online{{end}}
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter Tabs -->
+    <div style="display: flex; background: #222226; border-bottom: 1px solid #333336; padding: 0 0.5rem;">
+      <button type="button"
+              @click="notifTab = 'all'"
+              :style="notifTab === 'all' ? 'border-bottom: 2px solid #008be5; color: #ffffff; font-weight: 600;' : 'border-bottom: 2px solid transparent; color: #9ca3af;'"
+              style="background: none; border: none; padding: 0.5rem 0.65rem; font-size: 0.75rem; cursor: pointer;">
+        Alle
+      </button>
+      <button type="button"
+              @click="notifTab = 'jobs'"
+              :style="notifTab === 'jobs' ? 'border-bottom: 2px solid #008be5; color: #ffffff; font-weight: 600;' : 'border-bottom: 2px solid transparent; color: #9ca3af;'"
+              style="background: none; border: none; padding: 0.5rem 0.65rem; font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+        Jobs
+        {{if .RunningJobCount}}
+          <span style="background: #008be5; color: #fff; font-size: 0.62rem; padding: 0 5px; border-radius: 999px;">{{.RunningJobCount}}</span>
+        {{end}}
+      </button>
+      <button type="button"
+              @click="notifTab = 'alerts'"
+              :style="notifTab === 'alerts' ? 'border-bottom: 2px solid #008be5; color: #ffffff; font-weight: 600;' : 'border-bottom: 2px solid transparent; color: #9ca3af;'"
+              style="background: none; border: none; padding: 0.5rem 0.65rem; font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+        Fehler &amp; Warnungen
+        {{if .AlertCount}}
+          <span style="background: #ef4444; color: #fff; font-size: 0.62rem; padding: 0 5px; border-radius: 999px;">{{.AlertCount}}</span>
+        {{end}}
+      </button>
+      <button type="button"
+              @click="notifTab = 'events'"
+              :style="notifTab === 'events' ? 'border-bottom: 2px solid #008be5; color: #ffffff; font-weight: 600;' : 'border-bottom: 2px solid transparent; color: #9ca3af;'"
+              style="background: none; border: none; padding: 0.5rem 0.65rem; font-size: 0.75rem; cursor: pointer;">
+        Protokoll
+      </button>
+    </div>
+
+    <!-- Scrollable Content Body -->
+    <div style="max-height: 440px; overflow-y: auto; padding: 0.65rem 0.85rem; display: flex; flex-direction: column; gap: 0.75rem;">
+
+      <!-- 1. FEHLER & WARNUNGEN (SystemAlerts) -->
+      <div x-show="notifTab === 'all' || notifTab === 'alerts'">
+        <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #9ca3af; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between;">
+          <span>Fehler &amp; System-Warnungen</span>
+          <span>{{if .SystemAlerts}}{{len .SystemAlerts}}{{else}}0{{end}}</span>
+        </div>
+
+        {{if .SystemAlerts}}
+          <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+            {{range $a := .SystemAlerts}}
+              <div @click="setTab('{{if $a.TargetTab}}{{$a.TargetTab}}{{else}}dashboard{{end}}'); notifOpen = false"
+                   style="cursor: pointer; padding: 0.55rem 0.7rem; border-radius: 6px; background: {{if eq $a.Level "error"}}rgba(239, 68, 68, 0.12){{else}}rgba(245, 158, 11, 0.12){{end}}; border: 1px solid {{if eq $a.Level "error"}}rgba(239, 68, 68, 0.35){{else}}rgba(245, 158, 11, 0.35){{end}};">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+                  <span style="font-size: 0.78rem; font-weight: 700; color: {{if eq $a.Level "error"}}#fca5a5{{else}}#fde68a{{end}};">
+                    {{$a.Title}}
+                  </span>
+                  <span style="font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; background: rgba(0,0,0,0.3); color: #9ca3af;">
+                    {{$a.Category}} · {{$a.Timestamp}}
+                  </span>
+                </div>
+                <div style="font-size: 0.74rem; color: #d1d5db; margin-top: 3px; line-height: 1.35;">
+                  {{$a.Detail}}
+                </div>
+              </div>
+            {{end}}
+          </div>
+        {{else}}
+          <div style="padding: 0.55rem 0.75rem; border-radius: 6px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.25); display: flex; align-items: center; gap: 0.5rem; font-size: 0.76rem; color: #a7f3d0;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.2">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <span>Keine aktiven Fehler oder Warnungen – alle Pools &amp; Dienste fehlerfrei.</span>
+          </div>
+        {{end}}
+      </div>
+
+      <!-- 2. LAUFENDE & ABGESCHLOSSENE JOBS -->
+      <div x-show="notifTab === 'all' || notifTab === 'jobs'">
+        <!-- Laufende Jobs -->
+        <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #9ca3af; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between;">
+          <span>Laufende Jobs ({{if .RunningJobs}}{{len .RunningJobs}}{{else}}0{{end}})</span>
+        </div>
+
+        {{if .RunningJobs}}
+          <div style="display: flex; flex-direction: column; gap: 0.45rem; margin-bottom: 0.7rem;">
+            {{range $j := .RunningJobs}}
+              <div @click="setTab('{{if $j.TargetTab}}{{$j.TargetTab}}{{else}}protection{{end}}'); notifOpen = false"
+                   style="cursor: pointer; padding: 0.55rem 0.7rem; border-radius: 6px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.35);">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+                  <div style="display: flex; align-items: center; gap: 0.45rem;">
+                    <span style="width: 7px; height: 7px; border-radius: 50%; background: #38bdf8; display: inline-block; box-shadow: 0 0 6px #38bdf8;"></span>
+                    <span style="font-size: 0.78rem; font-weight: 700; color: #e0f2fe;">{{$j.Name}}</span>
+                  </div>
+                  <span style="font-size: 0.65rem; font-weight: 700; padding: 1px 6px; border-radius: 3px; background: rgba(56, 189, 248, 0.2); color: #38bdf8;">
+                    {{$j.Type}} · RUNNING
+                  </span>
+                </div>
+                <div style="font-size: 0.73rem; color: #bae6fd; margin-top: 3px;">
+                  {{$j.Detail}}
+                </div>
+                {{if gt $j.Progress 0.0}}
+                  <div style="width: 100%; height: 5px; background: #111827; border-radius: 999px; overflow: hidden; margin-top: 6px;">
+                    <div style="width: {{printf "%.1f" $j.Progress}}%; height: 100%; background: linear-gradient(90deg, #0284c7, #38bdf8);"></div>
+                  </div>
+                {{end}}
+              </div>
+            {{end}}
+          </div>
+        {{else}}
+          <div style="padding: 0.45rem 0.7rem; border-radius: 6px; background: #252529; border: 1px solid #333336; font-size: 0.75rem; color: #9ca3af; margin-bottom: 0.7rem;">
+            Aktuell laufen keine Hintergrund-Jobs (Scrub, Cloud Sync, SMART-Test).
+          </div>
+        {{end}}
+
+        <!-- Abgeschlossene Jobs -->
+        <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #9ca3af; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between;">
+          <span>Abgeschlossene Jobs ({{if .CompletedJobs}}{{len .CompletedJobs}}{{else}}0{{end}})</span>
+        </div>
+
+        {{if .CompletedJobs}}
+          <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+            {{range $j := .CompletedJobs}}
+              <div @click="setTab('{{if $j.TargetTab}}{{$j.TargetTab}}{{else}}protection{{end}}'); notifOpen = false"
+                   style="cursor: pointer; padding: 0.48rem 0.65rem; border-radius: 6px; background: #252529; border: 1px solid {{if eq $j.Status "FAILED"}}rgba(239, 68, 68, 0.4){{else}}#333336{{end}};">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+                  <span style="font-size: 0.76rem; font-weight: 600; color: #f3f4f6;">{{$j.Name}}</span>
+                  <div style="display: flex; align-items: center; gap: 0.35rem;">
+                    <span style="font-size: 0.63rem; color: #9ca3af;">{{$j.Timestamp}}</span>
+                    <span style="font-size: 0.63rem; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+                      {{if eq $j.Status "FAILED"}}background: rgba(239, 68, 68, 0.2); color: #fca5a5;
+                      {{else}}background: rgba(16, 185, 129, 0.16); color: #6ee7b7;{{end}}">
+                      {{$j.Status}}
+                    </span>
+                  </div>
+                </div>
+                <div style="font-size: 0.71rem; color: #9ca3af; margin-top: 2px;">
+                  [{{$j.Type}}] {{$j.Detail}}
+                </div>
+              </div>
+            {{end}}
+          </div>
+        {{else}}
+          <div style="padding: 0.45rem 0.7rem; border-radius: 6px; background: #252529; border: 1px solid #333336; font-size: 0.75rem; color: #9ca3af;">
+            Noch keine abgeschlossenen Hintergrund-Jobs in dieser Sitzung protokolliert.
+          </div>
+        {{end}}
+      </div>
+
+      <!-- 3. SYSTEM-PROTOKOLL & LETZTE AKTIONEN (RecentEvents) -->
+      <div x-show="notifTab === 'all' || notifTab === 'events'">
+        <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #9ca3af; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between;">
+          <span>Letzte System-Aktionen &amp; Ereignisse</span>
+          <span>{{if .RecentEvents}}{{len .RecentEvents}}{{else}}0{{end}}</span>
+        </div>
+
+        {{if .RecentEvents}}
+          <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+            {{range $ev := .RecentEvents}}
+              <div style="padding: 0.45rem 0.65rem; border-radius: 5px; background: #252529; border-left: 3px solid {{if eq $ev.Level "error"}}#ef4444{{else if eq $ev.Level "warning"}}#f59e0b{{else}}#10b981{{end}};">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+                  <span style="font-size: 0.74rem; font-weight: 600; color: {{if eq $ev.Level "error"}}#fca5a5{{else}}#e5e7eb{{end}};">
+                    {{$ev.Title}}
+                  </span>
+                  <span style="font-size: 0.64rem; color: #9ca3af; font-family: monospace;">{{$ev.Timestamp}}</span>
+                </div>
+                <div style="font-size: 0.72rem; color: #d1d5db; margin-top: 2px;">
+                  {{$ev.Detail}}
+                </div>
+              </div>
+            {{end}}
+          </div>
+        {{else}}
+          <div style="padding: 0.45rem 0.7rem; border-radius: 6px; background: #252529; border: 1px solid #333336; font-size: 0.75rem; color: #9ca3af;">
+            Keine kürzlichen Benutzer-Aktionen im Ereignis-Protokoll.
+          </div>
+        {{end}}
+      </div>
+
+    </div>
+  </div>
+</div>

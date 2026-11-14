@@ -253,6 +253,7 @@ func TestEngine_RenderAll(t *testing.T) {
 	// Render all partials directly
 	partials := []string{
 		"partials/topbar.html",
+		"partials/notifications_panel.html",
 		"partials/system_metrics.html",
 		"partials/pools_list.html",
 		"partials/disks_table.html",
@@ -296,7 +297,12 @@ func TestUI_ResponsiveAndLiveCrudWiring(t *testing.T) {
 	}{
 		{
 			file: "templates/partials/topbar.html",
-			want: []string{`toggleSidebar()`, `setTab('system')`},
+			want: []string{`toggleSidebar()`, `setTab('system')`, `notifOpen`, `partials/notifications_panel.html`},
+		},
+		{
+			file:    "templates/partials/notifications_panel.html",
+			want:    []string{`id="notifications-panel"`, `hx-get="/ui/partials/notifications"`, `hx-post="/ui/actions/notifications/clear"`, `hx-swap="outerHTML"`, `Laufende Jobs`, `Abgeschlossene Jobs`, `Fehler &amp; System-Warnungen`},
+			notWant: []string{`hx-swap="morph"`, `hx-ext="morph"`, `x-data=`},
 		},
 		{
 			file: "templates/layout.html",

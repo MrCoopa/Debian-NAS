@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"debian-nas/internal/cloudsync"
 	"debian-nas/internal/disks"
@@ -32,28 +33,61 @@ type PoolSnapshotsGroup struct {
 	Snapshots   []*zfs.Snapshot
 }
 
+// NotificationItem represents an alert, warning, error, or activity log entry in the Topbar Notification Center.
+type NotificationItem struct {
+	ID        string `json:"id"`
+	Category  string `json:"category"`   // "ZFS", "DISK", "CLOUD", "SNAPSHOT", "SHARE", "SYSTEM"
+	Severity  string `json:"severity"`   // "error", "warning", "success", "info"
+	Title     string `json:"title"`
+	Message   string `json:"message"`
+	Timestamp string `json:"timestamp"`
+	TargetTab string `json:"target_tab"` // e.g. "pools", "disks", "protection", "shares", "system"
+}
+
+// JobItem represents a running or completed background job (ZFS Scrub, Cloud Sync, Periodic Snapshot, SMART Self-Test).
+type JobItem struct {
+	ID         string  `json:"id"`
+	Type       string  `json:"type"`       // "ZFS Scrub", "Cloud Sync", "Snapshot Task", "S.M.A.R.T."
+	Name       string  `json:"name"`
+	Target     string  `json:"target"`
+	State      string  `json:"state"`      // "RUNNING", "COMPLETED", "FAILED"
+	Progress   float64 `json:"progress"`
+	HasPercent bool    `json:"has_percent"`
+	Detail     string  `json:"detail"`
+	Timestamp  string  `json:"timestamp"`
+	TargetTab  string  `json:"target_tab"`
+}
+
 // ViewData is passed to the root layout and all partials
 type ViewData struct {
-	CurrentUser   string
-	System        *system.SystemStatus
-	Disks           []*disks.DiskInfo
-	Pools           []*zfs.Pool
-	ImportablePools []*zfs.ImportablePool
-	Datasets        []*zfs.Dataset
-	SmbShares     []*shares.SmbShare
-	NfsExports    []*shares.NfsExport
-	Users         []shares.StorageUser
-	Snapshots       []*zfs.Snapshot
-	SnapshotsByPool []PoolSnapshotsGroup
-	SnapshotTasks []*zfs.SnapshotTask
-	CloudJobs     []*cloudsync.SyncJob
-	CloudRemotes  []cloudsync.Remote
-	ZfsVersion    string
-	TotalDisks    int
-	TotalRawBytes uint64
-	StandbyCount  int
-	SpinningCount int
-	ErrorMessage  string
+	CurrentUser      string
+	System           *system.SystemStatus
+	Disks            []*disks.DiskInfo
+	Pools            []*zfs.Pool
+	ImportablePools  []*zfs.ImportablePool
+	Datasets         []*zfs.Dataset
+	SmbShares        []*shares.SmbShare
+	NfsExports       []*shares.NfsExport
+	Users            []shares.StorageUser
+	Snapshots        []*zfs.Snapshot
+	SnapshotsByPool  []PoolSnapshotsGroup
+	SnapshotTasks    []*zfs.SnapshotTask
+	CloudJobs        []*cloudsync.SyncJob
+	CloudRemotes     []cloudsync.Remote
+	ZfsVersion       string
+	TotalDisks       int
+	TotalRawBytes    uint64
+	StandbyCount     int
+	SpinningCount    int
+	ErrorMessage     string
+	RunningJobs      []JobItem
+	CompletedJobs    []JobItem
+	SystemAlerts     []NotificationItem
+	RecentEvents     []NotificationItem
+	RunningJobCount  int
+	CompletedCount   int
+	AlertCount       int
+	HasCriticalAlert bool
 }
 
 type viewFetchMask struct {
@@ -290,27 +324,439 @@ func (s *Server) buildPartialViewData(mask viewFetchMask, req ...*http.Request) 
 		zfsVer = "OpenZFS 2.2 Native"
 	}
 
-	return &ViewData{
-		CurrentUser:   currentUser,
-		System:        status,
+	vd := &ViewData{
+		CurrentUser:     currentUser,
+		System:          status,
 		Disks:           allDisks,
 		Pools:           pools,
 		ImportablePools: importablePools,
 		Datasets:        datasets,
-		SmbShares:     smbShares,
-		NfsExports:    nfsExports,
+		SmbShares:       smbShares,
+		NfsExports:      nfsExports,
 		Users:           users,
 		Snapshots:       snapshots,
 		SnapshotsByPool: snapshotsByPool,
 		SnapshotTasks:   snapTasks,
-		CloudJobs:     cloudJobs,
-		CloudRemotes:  cloudRemotes,
-		ZfsVersion:    zfsVer,
-		TotalDisks:    len(allDisks),
-		TotalRawBytes: totalRawBytes,
-		StandbyCount:  standbyCount,
-		SpinningCount: spinningCount,
+		CloudJobs:       cloudJobs,
+		CloudRemotes:    cloudRemotes,
+		ZfsVersion:      zfsVer,
+		TotalDisks:      len(allDisks),
+		TotalRawBytes:   totalRawBytes,
+		StandbyCount:    standbyCount,
+		SpinningCount:   spinningCount,
 	}
+	s.populateNotificationsAndJobs(vd)
+	return vd
+}
+
+func (s *Server) recordEvent(message, severity string, triggers ...string) {
+	msg := strings.TrimSpace(message)
+	if msg == "" {
+		return
+	}
+	cat := "SYSTEM"
+	tab := "dashboard"
+	lower := strings.ToLower(msg)
+	for _, tr := range triggers {
+		switch tr {
+		case "poolUpdate":
+			cat = "ZFS"
+			tab = "pools"
+		case "diskUpdate":
+			cat = "DISK"
+			tab = "disks"
+		case "datasetUpdate":
+			cat = "ZFS"
+			tab = "datasets"
+		case "snapshotUpdate":
+			cat = "SNAPSHOT"
+			tab = "protection"
+		case "cloudsyncUpdate":
+			cat = "CLOUD"
+			tab = "protection"
+		case "shareUpdate":
+			cat = "SHARE"
+			tab = "shares"
+		case "userUpdate":
+			cat = "USER"
+			tab = "users"
+		}
+	}
+	if cat == "SYSTEM" {
+		switch {
+		case strings.Contains(lower, "pool") || strings.Contains(lower, "scrub") || strings.Contains(lower, "vdev"):
+			cat = "ZFS"
+			tab = "pools"
+		case strings.Contains(lower, "disk") || strings.Contains(lower, "standby") || strings.Contains(lower, "apm") || strings.Contains(lower, "epc") || strings.Contains(lower, "spindown") || strings.Contains(lower, "smart"):
+			cat = "DISK"
+			tab = "disks"
+		case strings.Contains(lower, "cloud") || strings.Contains(lower, "rclone") || strings.Contains(lower, "remote"):
+			cat = "CLOUD"
+			tab = "protection"
+		case strings.Contains(lower, "snapshot"):
+			cat = "SNAPSHOT"
+			tab = "protection"
+		case strings.Contains(lower, "share") || strings.Contains(lower, "smb") || strings.Contains(lower, "nfs"):
+			cat = "SHARE"
+			tab = "shares"
+		}
+	}
+
+	sev := strings.ToLower(strings.TrimSpace(severity))
+	if sev == "" {
+		sev = "info"
+	}
+	title := "System Action"
+	switch sev {
+	case "error":
+		title = cat + " Error"
+	case "warning":
+		title = cat + " Warning"
+	case "success":
+		title = cat + " Completed"
+	default:
+		title = cat + " Info"
+	}
+
+	s.eventMu.Lock()
+	defer s.eventMu.Unlock()
+	s.nextEventID++
+	item := NotificationItem{
+		ID:        fmt.Sprintf("evt-%d", s.nextEventID),
+		Category:  cat,
+		Severity:  sev,
+		Title:     title,
+		Message:   msg,
+		Timestamp: time.Now().Format("15:04:05"),
+		TargetTab: tab,
+	}
+	s.events = append([]NotificationItem{item}, s.events...)
+	if len(s.events) > 40 {
+		s.events = s.events[:40]
+	}
+}
+
+func (s *Server) populateNotificationsAndJobs(vd *ViewData) {
+	if vd == nil {
+		return
+	}
+	var running []JobItem
+	var completed []JobItem
+	var alerts []NotificationItem
+	hasCritical := false
+
+	// 1. ZFS Pools: Health alerts, VDEV errors, capacity warnings, and Scrub jobs
+	for _, p := range vd.Pools {
+		if p == nil {
+			continue
+		}
+		health := string(p.Health)
+		if health != "" && health != "ONLINE" {
+			sev := "warning"
+			if health == "SUSPENDED" || health == "FAULTED" || health == "DEGRADED" {
+				sev = "error"
+				hasCritical = true
+			}
+			alerts = append(alerts, NotificationItem{
+				ID:        "pool-health-" + p.Name,
+				Category:  "ZFS",
+				Severity:  sev,
+				Title:     fmt.Sprintf("ZFS Pool %s is %s", p.Name, health),
+				Message:   fmt.Sprintf("Topology: %s — Free: %s. Click to inspect or resume pool.", p.Topology, p.FreeHuman),
+				Timestamp: "Active Alert",
+				TargetTab: "pools",
+			})
+		}
+		for _, v := range p.Vdevs {
+			if v.IsDisk && (v.ReadErrors > 0 || v.WriteErrors > 0 || v.CksumErrors > 0) {
+				alerts = append(alerts, NotificationItem{
+					ID:        fmt.Sprintf("vdev-err-%s-%s", p.Name, v.Name),
+					Category:  "ZFS",
+					Severity:  "warning",
+					Title:     fmt.Sprintf("VDEV %s (%s) reported I/O errors", v.Name, p.Name),
+					Message:   fmt.Sprintf("Read: %d | Write: %d | Checksum: %d", v.ReadErrors, v.WriteErrors, v.CksumErrors),
+					Timestamp: "ZFS Status",
+					TargetTab: "pools",
+				})
+			}
+		}
+		if p.CapPercent >= 85 {
+			alerts = append(alerts, NotificationItem{
+				ID:        "pool-cap-" + p.Name,
+				Category:  "ZFS",
+				Severity:  "warning",
+				Title:     fmt.Sprintf("Pool %s capacity at %d%%", p.Name, p.CapPercent),
+				Message:   fmt.Sprintf("Available: %s (ZFS write performance degrades above 85%%)", p.FreeHuman),
+				Timestamp: "Capacity",
+				TargetTab: "pools",
+			})
+		}
+
+		if p.Scrub.Active {
+			detail := p.ScrubStatus
+			if detail == "" {
+				detail = fmt.Sprintf("%.1f%% completed", p.Scrub.Percentage)
+			}
+			running = append(running, JobItem{
+				ID:         "scrub-" + p.Name,
+				Type:       "ZFS Scrub",
+				Name:       "Pool Scrub: " + p.Name,
+				Target:     p.Name,
+				State:      "RUNNING",
+				Progress:   p.Scrub.Percentage,
+				HasPercent: true,
+				Detail:     detail,
+				Timestamp:  "In Progress",
+				TargetTab:  "pools",
+			})
+		} else if !p.Scrub.LastRun.IsZero() || (p.ScrubStatus != "" && !strings.HasPrefix(p.ScrubStatus, "IDLE")) {
+			st := "COMPLETED"
+			if p.Scrub.Errors > 0 {
+				st = "FAILED"
+			}
+			ts := "Completed"
+			if !p.Scrub.LastRun.IsZero() {
+				ts = p.Scrub.LastRun.Format("2006-01-02 15:04")
+			}
+			completed = append(completed, JobItem{
+				ID:        "scrub-" + p.Name,
+				Type:      "ZFS Scrub",
+				Name:      "Pool Scrub: " + p.Name,
+				Target:    p.Name,
+				State:     st,
+				Detail:    fmt.Sprintf("Repaired / verified (%d errors)", p.Scrub.Errors),
+				Timestamp: ts,
+				TargetTab: "pools",
+			})
+		}
+	}
+
+	// 2. Cloud Sync Jobs (rclone)
+	for _, cj := range vd.CloudJobs {
+		if cj == nil {
+			continue
+		}
+		switch cj.Status {
+		case cloudsync.StatusRunning:
+			msg := cj.LastMessage
+			if msg == "" {
+				msg = "Rclone transfer in progress..."
+			}
+			running = append(running, JobItem{
+				ID:        "cloud-" + cj.ID,
+				Type:      "Cloud Sync",
+				Name:      cj.Name,
+				Target:    cj.RemoteTarget,
+				State:     "RUNNING",
+				Detail:    msg,
+				Timestamp: "Running now",
+				TargetTab: "protection",
+			})
+		case cloudsync.StatusFailed:
+			hasCritical = true
+			ts := cj.GetLastRun()
+			completed = append(completed, JobItem{
+				ID:        "cloud-" + cj.ID,
+				Type:      "Cloud Sync",
+				Name:      cj.Name,
+				Target:    cj.RemoteTarget,
+				State:     "FAILED",
+				Detail:    cj.LastMessage,
+				Timestamp: ts,
+				TargetTab: "protection",
+			})
+			alerts = append(alerts, NotificationItem{
+				ID:        "cloud-err-" + cj.ID,
+				Category:  "CLOUD",
+				Severity:  "error",
+				Title:     "Cloud Sync Failed: " + cj.Name,
+				Message:   cj.LastMessage,
+				Timestamp: ts,
+				TargetTab: "protection",
+			})
+		default:
+			if !cj.LastRun.IsZero() || cj.Status == cloudsync.StatusSuccess {
+				msg := cj.LastMessage
+				if msg == "" {
+					msg = fmt.Sprintf("%s %s -> %s", cj.TransferMode, cj.SourcePath, cj.RemoteTarget)
+				}
+				completed = append(completed, JobItem{
+					ID:        "cloud-" + cj.ID,
+					Type:      "Cloud Sync",
+					Name:      cj.Name,
+					Target:    cj.RemoteTarget,
+					State:     "COMPLETED",
+					Detail:    msg,
+					Timestamp: cj.GetLastRun(),
+					TargetTab: "protection",
+				})
+			}
+		}
+	}
+
+	// 3. Periodic Snapshot Tasks
+	for _, st := range vd.SnapshotTasks {
+		if st == nil {
+			continue
+		}
+		stateUp := strings.ToUpper(strings.TrimSpace(st.State))
+		switch stateUp {
+		case "RUNNING":
+			running = append(running, JobItem{
+				ID:        "snaptask-" + st.ID,
+				Type:      "Snapshot Task",
+				Name:      "Snapshot: " + st.Dataset,
+				Target:    st.Dataset,
+				State:     "RUNNING",
+				Detail:    st.LastMessage,
+				Timestamp: "Running now",
+				TargetTab: "protection",
+			})
+		case "ERROR", "FAILED":
+			hasCritical = true
+			completed = append(completed, JobItem{
+				ID:        "snaptask-" + st.ID,
+				Type:      "Snapshot Task",
+				Name:      "Snapshot: " + st.Dataset,
+				Target:    st.Dataset,
+				State:     "FAILED",
+				Detail:    st.LastMessage,
+				Timestamp: st.LastRunText,
+				TargetTab: "protection",
+			})
+			alerts = append(alerts, NotificationItem{
+				ID:        "snaptask-err-" + st.ID,
+				Category:  "SNAPSHOT",
+				Severity:  "error",
+				Title:     "Snapshot Task Error: " + st.Dataset,
+				Message:   st.LastMessage,
+				Timestamp: st.LastRunText,
+				TargetTab: "protection",
+			})
+		default:
+			if !st.LastRun.IsZero() || stateUp == "FINISHED" {
+				msg := st.LastMessage
+				if msg == "" {
+					msg = "Schedule: " + st.Schedule
+				}
+				completed = append(completed, JobItem{
+					ID:        "snaptask-" + st.ID,
+					Type:      "Snapshot Task",
+					Name:      "Snapshot: " + st.Dataset,
+					Target:    st.Dataset,
+					State:     "COMPLETED",
+					Detail:    msg,
+					Timestamp: st.LastRunText,
+					TargetTab: "protection",
+				})
+			}
+		}
+	}
+
+	// 4. Physical Disks & SMART Self-Tests / Health
+	for _, d := range vd.Disks {
+		if d == nil {
+			continue
+		}
+		smartUp := strings.ToUpper(strings.TrimSpace(d.SmartStatus))
+		if strings.HasPrefix(smartUp, "TESTING") || strings.Contains(strings.ToUpper(d.SmartLastTest), "IN PROGRESS") {
+			running = append(running, JobItem{
+				ID:        "smart-" + d.Name,
+				Type:      "S.M.A.R.T.",
+				Name:      "Self-Test: " + d.Name,
+				Target:    d.Path,
+				State:     "RUNNING",
+				Detail:    d.SmartStatus,
+				Timestamp: "Testing",
+				TargetTab: "disks",
+			})
+		} else if d.SmartLastTest != "" {
+			completed = append(completed, JobItem{
+				ID:        "smart-" + d.Name,
+				Type:      "S.M.A.R.T.",
+				Name:      "Self-Test: " + d.Name,
+				Target:    d.Path,
+				State:     "COMPLETED",
+				Detail:    d.SmartLastTest,
+				Timestamp: "S.M.A.R.T. Log",
+				TargetTab: "disks",
+			})
+		}
+
+		if strings.Contains(smartUp, "FAIL") || d.ReallocatedSectors > 0 || d.PendingSectors > 0 {
+			sev := "warning"
+			if strings.Contains(smartUp, "FAIL") || d.PendingSectors > 0 {
+				sev = "error"
+				hasCritical = true
+			}
+			alerts = append(alerts, NotificationItem{
+				ID:        "disk-smart-" + d.Name,
+				Category:  "DISK",
+				Severity:  sev,
+				Title:     fmt.Sprintf("Disk %s S.M.A.R.T. Alert", d.Name),
+				Message:   fmt.Sprintf("Status: %s | Reallocated: %d | Pending: %d", d.SmartStatus, d.ReallocatedSectors, d.PendingSectors),
+				Timestamp: "Hardware",
+				TargetTab: "disks",
+			})
+		}
+		if d.TemperatureC >= 50 {
+			alerts = append(alerts, NotificationItem{
+				ID:        "disk-temp-" + d.Name,
+				Category:  "DISK",
+				Severity:  "warning",
+				Title:     fmt.Sprintf("Disk %s Temperature High (%d °C)", d.Name, d.TemperatureC),
+				Message:   fmt.Sprintf("%s (%s)", d.Model, d.Path),
+				Timestamp: "Thermal",
+				TargetTab: "disks",
+			})
+		}
+	}
+
+	// 5. System Thermal / Memory Warnings
+	if vd.System != nil {
+		if vd.System.CPU.TemperatureC >= 80 {
+			alerts = append(alerts, NotificationItem{
+				ID:        "sys-cpu-temp",
+				Category:  "SYSTEM",
+				Severity:  "warning",
+				Title:     fmt.Sprintf("High CPU Temperature (%d °C)", vd.System.CPU.TemperatureC),
+				Message:   vd.System.CPU.Model,
+				Timestamp: "Thermal",
+				TargetTab: "dashboard",
+			})
+		}
+		if vd.System.Memory.UsedPercent >= 92 {
+			alerts = append(alerts, NotificationItem{
+				ID:        "sys-ram-high",
+				Category:  "SYSTEM",
+				Severity:  "warning",
+				Title:     fmt.Sprintf("High Memory Utilization (%.0f%%)", vd.System.Memory.UsedPercent),
+				Message:   "Available system memory is below 8%",
+				Timestamp: "Memory",
+				TargetTab: "system",
+			})
+		}
+	}
+
+	s.eventMu.RLock()
+	eventsCopy := make([]NotificationItem, len(s.events))
+	copy(eventsCopy, s.events)
+	s.eventMu.RUnlock()
+
+	for _, ev := range eventsCopy {
+		if ev.Severity == "error" {
+			hasCritical = true
+		}
+	}
+
+	vd.RunningJobs = running
+	vd.CompletedJobs = completed
+	vd.SystemAlerts = alerts
+	vd.RecentEvents = eventsCopy
+	vd.RunningJobCount = len(running)
+	vd.CompletedCount = len(completed)
+	vd.AlertCount = len(alerts)
+	vd.HasCriticalAlert = hasCritical
 }
 
 func (s *Server) renderUIPartial(w http.ResponseWriter, tmpl string, data *ViewData) {
@@ -320,6 +766,9 @@ func (s *Server) renderUIPartial(w http.ResponseWriter, tmpl string, data *ViewD
 }
 
 func (s *Server) setHXTrigger(w http.ResponseWriter, toastMsg, toastType string, extraTriggers ...string) {
+	if toastMsg != "" {
+		s.recordEvent(toastMsg, toastType, extraTriggers...)
+	}
 	tr := make(map[string]interface{})
 	if toastMsg != "" {
 		tr["showToast"] = map[string]string{
@@ -327,6 +776,7 @@ func (s *Server) setHXTrigger(w http.ResponseWriter, toastMsg, toastType string,
 			"type":    toastType,
 		}
 	}
+	tr["refreshNotifications"] = true
 	for _, et := range extraTriggers {
 		tr[et] = true
 	}
@@ -448,8 +898,21 @@ func (s *Server) handleUIPartialSystem(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUIPartialTop(w http.ResponseWriter, r *http.Request) {
 	s.renderUIPartial(w, "partials/topbar.html", s.buildPartialViewData(viewFetchMask{
-		system: true,
+		system: true, pools: true, disks: true, snapshotTasks: true, cloud: true,
 	}, r))
+}
+
+func (s *Server) handleUIPartialNotifications(w http.ResponseWriter, r *http.Request) {
+	s.renderUIPartial(w, "partials/notifications_panel.html", s.buildPartialViewData(viewFetchMask{
+		system: true, pools: true, disks: true, snapshotTasks: true, cloud: true,
+	}, r))
+}
+
+func (s *Server) handleUIActionClearNotifications(w http.ResponseWriter, r *http.Request) {
+	s.eventMu.Lock()
+	s.events = nil
+	s.eventMu.Unlock()
+	s.handleUIPartialNotifications(w, r)
 }
 
 func (s *Server) handleUIPartialPools(w http.ResponseWriter, r *http.Request) {
