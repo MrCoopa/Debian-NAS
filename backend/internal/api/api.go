@@ -220,6 +220,7 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("DELETE /ui/actions/shares/users", s.handleUIActionDeleteUser)
 		mux.HandleFunc("POST /ui/actions/shares/users/password", s.handleUIActionSetUserPassword)
 		mux.HandleFunc("POST /ui/actions/shares/smb/fix-permissions", s.handleUIActionFixSharePermissions)
+		mux.HandleFunc("POST /ui/actions/shares/nfs/fix-permissions", s.handleUIActionFixNfsPermissions)
 
 		mux.HandleFunc("POST /ui/actions/zfs/pools/create", s.handleUIActionCreatePool)
 		mux.HandleFunc("POST /ui/actions/zfs/pools/import", s.handleUIActionImportPool)

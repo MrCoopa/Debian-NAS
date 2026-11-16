@@ -1530,6 +1530,17 @@ func TestUI_SetUserPasswordAndFixPermissions(t *testing.T) {
 	if !strings.Contains(fixRR.Body.String(), "shares-container") {
 		t.Fatalf("expected shares-container in response, got %s", fixRR.Body.String())
 	}
+
+	// 3. Fix NFS Export Permissions
+	nfsReq := httptest.NewRequest("POST", "/ui/actions/shares/nfs/fix-permissions?path=/mnt/DATA/Backup", nil)
+	nfsRR := httptest.NewRecorder()
+	handler.ServeHTTP(nfsRR, nfsReq)
+	if nfsRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from nfs fix-permissions, got %d", nfsRR.Code)
+	}
+	if !strings.Contains(nfsRR.Body.String(), "shares-container") {
+		t.Fatalf("expected shares-container in response, got %s", nfsRR.Body.String())
+	}
 }
 
 

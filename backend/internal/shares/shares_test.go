@@ -155,3 +155,48 @@ func TestShareRollbackSync_MatchingAndLifecycleCommands(t *testing.T) {
 	}
 }
 
+func TestFixNfsPermissions(t *testing.T) {
+	m := NewManager(true, "", "")
+	m.nfsExports = map[string]*NfsExport{
+		"/mnt/DATA/NfsShare": {Path: "/mnt/DATA/NfsShare", Enabled: true},
+	}
+
+	// 1. Mock mode returns nil
+	if err := m.FixNfsPermissions("/mnt/DATA/NfsShare"); err != nil {
+		t.Fatalf("expected nil in mock mode, got: %v", err)
+	}
+
+	// 2. Non-existent export returns error
+	if err := m.FixNfsPermissions("/mnt/DATA/NonExistent"); err == nil {
+		t.Fatal("expected error for non-existent NFS export, got nil")
+	}
+
+	// 3. Test simulated Linux command execution
+	var cmds []string
+	m.mockMode = false
+	m.runCmd = func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+		cmds = append(cmds, name+" "+strings.Join(args, " "))
+		return nil, nil
+	}
+	m.users = map[string]StorageUser{"niklas": {Username: "niklas", Role: "user"}}
+
+	if err := m.FixNfsPermissions("/mnt/DATA/NfsShare"); err != nil {
+		t.Fatalf("expected nil with simulated runCmd, got: %v", err)
+	}
+
+	joined := strings.Join(cmds, "\n")
+	wantCmds := []string{
+		"groupadd -f nasusers",
+		"chown -R niklas:nasusers /mnt/DATA/NfsShare",
+		"chmod -R a+rwX /mnt/DATA/NfsShare",
+		"find /mnt/DATA/NfsShare -type d -exec chmod 2777 {} +",
+		"exportfs -ra",
+		"smbcontrol all reload-config",
+	}
+	for _, want := range wantCmds {
+		if !strings.Contains(joined, want) {
+			t.Errorf("expected command %q in FixNfsPermissions, got:\n%s", want, joined)
+		}
+	}
+}
+

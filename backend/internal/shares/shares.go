@@ -730,7 +730,7 @@ func (m *Manager) SaveNfs(e *NfsExport) error {
 	}
 	_ = os.Chmod(e.Path, 0777)
 
-	for p := e.Path; strings.HasPrefix(filepath.ToSlash(p), "/mnt"); p = filepath.Dir(p) {
+	for p := filepath.Dir(e.Path); strings.HasPrefix(filepath.ToSlash(p), "/mnt"); p = filepath.Dir(p) {
 		if info, err := os.Stat(p); err == nil && info.IsDir() {
 			_ = os.Chmod(p, 0755)
 		}
@@ -749,7 +749,12 @@ func (m *Manager) SaveNfs(e *NfsExport) error {
 		}
 	}
 
-	return m.writeNfsExportsLocked()
+	if err := m.writeNfsExportsLocked(); err != nil {
+		return err
+	}
+
+	_ = m.fixNfsPermissionsLocked(e.Path)
+	return nil
 }
 
 func (m *Manager) DeleteNfs(path string) error {
@@ -1068,7 +1073,7 @@ func (m *Manager) FixSharePermissions(name string) error {
 	}
 
 	// 1. Ensure group nasusers exists and valid users are members (creating user if missing)
-	_, _ = runCmdWithTimeout(5*time.Second, "groupadd", "-f", "nasusers")
+	_, _ = m.execCmd(5*time.Second, "groupadd", "-f", "nasusers")
 	for _, u := range s.ValidUsers {
 		if u == "" {
 			continue
@@ -1111,18 +1116,135 @@ func (m *Manager) FixSharePermissions(name string) error {
 		}
 	}
 
-	// 3. Primary owner: single user if assigned, else root
+	// 3. Primary owner: single user if assigned, else non-root storage user or root
 	primaryUser := "root"
 	if len(s.ValidUsers) == 1 && s.ValidUsers[0] != "" {
 		primaryUser = s.ValidUsers[0]
+	} else if len(s.ValidUsers) > 1 {
+		for _, u := range s.ValidUsers {
+			if u != "" && u != "root" {
+				primaryUser = u
+				break
+			}
+		}
+	} else {
+		for u := range m.users {
+			if u != "" && u != "root" && u != "admin" {
+				primaryUser = u
+				break
+			}
+		}
+		if primaryUser == "root" && len(m.users) > 0 {
+			for u := range m.users {
+				if u != "" && u != "root" {
+					primaryUser = u
+					break
+				}
+			}
+		}
 	}
 
-	_, _ = m.execCmd(15*time.Second, "chown", "-R", primaryUser+":nasusers", s.Path)
-	_, _ = m.execCmd(15*time.Second, "chmod", "-R", "2775", s.Path)
+	if primaryUser != "root" {
+		_, _ = m.execCmd(15*time.Second, "chown", "-R", primaryUser+":nasusers", s.Path)
+	} else {
+		_, _ = m.execCmd(15*time.Second, "chgrp", "-R", "nasusers", s.Path)
+	}
+	_, _ = m.execCmd(15*time.Second, "chmod", "-R", "a+rwX", s.Path)
+	_, _ = m.execCmd(15*time.Second, "find", s.Path, "-type", "d", "-exec", "chmod", "2777", "{}", "+")
 
-	// Reload Samba so clients see permissions immediately
+	// Touch path and reload Samba so clients see permissions immediately
+	_, _ = m.execCmd(5*time.Second, "touch", s.Path)
 	_, _ = m.execCmd(5*time.Second, "smbcontrol", "all", "reload-config")
 	_, _ = m.execCmd(10*time.Second, "systemctl", "reload-or-restart", "smbd")
+
+	return nil
+}
+
+// FixNfsPermissions applies appropriate ownership and open permissions on the NFS export path.
+// Sets open permissions (2777 / a+rwX) and group nasusers so that heterogeneous NFS clients
+// (Proxmox root, Linux UID 1000, Windows NFS client) can read and write without Unix User\root permission denied errors.
+func (m *Manager) FixNfsPermissions(path string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.fixNfsPermissionsLocked(path)
+}
+
+func (m *Manager) fixNfsPermissionsLocked(path string) error {
+	cleanPath := filepath.ToSlash(filepath.Clean(path))
+	var exp *NfsExport
+	for p, e := range m.nfsExports {
+		if filepath.Clean(p) == filepath.Clean(cleanPath) {
+			exp = e
+			cleanPath = filepath.ToSlash(p)
+			break
+		}
+	}
+	if exp == nil {
+		return fmt.Errorf("NFS export '%s' not found", path)
+	}
+
+	if m.mockMode {
+		return nil
+	}
+
+	// 1. Ensure group nasusers exists
+	_, _ = m.execCmd(5*time.Second, "groupadd", "-f", "nasusers")
+
+	// 2. Ensure parent dirs under /mnt are traversable (chmod 0755)
+	for p := filepath.Dir(cleanPath); strings.HasPrefix(filepath.ToSlash(p), "/mnt"); p = filepath.Dir(p) {
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			_, _ = m.execCmd(5*time.Second, "chmod", "0755", p)
+		}
+	}
+	_ = os.Chmod("/mnt", 0755)
+
+	// 2.5 Lift restrictive TrueNAS ZFS ACLs on the underlying pool if applicable
+	if strings.HasPrefix(cleanPath, "/mnt/") {
+		rel := strings.TrimPrefix(cleanPath, "/mnt/")
+		parts := strings.Split(rel, "/")
+		if len(parts) > 0 && parts[0] != "" {
+			poolName := parts[0]
+			_, _ = m.execCmd(5*time.Second, "zfs", "set", "acltype=posix", poolName)
+			_, _ = m.execCmd(5*time.Second, "zfs", "set", "aclmode=discard", poolName)
+			_, _ = m.execCmd(5*time.Second, "zfs", "set", "aclinherit=passthrough", poolName)
+			_, _ = m.execCmd(5*time.Second, "zfs", "inherit", "-r", "acltype", poolName)
+			_, _ = m.execCmd(5*time.Second, "zfs", "inherit", "-r", "aclmode", poolName)
+			_, _ = m.execCmd(5*time.Second, "zfs", "inherit", "-r", "aclinherit", poolName)
+		}
+	}
+
+	// 3. Primary owner: find first storage user if available, else root
+	primaryUser := "root"
+	for u := range m.users {
+		if u != "" && u != "root" && u != "admin" {
+			primaryUser = u
+			break
+		}
+	}
+	if primaryUser == "root" && len(m.users) > 0 {
+		for u := range m.users {
+			if u != "" && u != "root" {
+				primaryUser = u
+				break
+			}
+		}
+	}
+
+	if primaryUser != "root" {
+		_, _ = m.execCmd(15*time.Second, "chown", "-R", primaryUser+":nasusers", cleanPath)
+	} else {
+		_, _ = m.execCmd(15*time.Second, "chgrp", "-R", "nasusers", cleanPath)
+	}
+
+	// 4. Permissions: full read/write for all users, setgid 2777 on directories
+	_, _ = m.execCmd(15*time.Second, "chmod", "-R", "a+rwX", cleanPath)
+	_, _ = m.execCmd(15*time.Second, "find", cleanPath, "-type", "d", "-exec", "chmod", "2777", "{}", "+")
+
+	// 5. Touch directory and notify NFS + Samba
+	_, _ = m.execCmd(5*time.Second, "touch", cleanPath)
+	_, _ = m.execCmd(10*time.Second, "exportfs", "-ra")
+	_, _ = m.execCmd(5*time.Second, "smbcontrol", "all", "reload-config")
 
 	return nil
 }

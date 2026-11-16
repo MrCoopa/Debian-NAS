@@ -1424,12 +1424,26 @@ func FixPermissionsPath(targetPath string) error {
 		_ = exec.Command("chgrp", "-R", "nasusers", cleanPath).Run()
 	}
 
-	// 5. Ensure full read/write for user and group nasusers, plus setgid bit on directories
-	_ = exec.Command("chmod", "-R", "u+rwX,g+rwX,o+rX", cleanPath).Run()
-	_ = exec.Command("find", cleanPath, "-type", "d", "-exec", "chmod", "2775", "{}", "+").Run()
+	// 4.5 Lift restrictive ZFS ACLs on the underlying pool if applicable
+	if strings.HasPrefix(filepath.ToSlash(cleanPath), "/mnt/") {
+		rel := strings.TrimPrefix(filepath.ToSlash(cleanPath), "/mnt/")
+		parts := strings.Split(rel, "/")
+		if len(parts) > 0 && parts[0] != "" {
+			poolName := parts[0]
+			_ = exec.Command("zfs", "set", "acltype=posix", poolName).Run()
+			_ = exec.Command("zfs", "set", "aclmode=discard", poolName).Run()
+			_ = exec.Command("zfs", "set", "aclinherit=passthrough", poolName).Run()
+		}
+	}
 
-	// 6. Touch directory and notify Samba so Windows SMB clients immediately invalidate directory lease cache
+	// 5. Ensure full read/write for user, group nasusers, AND all clients (a+rwX), plus setgid bit on directories (2777)
+	// This prevents "Permission denied by Unix User\root" across both SMB and NFS mounts (Proxmox, Linux, Windows NFS).
+	_ = exec.Command("chmod", "-R", "a+rwX", cleanPath).Run()
+	_ = exec.Command("find", cleanPath, "-type", "d", "-exec", "chmod", "2777", "{}", "+").Run()
+
+	// 6. Touch directory and notify both Samba and NFS kernel server so clients immediately invalidate directory caches
 	_ = exec.Command("touch", cleanPath).Run()
+	_ = exec.Command("exportfs", "-ra").Run()
 	_ = exec.Command("smbcontrol", "all", "reload-config").Run()
 
 	return nil

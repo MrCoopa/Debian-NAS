@@ -150,6 +150,11 @@
                 data-readonly="{{$n.ReadOnly}}"
                 data-clients="{{$n.AllowedClients}}"
                 @click="openEditNfsShare($el.dataset.path, $el.dataset.readonly === 'true', $el.dataset.clients)">Edit</button>
+              <button type="button" class="btn btn-secondary btn-sm"
+                hx-post="/ui/actions/shares/nfs/fix-permissions?path={{urlquery $n.Path}}"
+                hx-target="#shares-container"
+                hx-swap="outerHTML"
+                title="Fix folder ownership and permissions (nasusers / 2777 / a+rwX)">Fix Permissions</button>
               <button type="button" class="btn btn-danger btn-sm" hx-delete="/ui/actions/shares/nfs?path={{urlquery $n.Path}}"
                 hx-confirm="Remove NFS export '{{$n.Path}}'?" hx-target="#shares-container"
                 hx-swap="outerHTML">Delete</button>

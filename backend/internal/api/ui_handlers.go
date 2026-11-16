@@ -1313,6 +1313,26 @@ func (s *Server) handleUIActionFixSharePermissions(w http.ResponseWriter, r *htt
 	s.handleUIPartialShares(w, r)
 }
 
+func (s *Server) handleUIActionFixNfsPermissions(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimSpace(r.URL.Query().Get("path"))
+	if path == "" {
+		_ = r.ParseForm()
+		path = strings.TrimSpace(r.FormValue("path"))
+	}
+	if path == "" {
+		s.setHXTrigger(w, "Export path is required", "error")
+		s.handleUIPartialShares(w, r)
+		return
+	}
+
+	if err := s.shares.FixNfsPermissions(path); err != nil {
+		s.setHXTrigger(w, "Error repairing NFS permissions: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, fmt.Sprintf("Permissions for NFS export '%s' repaired successfully", path), "success", "shareUpdate")
+	}
+	s.handleUIPartialShares(w, r)
+}
+
 func (s *Server) handleUIActionCreatePool(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	name := strings.TrimSpace(r.FormValue("name"))
@@ -2115,8 +2135,16 @@ func (s *Server) handleUIActionFixPermissionsCloudSync(w http.ResponseWriter, r 
 					}
 				}
 			}
+			if nfsList, err := s.shares.ListNfs(); err == nil {
+				for _, nfs := range nfsList {
+					if nfs != nil && filepath.Clean(nfs.Path) == filepath.Clean(targetPath) {
+						_ = s.shares.FixNfsPermissions(nfs.Path)
+						break
+					}
+				}
+			}
 		}
-		s.setHXTrigger(w, fmt.Sprintf("Permissions repaired for '%s' (nasusers / 2775)", targetPath), "success", "cloudSyncUpdate", "shareUpdate")
+		s.setHXTrigger(w, fmt.Sprintf("Permissions repaired for '%s' (nasusers / 2777 / a+rwX)", targetPath), "success", "cloudSyncUpdate", "shareUpdate")
 	}
 	s.handleUIPartialCloudSync(w, r)
 }
