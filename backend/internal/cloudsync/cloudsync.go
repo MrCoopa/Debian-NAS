@@ -281,6 +281,7 @@ func NewManager(mockMode bool, rcloneConfig string) *Manager {
 	if m.mockMode {
 		m.initMockCloudSync()
 	} else {
+		ensureSftpKnownHostsInConfigFile(m.rcloneConfig)
 		m.loadJobsConfig()
 	}
 
@@ -601,6 +602,7 @@ func (m *Manager) TestRemote(name string) error {
 		return nil
 	}
 
+	ensureSftpKnownHostsInConfigFile(m.rcloneConfig)
 	args := []string{"lsd", name + ":", "--max-depth", "1", "--contimeout", "5s"}
 	if m.rcloneConfig != "" {
 		args = append(args, "--config", m.rcloneConfig)
@@ -789,6 +791,7 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 			args = append(args, target, srcPath)
 		}
 
+		ensureSftpKnownHostsInConfigFile(m.rcloneConfig)
 		if m.rcloneConfig != "" {
 			args = append(args, "--config", m.rcloneConfig)
 		}
@@ -820,14 +823,7 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 			job.LastMessage = fmt.Sprintf("Error: %v (%s)", err, strings.TrimSpace(string(out)))
 		} else {
 			job.Status = StatusSuccess
-			outStr := strings.TrimSpace(string(out))
-			if dryRun {
-				job.LastMessage = "Dry run completed successfully"
-			} else if outStr != "" {
-				job.LastMessage = "Completed: " + outStr
-			} else {
-				job.LastMessage = "Completed successfully"
-			}
+			job.LastMessage = summarizeRcloneSuccessOutput(string(out), dryRun)
 		}
 		lastMsg := job.LastMessage
 		m.saveJobsConfig()
@@ -1094,10 +1090,101 @@ func (m *Manager) loadJobsConfig() {
 					changed = true
 				}
 			}
+			if strings.Contains(j.LastMessage, "No host key validation is being performed") {
+				j.LastMessage = summarizeRcloneSuccessOutput(strings.TrimPrefix(j.LastMessage, "Completed: "), false)
+				changed = true
+			}
 			m.jobs[j.ID] = j
 		}
 		if changed {
 			m.saveJobsConfig()
 		}
+	}
+}
+
+// summarizeRcloneSuccessOutput strips noisy SFTP host-key NOTICE lines from rclone output and returns a clean completion message.
+func summarizeRcloneSuccessOutput(raw string, dryRun bool) string {
+	if dryRun {
+		return "Dry run completed successfully"
+	}
+	var kept []string
+	for _, line := range strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n") {
+		trim := strings.TrimSpace(line)
+		if trim == "" {
+			continue
+		}
+		lower := strings.ToLower(trim)
+		if strings.Contains(lower, "no host key validation is being performed") ||
+			strings.Contains(lower, "known_hosts_file") {
+			continue
+		}
+		kept = append(kept, trim)
+	}
+	if len(kept) == 0 {
+		return "Completed successfully"
+	}
+	last := kept[len(kept)-1]
+	if strings.HasPrefix(last, "Completed:") {
+		return last
+	}
+	return "Completed: " + last
+}
+
+// ensureSftpKnownHostsInConfigFile ensures all existing [remote] sections with 'type = sftp' in rclone.conf
+// include 'known_hosts_file = none' (unless already configured) so rclone does not emit SFTP host-key NOTICE warnings.
+func ensureSftpKnownHostsInConfigFile(path string) {
+	if path == "" {
+		path = "/root/.config/rclone/rclone.conf"
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	var out []string
+	inSection := false
+	isSftp := false
+	hasKnownHosts := false
+	modified := false
+
+	flushSection := func() {
+		if inSection && isSftp && !hasKnownHosts {
+			// Insert 'known_hosts_file = none' before trailing blank lines of the section
+			insertIdx := len(out)
+			for insertIdx > 0 && strings.TrimSpace(out[insertIdx-1]) == "" {
+				insertIdx--
+			}
+			out = append(out[:insertIdx], append([]string{"known_hosts_file = none"}, out[insertIdx:]...)...)
+			modified = true
+		}
+	}
+
+	for _, line := range lines {
+		trim := strings.TrimSpace(line)
+		if strings.HasPrefix(trim, "[") && strings.HasSuffix(trim, "]") {
+			flushSection()
+			inSection = true
+			isSftp = false
+			hasKnownHosts = false
+			out = append(out, line)
+			continue
+		}
+		if inSection && !strings.HasPrefix(trim, "#") && !strings.HasPrefix(trim, ";") {
+			if idx := strings.Index(trim, "="); idx != -1 {
+				k := strings.ToLower(strings.TrimSpace(trim[:idx]))
+				v := strings.ToLower(strings.TrimSpace(trim[idx+1:]))
+				if k == "type" && v == "sftp" {
+					isSftp = true
+				} else if k == "known_hosts_file" || k == "pubkey" || k == "host_key_algorithms" {
+					hasKnownHosts = true
+				}
+			}
+		}
+		out = append(out, line)
+	}
+	flushSection()
+
+	if modified {
+		_ = os.WriteFile(path, []byte(strings.Join(out, "\n")), 0600)
 	}
 }

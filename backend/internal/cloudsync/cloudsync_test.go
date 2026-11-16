@@ -1,6 +1,7 @@
 package cloudsync
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -245,4 +246,32 @@ func TestCloudSync_RemoteManagementAndTransferModes(t *testing.T) {
 		}
 	}
 }
+
+func TestCloudSync_SftpKnownHostsAndOutputSanitizer(t *testing.T) {
+	noticeOnly := `2026/11/16 02:00:04 NOTICE: Hetzner: No host key validation is being performed. Set known_hosts_file (to "none" to silence this notice) or use --sftp-pin-host-key to enable it. See: https://rclone.org/sftp/#host-key-validation`
+	if got := summarizeRcloneSuccessOutput(noticeOnly, false); got != "Completed successfully" {
+		t.Fatalf("expected 'Completed successfully' when output is only SFTP notice, got %q", got)
+	}
+
+	noticeWithStats := noticeOnly + "\n45.2 MiB / 45.2 MiB, 100%, 12 MiB/s, ETA 0s\n"
+	if got := summarizeRcloneSuccessOutput(noticeWithStats, false); got != "Completed: 45.2 MiB / 45.2 MiB, 100%, 12 MiB/s, ETA 0s" {
+		t.Fatalf("unexpected summary with stats: %q", got)
+	}
+
+	tmpFile := t.TempDir() + "/rclone.conf"
+	initial := "[Hetzner]\ntype = sftp\nhost = u12345.your-storagebox.de\nuser = u12345\nport = 23\n\n[cs_crypt_1]\ntype = crypt\nremote = Hetzner:backup\n"
+	if err := os.WriteFile(tmpFile, []byte(initial), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ensureSftpKnownHostsInConfigFile(tmpFile)
+	updatedBytes, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := string(updatedBytes)
+	if !strings.Contains(updated, "known_hosts_file = none") {
+		t.Fatalf("expected 'known_hosts_file = none' to be injected into [Hetzner] sftp section, got:\n%s", updated)
+	}
+}
+
 
