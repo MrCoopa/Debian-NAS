@@ -644,6 +644,9 @@ func (m *Manager) generateSmbConfig(s *SmbShare) string {
 	sb.WriteString("   force create mode = 0664\n")
 	sb.WriteString("   force directory mode = 0775\n")
 	sb.WriteString("   inherit permissions = yes\n")
+	sb.WriteString("   change notify = yes\n")
+	sb.WriteString("   kernel change notify = yes\n")
+	sb.WriteString("   ea support = yes\n")
 	if s.GuestOk {
 		sb.WriteString("   force user = root\n")
 		sb.WriteString("   force group = nasusers\n")

@@ -1428,6 +1428,10 @@ func FixPermissionsPath(targetPath string) error {
 	_ = exec.Command("chmod", "-R", "u+rwX,g+rwX,o+rX", cleanPath).Run()
 	_ = exec.Command("find", cleanPath, "-type", "d", "-exec", "chmod", "2775", "{}", "+").Run()
 
+	// 6. Touch directory and notify Samba so Windows SMB clients immediately invalidate directory lease cache
+	_ = exec.Command("touch", cleanPath).Run()
+	_ = exec.Command("smbcontrol", "all", "reload-config").Run()
+
 	return nil
 }
 

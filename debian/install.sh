@@ -117,6 +117,9 @@ if [ -f /etc/samba/smb.conf ]; then
    map to guest = Bad User
    usershare allow guests = yes
    browseable = yes
+   change notify = yes
+   kernel change notify = yes
+   ea support = yes
 
 # Dynamic Debian NAS shares include
 include = /etc/samba/nas-shares.conf
