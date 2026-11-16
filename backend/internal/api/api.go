@@ -193,6 +193,7 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("DELETE /ui/actions/cloudsync/delete", s.handleUIActionDeleteCloudSync)
 		mux.HandleFunc("POST /ui/actions/cloudsync/toggle", s.handleUIActionToggleCloudSync)
 		mux.HandleFunc("POST /ui/actions/cloudsync/run", s.handleUIActionRunCloudSync)
+		mux.HandleFunc("POST /ui/actions/cloudsync/restore", s.handleUIActionRestoreCloudSync)
 		mux.HandleFunc("POST /ui/actions/cloudsync/dryrun", s.handleUIActionDryRunCloudSync)
 		mux.HandleFunc("POST /ui/actions/cloudsync/abort", s.handleUIActionAbortCloudSync)
 

@@ -2046,6 +2046,26 @@ func (s *Server) handleUIActionRunCloudSync(w http.ResponseWriter, r *http.Reque
 	s.handleUIPartialCloudSync(w, r)
 }
 
+func (s *Server) handleUIActionRestoreCloudSync(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	id := strings.TrimSpace(r.FormValue("id"))
+	if id == "" {
+		id = strings.TrimSpace(r.URL.Query().Get("id"))
+	}
+	if id == "" {
+		s.setHXTrigger(w, "Task ID is required", "error")
+		s.handleUIPartialCloudSync(w, r)
+		return
+	}
+
+	if err := s.cloudsync.RestoreJob(id); err != nil {
+		s.setHXTrigger(w, "Failed to start Cloud Restore: "+err.Error(), "error")
+	} else {
+		s.setHXTrigger(w, "Cloud Restore started (downloading & decrypting to local dataset)", "success", "cloudSyncUpdate")
+	}
+	s.handleUIPartialCloudSync(w, r)
+}
+
 func (s *Server) handleUIActionDryRunCloudSync(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	id := strings.TrimSpace(r.FormValue("id"))

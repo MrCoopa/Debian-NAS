@@ -624,7 +624,17 @@ func (m *Manager) TestRemote(name string) error {
 }
 
 func (m *Manager) TriggerJob(jobID string) error {
-	return m.TriggerJobWithOptions(jobID, false)
+	return m.triggerJobExecution(jobID, false, false)
+}
+
+func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
+	return m.triggerJobExecution(jobID, dryRun, false)
+}
+
+// RestoreJob performs a one-time safe PULL (rclone copy from Cloud -> Local SourcePath, with automatic decryption if encrypted)
+// without permanently modifying the job's scheduled PUSH direction.
+func (m *Manager) RestoreJob(jobID string) error {
+	return m.triggerJobExecution(jobID, false, true)
 }
 
 func (m *Manager) AbortJob(jobID string) error {
@@ -659,7 +669,7 @@ func (m *Manager) AbortJob(jobID string) error {
 	return nil
 }
 
-func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
+func (m *Manager) triggerJobExecution(jobID string, dryRun bool, forceRestorePull bool) error {
 	m.mu.Lock()
 	job, exists := m.jobs[jobID]
 	if !exists {
@@ -719,7 +729,9 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 	m.running[jobID] = &runningTask{cancel: cancel}
 
 	job.Status = StatusRunning
-	if dryRun {
+	if forceRestorePull {
+		job.LastMessage = "Restore from cloud in progress..."
+	} else if dryRun {
 		job.LastMessage = "Dry run in progress..."
 	} else {
 		job.LastMessage = "Sync in progress..."
@@ -749,7 +761,9 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 			m.mu.Lock()
 			job.Status = StatusSuccess
 			job.LastRun = time.Now()
-			if dryRun {
+			if forceRestorePull {
+				job.LastMessage = "Restore completed: files restored from cloud"
+			} else if dryRun {
 				job.LastMessage = "Dry run completed: 0 bytes modified (Trial)"
 			} else {
 				job.LastMessage = "Completed: 324 MB transferred"
@@ -768,6 +782,10 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 		default:
 			action = "sync"
 		}
+		if forceRestorePull {
+			// Always use non-destructive 'copy' during a 1-click Restore so local files are never deleted
+			action = "copy"
+		}
 
 		srcPath := jobSnap.SourcePath
 		if _, err := os.Stat(srcPath); os.IsNotExist(err) {
@@ -785,10 +803,10 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 
 		var args []string
 		args = append(args, action)
-		if jobSnap.Direction == DirectionPush {
-			args = append(args, srcPath, target)
-		} else {
+		if forceRestorePull || jobSnap.Direction == DirectionPull {
 			args = append(args, target, srcPath)
+		} else {
+			args = append(args, srcPath, target)
 		}
 
 		ensureSftpKnownHostsInConfigFile(m.rcloneConfig)
@@ -823,7 +841,11 @@ func (m *Manager) TriggerJobWithOptions(jobID string, dryRun bool) error {
 			job.LastMessage = fmt.Sprintf("Error: %v (%s)", err, strings.TrimSpace(string(out)))
 		} else {
 			job.Status = StatusSuccess
-			job.LastMessage = summarizeRcloneSuccessOutput(string(out), dryRun)
+			msg := summarizeRcloneSuccessOutput(string(out), dryRun)
+			if forceRestorePull {
+				msg = strings.Replace(msg, "Completed", "Restore completed", 1)
+			}
+			job.LastMessage = msg
 		}
 		lastMsg := job.LastMessage
 		m.saveJobsConfig()
