@@ -272,6 +272,16 @@ func TestCloudSync_SftpKnownHostsAndOutputSanitizer(t *testing.T) {
 	if !strings.Contains(updated, "known_hosts_file = none") {
 		t.Fatalf("expected 'known_hosts_file = none' to be injected into [Hetzner] sftp section, got:\n%s", updated)
 	}
+
+	// Test error output cleaner suppresses 3000-char help screens
+	rawHelpErr := "Usage: rclone copy [flags]\nFlags:\n  --dry-run ...\n  --umask ...\n2026/11/16 12:00:00 NOTICE: Fatal error: unknown flag: --umask\n"
+	cleaned := summarizeRcloneErrorOutput(os.ErrInvalid, rawHelpErr)
+	if !strings.Contains(cleaned, "unknown flag: --umask") {
+		t.Errorf("expected cleaned error to contain actual fatal error, got: %q", cleaned)
+	}
+	if strings.Contains(cleaned, "Usage:") || strings.Contains(cleaned, "Flags:") {
+		t.Errorf("expected cleaned error to strip usage flags, got: %q", cleaned)
+	}
 }
 
 

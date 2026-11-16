@@ -849,7 +849,6 @@ func (m *Manager) triggerJobExecution(jobID string, dryRun bool, forceRestorePul
 		if jobSnap.BandwidthLimit != "" && jobSnap.BandwidthLimit != "0" {
 			args = append(args, "--bwlimit", jobSnap.BandwidthLimit)
 		}
-		args = append(args, "--umask", "0002")
 		args = append(args, "--stats", "1s", "--stats-one-line")
 
 		cmd := exec.CommandContext(ctx, "rclone", args...)
@@ -870,7 +869,7 @@ func (m *Manager) triggerJobExecution(jobID string, dryRun bool, forceRestorePul
 				job.LastMessage = "Aborted by user"
 			} else if err != nil {
 				job.Status = StatusFailed
-				job.LastMessage = fmt.Sprintf("Error: %v (%s)", err, strings.TrimSpace(string(out)))
+				job.LastMessage = summarizeRcloneErrorOutput(err, string(out))
 			} else {
 				job.Status = StatusSuccess
 				msg := summarizeRcloneSuccessOutput(string(out), dryRun)
@@ -883,7 +882,7 @@ func (m *Manager) triggerJobExecution(jobID string, dryRun bool, forceRestorePul
 			lastStatus := job.Status
 			m.saveJobsConfig()
 			m.mu.Unlock()
-			if forceRestorePull && lastStatus == StatusSuccess && runtime.GOOS == "linux" {
+			if (forceRestorePull || jobSnap.Direction == DirectionPull) && lastStatus == StatusSuccess && runtime.GOOS == "linux" {
 				_ = FixPermissionsPath(srcPath)
 			}
 			m.notifyJobEvent(jobID, jobSnap.Name, string(lastStatus), lastMsg)
@@ -947,7 +946,7 @@ func (m *Manager) triggerJobExecution(jobID string, dryRun bool, forceRestorePul
 			job.LastMessage = "Aborted by user"
 		} else if err != nil {
 			job.Status = StatusFailed
-			job.LastMessage = fmt.Sprintf("Error: %v (%s)", err, strings.TrimSpace(string(out)))
+			job.LastMessage = summarizeRcloneErrorOutput(err, string(out))
 		} else {
 			job.Status = StatusSuccess
 			msg := summarizeRcloneSuccessOutput(string(out), dryRun)
@@ -963,7 +962,7 @@ func (m *Manager) triggerJobExecution(jobID string, dryRun bool, forceRestorePul
 
 		if runtime.GOOS == "linux" {
 			_ = exec.Command("logger", "-t", "debian-nas-cloudsync", fmt.Sprintf("Job %s (%s): %s", jobSnap.ID, action, lastMsg)).Run()
-			if forceRestorePull && lastStatus == StatusSuccess {
+			if (forceRestorePull || jobSnap.Direction == DirectionPull) && lastStatus == StatusSuccess {
 				_ = FixPermissionsPath(srcPath)
 			}
 		}
@@ -1286,6 +1285,37 @@ func summarizeRcloneSuccessOutput(raw string, dryRun bool) string {
 		return last
 	}
 	return "Completed: " + last
+}
+
+// summarizeRcloneErrorOutput extracts the actual failure message from rclone output,
+// discarding lengthy CLI usage/flag lists if rclone failed with a syntax or flag error.
+func summarizeRcloneErrorOutput(err error, raw string) string {
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	var fatalLines []string
+	for _, l := range lines {
+		trim := strings.TrimSpace(l)
+		if trim == "" || strings.HasPrefix(trim, "Flags:") || strings.HasPrefix(trim, "-") || strings.HasPrefix(trim, "Usage:") {
+			continue
+		}
+		if strings.Contains(trim, "Fatal error:") || strings.Contains(trim, "Error:") || strings.Contains(trim, "Failed to") {
+			clean := trim
+			if idx := strings.Index(clean, "NOTICE: "); idx != -1 {
+				clean = clean[idx+8:]
+			}
+			fatalLines = append(fatalLines, clean)
+		}
+	}
+	if len(fatalLines) > 0 {
+		return fmt.Sprintf("Error: %s", fatalLines[len(fatalLines)-1])
+	}
+	clean := strings.TrimSpace(raw)
+	if len(clean) > 200 {
+		clean = clean[:200] + "..."
+	}
+	if clean != "" {
+		return fmt.Sprintf("Error: %v (%s)", err, clean)
+	}
+	return fmt.Sprintf("Error: %v", err)
 }
 
 // ensureSftpKnownHostsInConfigFile ensures all existing [remote] sections with 'type = sftp' in rclone.conf
