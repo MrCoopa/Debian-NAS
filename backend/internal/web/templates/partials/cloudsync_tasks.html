@@ -187,8 +187,17 @@
                       </button>
                     {{end}}
                   </div>
-                  {{if and (eq $j.Status "FAILED") $j.LastMessage}}
-                    <div style="font-size: 0.68rem; color: #ff8a80; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 0.25rem; cursor: help;" title="{{$j.LastMessage}}">
+                  {{if eq $j.Status "RUNNING"}}
+                    <div style="font-size: 0.7rem; color: #38bdf8; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 0.3rem; font-family: monospace; display: flex; align-items: center; gap: 5px;">
+                      <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #38bdf8; box-shadow: 0 0 6px #38bdf8;"></span>
+                      {{if $j.LastMessage}}{{$j.LastMessage}}{{else}}In progress...{{end}}
+                    </div>
+                  {{else if and (eq $j.Status "FAILED") $j.LastMessage}}
+                    <div style="font-size: 0.68rem; color: #ff8a80; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 0.25rem; font-family: monospace; cursor: help;" title="{{$j.LastMessage}}">
+                      {{$j.LastMessage}}
+                    </div>
+                  {{else if and (eq $j.Status "SUCCESS") $j.LastMessage}}
+                    <div style="font-size: 0.68rem; color: #9ca3af; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 0.25rem; font-family: monospace;" title="{{$j.LastMessage}}">
                       {{$j.LastMessage}}
                     </div>
                   {{end}}
@@ -210,6 +219,9 @@
                         </button>
                         <button type="button" class="dropdown-item" hx-post="/ui/actions/cloudsync/restore?id={{urlquery $j.ID}}" hx-confirm="Restore data from cloud ('{{$j.GetDisplayTarget}}') back into '{{$j.SourcePath}}'? Missing or modified files will be downloaded (and decrypted if encrypted) in safe COPY mode without deleting local files." hx-target="#cloudsync-container" hx-swap="outerHTML" @click="openCloudMenuId = ''" style="width: 100%; display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.85rem; background: none; border: none; color: #38bdf8; font-size: 0.78rem; cursor: pointer;">
                           <span>&#10226;</span> Restore from Cloud
+                        </button>
+                        <button type="button" class="dropdown-item" hx-post="/ui/actions/cloudsync/fix-permissions?id={{urlquery $j.ID}}" hx-target="#cloudsync-container" hx-swap="outerHTML" @click="openCloudMenuId = ''" style="width: 100%; display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.85rem; background: none; border: none; color: #fbbf24; font-size: 0.78rem; cursor: pointer;">
+                          <span>&#128295;</span> Fix Permissions (nasusers)
                         </button>
                         <button type="button" class="dropdown-item" hx-post="/ui/actions/cloudsync/dryrun?id={{urlquery $j.ID}}" hx-target="#cloudsync-container" hx-swap="outerHTML" @click="openCloudMenuId = ''" style="width: 100%; display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.85rem; background: none; border: none; color: #a78bfa; font-size: 0.78rem; cursor: pointer;">
                           <span>&#9889;</span> Dry Run (Test)

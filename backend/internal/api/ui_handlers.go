@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -376,7 +377,7 @@ func (s *Server) recordEvent(message, severity string, triggers ...string) {
 		case "snapshotUpdate":
 			cat = "SNAPSHOT"
 			tab = "protection"
-		case "cloudsyncUpdate":
+		case "cloudsyncUpdate", "cloudSyncUpdate":
 			cat = "CLOUD"
 			tab = "protection"
 		case "shareUpdate":
@@ -541,15 +542,25 @@ func (s *Server) populateNotificationsAndJobs(vd *ViewData) {
 		if cj == nil {
 			continue
 		}
+		isRestore := strings.Contains(strings.ToLower(cj.LastMessage), "restore") || cj.Direction == cloudsync.DirectionPull
+		jobType := "Cloud Sync"
+		if isRestore {
+			jobType = "Cloud Restore"
+		}
+
 		switch cj.Status {
 		case cloudsync.StatusRunning:
 			msg := cj.LastMessage
 			if msg == "" {
-				msg = "Rclone transfer in progress..."
+				if isRestore {
+					msg = "Restore from cloud in progress..."
+				} else {
+					msg = "Rclone transfer in progress..."
+				}
 			}
 			running = append(running, JobItem{
 				ID:        "cloud-" + cj.ID,
-				Type:      "Cloud Sync",
+				Type:      jobType,
 				Name:      cj.Name,
 				Target:    cj.RemoteTarget,
 				State:     "RUNNING",
@@ -562,7 +573,7 @@ func (s *Server) populateNotificationsAndJobs(vd *ViewData) {
 			ts := cj.GetLastRun()
 			completed = append(completed, JobItem{
 				ID:        "cloud-" + cj.ID,
-				Type:      "Cloud Sync",
+				Type:      jobType,
 				Name:      cj.Name,
 				Target:    cj.RemoteTarget,
 				State:     "FAILED",
@@ -574,7 +585,7 @@ func (s *Server) populateNotificationsAndJobs(vd *ViewData) {
 				ID:        "cloud-err-" + cj.ID,
 				Category:  "CLOUD",
 				Severity:  "error",
-				Title:     "Cloud Sync Failed: " + cj.Name,
+				Title:     jobType + " Failed: " + cj.Name,
 				Message:   cj.LastMessage,
 				Timestamp: ts,
 				TargetTab: "protection",
@@ -587,7 +598,7 @@ func (s *Server) populateNotificationsAndJobs(vd *ViewData) {
 				}
 				completed = append(completed, JobItem{
 					ID:        "cloud-" + cj.ID,
-					Type:      "Cloud Sync",
+					Type:      jobType,
 					Name:      cj.Name,
 					Target:    cj.RemoteTarget,
 					State:     "COMPLETED",
@@ -2041,7 +2052,7 @@ func (s *Server) handleUIActionRunCloudSync(w http.ResponseWriter, r *http.Reque
 	if err := s.cloudsync.TriggerJob(id); err != nil {
 		s.setHXTrigger(w, "Failed to start Cloud Sync: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, "Cloud Sync task started successfully", "success", "cloudSyncUpdate")
+		s.setHXTrigger(w, "Cloud Sync task started successfully", "success", "cloudSyncUpdate", "refreshNotifications")
 	}
 	s.handleUIPartialCloudSync(w, r)
 }
@@ -2061,7 +2072,51 @@ func (s *Server) handleUIActionRestoreCloudSync(w http.ResponseWriter, r *http.R
 	if err := s.cloudsync.RestoreJob(id); err != nil {
 		s.setHXTrigger(w, "Failed to start Cloud Restore: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, "Cloud Restore started (downloading & decrypting to local dataset)", "success", "cloudSyncUpdate")
+		s.setHXTrigger(w, "Cloud Restore started (downloading & decrypting to local dataset)", "success", "cloudSyncUpdate", "refreshNotifications")
+	}
+	s.handleUIPartialCloudSync(w, r)
+}
+
+func (s *Server) handleUIActionFixPermissionsCloudSync(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	id := strings.TrimSpace(r.FormValue("id"))
+	if id == "" {
+		id = strings.TrimSpace(r.URL.Query().Get("id"))
+	}
+	if id == "" {
+		s.setHXTrigger(w, "Task ID is required", "error")
+		s.handleUIPartialCloudSync(w, r)
+		return
+	}
+
+	job, err := s.cloudsync.GetJob(id)
+	if err != nil || job == nil {
+		s.setHXTrigger(w, "Task not found", "error")
+		s.handleUIPartialCloudSync(w, r)
+		return
+	}
+
+	targetPath := job.SourcePath
+	if targetPath == "" {
+		s.setHXTrigger(w, "Task has no source path", "error")
+		s.handleUIPartialCloudSync(w, r)
+		return
+	}
+
+	if err := cloudsync.FixPermissionsPath(targetPath); err != nil {
+		s.setHXTrigger(w, "Failed to repair permissions: "+err.Error(), "error")
+	} else {
+		if s.shares != nil {
+			if sharesList, err := s.shares.ListSmb(); err == nil {
+				for _, sh := range sharesList {
+					if sh != nil && filepath.Clean(sh.Path) == filepath.Clean(targetPath) {
+						_ = s.shares.FixSharePermissions(sh.Name)
+						break
+					}
+				}
+			}
+		}
+		s.setHXTrigger(w, fmt.Sprintf("Permissions repaired for '%s' (nasusers / 2775)", targetPath), "success", "cloudSyncUpdate", "shareUpdate")
 	}
 	s.handleUIPartialCloudSync(w, r)
 }
@@ -2081,7 +2136,7 @@ func (s *Server) handleUIActionDryRunCloudSync(w http.ResponseWriter, r *http.Re
 	if err := s.cloudsync.TriggerJobWithOptions(id, true); err != nil {
 		s.setHXTrigger(w, "Failed to start Dry Run: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, "Cloud Sync Dry Run trial started", "info", "cloudSyncUpdate")
+		s.setHXTrigger(w, "Cloud Sync Dry Run trial started", "info", "cloudSyncUpdate", "refreshNotifications")
 	}
 	s.handleUIPartialCloudSync(w, r)
 }
@@ -2101,7 +2156,7 @@ func (s *Server) handleUIActionAbortCloudSync(w http.ResponseWriter, r *http.Req
 	if err := s.cloudsync.AbortJob(id); err != nil {
 		s.setHXTrigger(w, "Abbrechen fehlgeschlagen: "+err.Error(), "error")
 	} else {
-		s.setHXTrigger(w, "Cloud Sync Task sofort abgebrochen", "info", "cloudSyncUpdate")
+		s.setHXTrigger(w, "Cloud Sync Task sofort abgebrochen", "info", "cloudSyncUpdate", "refreshNotifications")
 	}
 	s.handleUIPartialCloudSync(w, r)
 }

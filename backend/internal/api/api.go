@@ -54,12 +54,12 @@ func NewServer(
 		fmt.Printf("[WEB] Warning: could not initialize web template engine: %v\n", err)
 	}
 
-	return &Server{
-		cfg:       cfg,
-		sys:       sys,
-		disks:     dm,
-		zfs:       zm,
-		shares:    sm,
+	srv := &Server{
+		cfg:         cfg,
+		sys:         sys,
+		disks:       dm,
+		zfs:         zm,
+		shares:      sm,
 		cloudsync:   cm,
 		staticFS:    staticFS,
 		web:         webEngine,
@@ -67,6 +67,20 @@ func NewServer(
 		snapPages:   make(map[string]int),
 		snapFilters: make(map[string]string),
 	}
+
+	if cm != nil {
+		cm.SetOnJobEvent(func(jobID, name, status, message string) {
+			sev := "info"
+			if status == string(cloudsync.StatusFailed) {
+				sev = "error"
+			} else if status == string(cloudsync.StatusSuccess) {
+				sev = "success"
+			}
+			srv.recordEvent(fmt.Sprintf("%s: %s", name, message), sev, "cloudSyncUpdate", "refreshNotifications")
+		})
+	}
+
+	return srv
 }
 
 func (s *Server) Routes() http.Handler {
@@ -194,6 +208,7 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("POST /ui/actions/cloudsync/toggle", s.handleUIActionToggleCloudSync)
 		mux.HandleFunc("POST /ui/actions/cloudsync/run", s.handleUIActionRunCloudSync)
 		mux.HandleFunc("POST /ui/actions/cloudsync/restore", s.handleUIActionRestoreCloudSync)
+		mux.HandleFunc("POST /ui/actions/cloudsync/fix-permissions", s.handleUIActionFixPermissionsCloudSync)
 		mux.HandleFunc("POST /ui/actions/cloudsync/dryrun", s.handleUIActionDryRunCloudSync)
 		mux.HandleFunc("POST /ui/actions/cloudsync/abort", s.handleUIActionAbortCloudSync)
 

@@ -2,14 +2,17 @@ package cloudsync
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -244,6 +247,9 @@ func (j *SyncJob) GetStateClass() string {
 func (j *SyncJob) GetStateLabel() string {
 	switch j.Status {
 	case StatusRunning:
+		if strings.Contains(strings.ToLower(j.LastMessage), "restore") {
+			return "Restoring"
+		}
 		return "Running"
 	case StatusFailed:
 		return "Failed"
@@ -261,12 +267,29 @@ type runningTask struct {
 
 type Manager struct {
 	mu           sync.RWMutex
+	eventMu      sync.RWMutex
 	mockMode     bool
 	rcloneConfig string
 	configPath   string
 	remotes      []Remote
 	jobs         map[string]*SyncJob
 	running      map[string]*runningTask
+	onJobEvent   func(jobID, name, status, message string)
+}
+
+func (m *Manager) SetOnJobEvent(fn func(jobID, name, status, message string)) {
+	m.eventMu.Lock()
+	defer m.eventMu.Unlock()
+	m.onJobEvent = fn
+}
+
+func (m *Manager) notifyJobEvent(jobID, name, status, message string) {
+	m.eventMu.RLock()
+	fn := m.onJobEvent
+	m.eventMu.RUnlock()
+	if fn != nil {
+		go fn(jobID, name, status, message)
+	}
 }
 
 func NewManager(mockMode bool, rcloneConfig string) *Manager {
@@ -660,12 +683,14 @@ func (m *Manager) AbortJob(jobID string) error {
 	job.LastMessage = "Aborted by user"
 	job.LastRun = time.Now()
 	m.saveJobsConfig()
+	jobName := job.Name
 
 	if runtime.GOOS == "linux" {
 		_ = exec.Command("logger", "-t", "debian-nas-cloudsync", fmt.Sprintf("Job %s aborted by user", job.ID)).Run()
 		cryptTarget := fmt.Sprintf("cs_crypt_%s:", job.ID)
 		_ = exec.Command("pkill", "-f", cryptTarget).Run()
 	}
+	m.notifyJobEvent(jobID, jobName, string(StatusFailed), "Aborted by user")
 	return nil
 }
 
@@ -738,6 +763,7 @@ func (m *Manager) triggerJobExecution(jobID string, dryRun bool, forceRestorePul
 	}
 	jobSnap := *job
 	m.mu.Unlock()
+	m.notifyJobEvent(jobID, jobSnap.Name, string(StatusRunning), job.LastMessage)
 
 	go func() {
 		defer func() {
@@ -756,6 +782,7 @@ func (m *Manager) triggerJobExecution(jobID string, dryRun bool, forceRestorePul
 				job.LastMessage = "Aborted by user"
 				m.saveJobsConfig()
 				m.mu.Unlock()
+				m.notifyJobEvent(jobID, jobSnap.Name, string(StatusFailed), "Aborted by user")
 				return
 			}
 			m.mu.Lock()
@@ -768,8 +795,10 @@ func (m *Manager) triggerJobExecution(jobID string, dryRun bool, forceRestorePul
 			} else {
 				job.LastMessage = "Completed: 324 MB transferred"
 			}
+			lastMsg := job.LastMessage
 			m.saveJobsConfig()
 			m.mu.Unlock()
+			m.notifyJobEvent(jobID, jobSnap.Name, string(StatusSuccess), lastMsg)
 			return
 		}
 
@@ -820,6 +849,7 @@ func (m *Manager) triggerJobExecution(jobID string, dryRun bool, forceRestorePul
 		if jobSnap.BandwidthLimit != "" && jobSnap.BandwidthLimit != "0" {
 			args = append(args, "--bwlimit", jobSnap.BandwidthLimit)
 		}
+		args = append(args, "--umask", "0002")
 		args = append(args, "--stats", "1s", "--stats-one-line")
 
 		cmd := exec.CommandContext(ctx, "rclone", args...)
@@ -829,7 +859,86 @@ func (m *Manager) triggerJobExecution(jobID string, dryRun bool, forceRestorePul
 		}
 		m.mu.Unlock()
 
-		out, err := cmd.CombinedOutput()
+		stdout, errOut := cmd.StdoutPipe()
+		stderr, errErr := cmd.StderrPipe()
+		if errOut != nil || errErr != nil {
+			out, err := cmd.CombinedOutput()
+			m.mu.Lock()
+			job.LastRun = time.Now()
+			if ctx.Err() == context.Canceled {
+				job.Status = StatusFailed
+				job.LastMessage = "Aborted by user"
+			} else if err != nil {
+				job.Status = StatusFailed
+				job.LastMessage = fmt.Sprintf("Error: %v (%s)", err, strings.TrimSpace(string(out)))
+			} else {
+				job.Status = StatusSuccess
+				msg := summarizeRcloneSuccessOutput(string(out), dryRun)
+				if forceRestorePull {
+					msg = strings.Replace(msg, "Completed", "Restore completed", 1)
+				}
+				job.LastMessage = msg
+			}
+			lastMsg := job.LastMessage
+			lastStatus := job.Status
+			m.saveJobsConfig()
+			m.mu.Unlock()
+			if forceRestorePull && lastStatus == StatusSuccess && runtime.GOOS == "linux" {
+				_ = FixPermissionsPath(srcPath)
+			}
+			m.notifyJobEvent(jobID, jobSnap.Name, string(lastStatus), lastMsg)
+			return
+		}
+
+		if err := cmd.Start(); err != nil {
+			m.mu.Lock()
+			job.Status = StatusFailed
+			job.LastRun = time.Now()
+			job.LastMessage = fmt.Sprintf("Failed to start rclone: %v", err)
+			lastMsg := job.LastMessage
+			m.saveJobsConfig()
+			m.mu.Unlock()
+			m.notifyJobEvent(jobID, jobSnap.Name, string(StatusFailed), lastMsg)
+			return
+		}
+
+		var outputBuf bytes.Buffer
+		var outMu sync.Mutex
+		multi := io.MultiReader(stdout, stderr)
+		scanner := bufio.NewScanner(multi)
+		for scanner.Scan() {
+			line := scanner.Text()
+			outMu.Lock()
+			outputBuf.WriteString(line + "\n")
+			outMu.Unlock()
+
+			trim := strings.TrimSpace(line)
+			if trim == "" {
+				continue
+			}
+			lower := strings.ToLower(trim)
+			if strings.Contains(lower, "no host key validation is being performed") ||
+				strings.Contains(lower, "known_hosts_file") {
+				continue
+			}
+
+			// Capture live stats lines from rclone
+			if strings.Contains(trim, "Transferred:") || strings.Contains(trim, "ETA") || strings.Contains(trim, "%") {
+				m.mu.Lock()
+				if job.Status == StatusRunning {
+					prefix := "Syncing: "
+					if forceRestorePull {
+						prefix = "Restoring: "
+					}
+					cleanLine := strings.TrimPrefix(trim, "* ")
+					job.LastMessage = prefix + cleanLine
+				}
+				m.mu.Unlock()
+			}
+		}
+
+		err := cmd.Wait()
+		out := outputBuf.Bytes()
 
 		m.mu.Lock()
 		job.LastRun = time.Now()
@@ -848,15 +957,32 @@ func (m *Manager) triggerJobExecution(jobID string, dryRun bool, forceRestorePul
 			job.LastMessage = msg
 		}
 		lastMsg := job.LastMessage
+		lastStatus := job.Status
 		m.saveJobsConfig()
 		m.mu.Unlock()
 
 		if runtime.GOOS == "linux" {
 			_ = exec.Command("logger", "-t", "debian-nas-cloudsync", fmt.Sprintf("Job %s (%s): %s", jobSnap.ID, action, lastMsg)).Run()
+			if forceRestorePull && lastStatus == StatusSuccess {
+				_ = FixPermissionsPath(srcPath)
+			}
 		}
+		m.notifyJobEvent(jobID, jobSnap.Name, string(lastStatus), lastMsg)
 	}()
 
 	return nil
+}
+
+func (m *Manager) GetJob(jobID string) (*SyncJob, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	j, ok := m.jobs[jobID]
+	if !ok || j == nil {
+		return nil, fmt.Errorf("job not found")
+	}
+	cp := *j
+	return &cp, nil
 }
 
 func (m *Manager) ListJobs() ([]*SyncJob, error) {
@@ -1145,6 +1271,16 @@ func summarizeRcloneSuccessOutput(raw string, dryRun bool) string {
 	if len(kept) == 0 {
 		return "Completed successfully"
 	}
+
+	for i := len(kept) - 1; i >= 0; i-- {
+		l := kept[i]
+		if strings.Contains(l, "Transferred:") && (strings.Contains(l, "100%") || strings.Contains(l, "/") || strings.Contains(l, "Bytes")) {
+			clean := strings.TrimPrefix(l, "* ")
+			clean = strings.TrimSpace(strings.TrimPrefix(clean, "Transferred:"))
+			return "Completed: " + clean
+		}
+	}
+
 	last := kept[len(kept)-1]
 	if strings.HasPrefix(last, "Completed:") {
 		return last
@@ -1209,4 +1345,146 @@ func ensureSftpKnownHostsInConfigFile(path string) {
 	if modified {
 		_ = os.WriteFile(path, []byte(strings.Join(out, "\n")), 0600)
 	}
+}
+
+// FixPermissionsPath repairs file ownership and group permissions for restored files and shares.
+// Since rclone runs as root, files restored from cloud otherwise default to root:root (0644),
+// causing Windows SMB clients to get "Permission denied by Unix User\root".
+func FixPermissionsPath(targetPath string) error {
+	if runtime.GOOS != "linux" || targetPath == "" {
+		return nil
+	}
+
+	cleanPath := filepath.Clean(targetPath)
+	if _, err := os.Stat(cleanPath); err != nil {
+		return err
+	}
+
+	// 1. Detect if targetPath or any parent has an existing non-root owner
+	primaryOwner := ""
+	for p := cleanPath; p != "" && p != "/" && p != "/mnt"; p = filepath.Dir(p) {
+		out, err := exec.Command("stat", "-c", "%u %U", p).Output()
+		if err == nil {
+			parts := strings.Fields(strings.TrimSpace(string(out)))
+			if len(parts) >= 2 {
+				uidStr := parts[0]
+				userName := parts[1]
+				if uid, errAtoi := strconv.Atoi(uidStr); errAtoi == nil && uid >= 1000 && userName != "UNKNOWN" {
+					primaryOwner = userName
+					break
+				}
+			}
+		}
+	}
+
+	// 2. If no non-root owner found, check /etc/samba/smb.conf for the share's valid users
+	if primaryOwner == "" {
+		primaryOwner = findShareUserForPath(cleanPath)
+	}
+
+	// 3. If still not found, check members of group 'nasusers' or /etc/passwd
+	if primaryOwner == "" {
+		primaryOwner = findFirstNasUser()
+	}
+
+	// 4. Apply ownership: primaryOwner:nasusers if found, else root:nasusers
+	if primaryOwner != "" {
+		_ = exec.Command("chown", "-R", primaryOwner+":nasusers", cleanPath).Run()
+	} else {
+		_ = exec.Command("chgrp", "-R", "nasusers", cleanPath).Run()
+	}
+
+	// 5. Ensure full read/write for user and group nasusers, plus setgid bit on directories
+	_ = exec.Command("chmod", "-R", "u+rwX,g+rwX,o+rX", cleanPath).Run()
+	_ = exec.Command("find", cleanPath, "-type", "d", "-exec", "chmod", "2775", "{}", "+").Run()
+
+	return nil
+}
+
+func findShareUserForPath(targetPath string) string {
+	data, err := os.ReadFile("/etc/samba/smb.conf")
+	if err != nil {
+		return ""
+	}
+
+	var currentPath string
+	var currentUsers []string
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			if currentPath != "" && (currentPath == targetPath || strings.HasPrefix(targetPath, currentPath+"/")) {
+				for _, u := range currentUsers {
+					if u != "" && !strings.HasPrefix(u, "@") && u != "root" {
+						return u
+					}
+				}
+			}
+			currentPath = ""
+			currentUsers = nil
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			k := strings.ToLower(strings.TrimSpace(parts[0]))
+			v := strings.TrimSpace(parts[1])
+			if k == "path" {
+				currentPath = filepath.Clean(v)
+			} else if k == "valid users" || k == "force user" {
+				for _, item := range strings.Fields(v) {
+					cleanItem := strings.Trim(item, ",;")
+					if cleanItem != "" {
+						currentUsers = append(currentUsers, cleanItem)
+					}
+				}
+			}
+		}
+	}
+	if currentPath != "" && (currentPath == targetPath || strings.HasPrefix(targetPath, currentPath+"/")) {
+		for _, u := range currentUsers {
+			if u != "" && !strings.HasPrefix(u, "@") && u != "root" {
+				return u
+			}
+		}
+	}
+	return ""
+}
+
+func findFirstNasUser() string {
+	data, err := os.ReadFile("/etc/group")
+	if err == nil {
+		scanner := bufio.NewScanner(bytes.NewReader(data))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if strings.HasPrefix(line, "nasusers:") {
+				parts := strings.Split(line, ":")
+				if len(parts) >= 4 {
+					members := strings.Split(parts[3], ",")
+					for _, m := range members {
+						m = strings.TrimSpace(m)
+						if m != "" && m != "root" {
+							return m
+						}
+					}
+				}
+			}
+		}
+	}
+
+	pData, pErr := os.ReadFile("/etc/passwd")
+	if pErr == nil {
+		pScanner := bufio.NewScanner(bytes.NewReader(pData))
+		for pScanner.Scan() {
+			line := strings.TrimSpace(pScanner.Text())
+			parts := strings.Split(line, ":")
+			if len(parts) >= 3 {
+				uName := parts[0]
+				if uid, err := strconv.Atoi(parts[2]); err == nil && uid >= 1000 && uid < 65534 {
+					return uName
+				}
+			}
+		}
+	}
+	return ""
 }

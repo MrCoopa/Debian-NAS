@@ -126,3 +126,61 @@ func TestNotificationsPanel_RendersWithRealViewData(t *testing.T) {
 		t.Errorf("expected rendered layout.html to contain failed cloud sync job")
 	}
 }
+
+func TestNotificationsPanel_CloudRestoreDistinction(t *testing.T) {
+	eng, err := web.NewEngine()
+	if err != nil {
+		t.Fatalf("failed to create web engine: %v", err)
+	}
+
+	srv := &Server{}
+	restoreJob := &cloudsync.SyncJob{
+		ID:           "res-1",
+		Name:         "Mail-Archiver Restore",
+		SourcePath:   "/mnt/DATA/Mail-Archiver",
+		RemoteTarget: "hetzner:backup/Mail-Archiver",
+		Status:       cloudsync.StatusRunning,
+		LastMessage:  "Restore from cloud in progress...",
+	}
+
+	if restoreJob.GetStateLabel() != "Restoring" {
+		t.Errorf("expected GetStateLabel to be 'Restoring', got %q", restoreJob.GetStateLabel())
+	}
+
+	doneRestore := &cloudsync.SyncJob{
+		ID:           "res-2",
+		Name:         "Photos Cloud Restore",
+		SourcePath:   "/mnt/MEDIA/Photos",
+		RemoteTarget: "hetzner:backup/Photos",
+		Status:       cloudsync.StatusSuccess,
+		LastMessage:  "Restore completed: 4 files restored from cloud",
+		LastRun:      time.Now(),
+	}
+
+	vd := &ViewData{
+		CurrentUser: "root",
+		System:      &system.SystemStatus{Uptime: "3d 4h"},
+		CloudJobs:   []*cloudsync.SyncJob{restoreJob, doneRestore},
+	}
+
+	srv.populateNotificationsAndJobs(vd)
+
+	if len(vd.RunningJobs) != 1 || vd.RunningJobs[0].Type != "Cloud Restore" {
+		t.Fatalf("expected running job to have Type 'Cloud Restore', got: %+v", vd.RunningJobs)
+	}
+	if len(vd.CompletedJobs) != 1 || vd.CompletedJobs[0].Type != "Cloud Restore" {
+		t.Fatalf("expected completed job to have Type 'Cloud Restore', got: %+v", vd.CompletedJobs)
+	}
+
+	var buf bytes.Buffer
+	if err := eng.Render(&buf, "partials/notifications_panel.html", vd); err != nil {
+		t.Fatalf("notifications_panel failed to render: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Cloud Restore") {
+		t.Errorf("expected rendered HTML to contain 'Cloud Restore'")
+	}
+	if !strings.Contains(html, "Restore completed: 4 files restored from cloud") {
+		t.Errorf("expected rendered HTML to contain detail message")
+	}
+}
