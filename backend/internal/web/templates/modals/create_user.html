@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openCreateUserModal" x-cloak>
-  <div class="modal-box" @click.outside="openCreateUserModal = false">
+<div class="modal-backdrop" x-show="openCreateUserModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openCreateUserModal = false)">
+  <div class="modal-box">
     <div class="modal-header">
       <h3>Create Storage User &amp; SMB Credentials</h3>
       <button type="button" class="modal-close" @click="openCreateUserModal = false">&times;</button>

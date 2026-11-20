@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openCloudSyncModal" x-cloak>
-  <div class="modal-box" @click.outside="openCloudSyncModal = false" style="max-width: 580px;">
+<div class="modal-backdrop" x-show="openCloudSyncModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openCloudSyncModal = false)">
+  <div class="modal-box" style="max-width: 580px;">
     <div class="modal-header">
       <h3 x-text="isEditingCloudSync ? 'Edit Cloud Sync Task' : 'Add Cloud Sync Task'">Add Cloud Sync Task</h3>
       <button type="button" class="modal-close" @click="openCloudSyncModal = false">&times;</button>
@@ -131,20 +131,33 @@
         <span class="text-dim" style="font-size: 0.72rem;">Optional limit passed bare-metal to <code>--bwlimit</code> (e.g. 10M, 50M).</span>
       </div>
 
-      <div class="form-group">
-        <label>Frequency / Schedule</label>
-        <select name="schedule" x-model="cloudSyncForm.schedule">
-          <option value="45 3 * * 2">Weekly on Tuesday at 03:45 (03:45 AM)</option>
-          <option value="0 2 * * *">Daily at 02:00 (02:00 AM)</option>
-          <option value="0 0 * * *">Daily at Midnight (00:00)</option>
-          <option value="0 * * * *">Hourly</option>
-          <option value="*/15 * * * *">Every 15 Minutes</option>
-        </select>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+        <div class="form-group">
+          <label>Schedule Preset</label>
+          <select @change="if($event.target.value && $event.target.value !== 'custom') cloudSyncForm.schedule = $event.target.value" :value="cloudSyncForm.schedule">
+            <option value="0 2 * * *">Daily at 02:00 (02:00 AM)</option>
+            <option value="0 0 * * *">Daily at Midnight (00:00)</option>
+            <option value="0 * * * *">Hourly (:00)</option>
+            <option value="*/30 * * * *">Every 30 Minutes</option>
+            <option value="*/15 * * * *">Every 15 Minutes</option>
+            <option value="45 3 * * 2">Weekly on Tuesday at 03:45 (03:45 AM)</option>
+            <option value="0 0 * * 0">Weekly (Sunday 00:00)</option>
+            <option value="0 0 1 * *">Monthly (1st at 00:00)</option>
+            <option :value="cloudSyncForm.schedule" x-show="!['0 2 * * *', '0 0 * * *', '0 * * * *', '*/30 * * * *', '*/15 * * * *', '45 3 * * 2', '0 0 * * 0', '0 0 1 * *'].includes(cloudSyncForm.schedule)">Custom (Cronjob)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Cron Schedule (min hr dom mon dow)</label>
+          <input type="text" name="schedule" x-model="cloudSyncForm.schedule" required class="font-mono" placeholder="0 2 * * *" autocomplete="off">
+        </div>
       </div>
 
       <div class="form-group">
         <label>Frequency Display Label (Optional)</label>
-        <input type="text" name="frequency_text" x-model="cloudSyncForm.frequency_text" placeholder="e.g. At 03:45 (03:45 AM), only on Tuesday,...">
+        <input type="text" name="frequency_text" x-model="cloudSyncForm.frequency_text" placeholder="Auto-generated from cron schedule (e.g. At 02:00 (02:00 AM), every day,...)">
+        <span class="text-dim" style="font-size: 0.72rem; color: #a0a0a0;">
+          💡 Freier 5-teiliger Cronjob: <code>Minute Stunde Tag Monat Wochentag</code> (z.B. <code>0 2 * * *</code>, <code>*/15 * * * *</code>, <code>30 3 * * 1-5</code>). Leer lassen für automatische Erkennung.
+        </span>
       </div>
 
       <div class="form-group" style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;">

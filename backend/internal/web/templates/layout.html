@@ -25,6 +25,16 @@
         reportingTab: 'disk',
         sidebarOpen: false,
         sidebarCollapsed: false,
+        backdropTarget: null,
+        handleBackdropMouseDown(e) {
+          this.backdropTarget = (e.target === e.currentTarget) ? e.currentTarget : null;
+        },
+        handleBackdropMouseUp(e, closeFn) {
+          if (this.backdropTarget && this.backdropTarget === e.currentTarget && e.target === e.currentTarget) {
+            if (typeof closeFn === 'function') closeFn();
+          }
+          this.backdropTarget = null;
+        },
         openShareModal: false,
         isEditingShare: false,
         shareCustomPathMode: false,

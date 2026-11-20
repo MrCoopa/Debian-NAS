@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openImportModal" x-cloak>
-  <div class="modal-box" @click.outside="openImportModal = false">
+<div class="modal-backdrop" x-show="openImportModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openImportModal = false)">
+  <div class="modal-box">
     <div class="modal-header">
       <h3>Import Existing ZFS Pool</h3>
       <button type="button" class="modal-close" @click="openImportModal = false">&times;</button>

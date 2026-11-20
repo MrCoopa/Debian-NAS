@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openDangerConfirmModal" x-cloak>
-  <div class="modal-box" @click.outside="openDangerConfirmModal = false" style="border-top: 4px solid var(--pf-red);">
+<div class="modal-backdrop" x-show="openDangerConfirmModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openDangerConfirmModal = false)">
+  <div class="modal-box" style="border-top: 4px solid var(--pf-red);">
     <div class="modal-header">
       <h3 style="color: var(--pf-red);">
         <span>⚠️ Confirm Irrevocable Destruction: </span>

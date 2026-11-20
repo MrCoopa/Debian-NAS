@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openSnapTaskModal" x-cloak>
-  <div class="modal-box" style="max-width: 580px;" @click.outside="openSnapTaskModal = false">
+<div class="modal-backdrop" x-show="openSnapTaskModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openSnapTaskModal = false)">
+  <div class="modal-box" style="max-width: 580px;">
     <div class="modal-header">
       <h3 x-text="isEditingSnapTask ? 'Edit Periodic Snapshot Task' : 'Add Periodic Snapshot Task'">Add Periodic Snapshot Task</h3>
       <button type="button" class="modal-close" @click="openSnapTaskModal = false">&times;</button>
@@ -67,6 +67,7 @@
             <option value="*/15 * * * *">Every 15 Minutes</option>
             <option value="0 0 * * 0">Weekly (Sunday 00:00)</option>
             <option value="0 0 1 * *">Monthly (1st 00:00)</option>
+            <option :value="snapTaskForm.schedule" x-show="!['0 0 * * *', '0 * * * *', '*/30 * * * *', '*/15 * * * *', '0 0 * * 0', '0 0 1 * *'].includes(snapTaskForm.schedule)">Custom (Cronjob)</option>
           </select>
         </div>
         <div class="form-group">

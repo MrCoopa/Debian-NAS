@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openPoolPropsModal" x-cloak>
-  <div class="modal-box" @click.outside="openPoolPropsModal = false">
+<div class="modal-backdrop" x-show="openPoolPropsModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openPoolPropsModal = false)">
+  <div class="modal-box">
     <div class="modal-header">
       <h3>Pool Properties: <span class="text-blue font-mono" x-text="poolProps.pool"></span></h3>
       <button type="button" class="modal-close" @click="openPoolPropsModal = false">&times;</button>

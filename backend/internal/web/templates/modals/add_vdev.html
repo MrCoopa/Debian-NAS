@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openAddVdevModal" x-cloak>
-  <div class="modal-box" @click.outside="openAddVdevModal = false">
+<div class="modal-backdrop" x-show="openAddVdevModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openAddVdevModal = false)">
+  <div class="modal-box">
     <div class="modal-header">
       <h3>Add VDEV / Expand Pool: <span class="text-blue font-mono" x-text="addVdevPool"></span></h3>
       <button type="button" class="modal-close" @click="openAddVdevModal = false">&times;</button>

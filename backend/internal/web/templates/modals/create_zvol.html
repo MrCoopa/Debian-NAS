@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openCreateZvolModal" x-cloak>
-  <div class="modal-box" @click.outside="openCreateZvolModal = false">
+<div class="modal-backdrop" x-show="openCreateZvolModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openCreateZvolModal = false)">
+  <div class="modal-box">
     <div class="modal-header">
       <h3>Create New Zvol (Block Device)</h3>
       <button type="button" class="modal-close" @click="openCreateZvolModal = false">&times;</button>

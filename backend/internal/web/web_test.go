@@ -534,6 +534,43 @@ func TestModals_NestedHxGetIsolatedFromParentForm(t *testing.T) {
 	}
 }
 
+func TestModals_SafeBackdropDismissalAndCronInput(t *testing.T) {
+	entries, err := fs.ReadDir(templateFiles, "templates/modals")
+	if err != nil {
+		t.Fatalf("failed reading modal templates: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".html") {
+			continue
+		}
+		raw, err := templateFiles.ReadFile("templates/modals/" + entry.Name())
+		if err != nil {
+			t.Fatalf("failed reading modal %s: %v", entry.Name(), err)
+		}
+		content := string(raw)
+		if strings.Contains(content, "@click.outside") {
+			t.Errorf("modal %s uses @click.outside on modal-box (causes modal to close when user highlights/drags text)", entry.Name())
+		}
+		if strings.Contains(content, "modal-backdrop") {
+			if !strings.Contains(content, "handleBackdropMouseDown") || !strings.Contains(content, "handleBackdropMouseUp") {
+				t.Errorf("modal %s missing safe handleBackdropMouseDown / handleBackdropMouseUp backdrop handlers", entry.Name())
+			}
+		}
+	}
+
+	csRaw, err := templateFiles.ReadFile("templates/modals/create_cloudsync.html")
+	if err != nil {
+		t.Fatalf("read create_cloudsync.html: %v", err)
+	}
+	csContent := string(csRaw)
+	if !strings.Contains(csContent, `x-model="cloudSyncForm.schedule"`) {
+		t.Errorf("create_cloudsync.html missing editable cron schedule input bound to cloudSyncForm.schedule")
+	}
+	if !strings.Contains(csContent, "Schedule Preset") {
+		t.Errorf("create_cloudsync.html missing Schedule Preset select")
+	}
+}
+
 func TestWeb_CoreFixesTemplateIntegrity(t *testing.T) {
 	engine, err := NewEngine()
 	if err != nil {

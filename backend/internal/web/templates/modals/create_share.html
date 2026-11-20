@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openShareModal" x-cloak>
-  <div class="modal-box" @click.outside="openShareModal = false">
+<div class="modal-backdrop" x-show="openShareModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openShareModal = false)">
+  <div class="modal-box">
     <div class="modal-header">
       <h3 x-text="isEditingShare ? ('Edit ' + (shareForm.proto === 'nfs' ? 'NFS Export: ' : 'SMB Share: ') + (shareForm.name || shareForm.path)) : 'Create Network File Share'"></h3>
       <button type="button" class="modal-close" @click="openShareModal = false">&times;</button>

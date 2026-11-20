@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openDiskActionModal" x-cloak>
-  <div class="modal-box" @click.outside="openDiskActionModal = false">
+<div class="modal-backdrop" x-show="openDiskActionModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openDiskActionModal = false)">
+  <div class="modal-box">
     <div class="modal-header">
       <h3 x-text="diskAction.type === 'replace' ? ('Replace Disk ' + diskAction.targetDevice + ' in ' + diskAction.pool) : ('Attach Mirror Disk to ' + diskAction.targetDevice + ' in ' + diskAction.pool)"></h3>
       <button type="button" class="modal-close" @click="openDiskActionModal = false">&times;</button>

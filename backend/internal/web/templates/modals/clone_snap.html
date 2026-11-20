@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openCloneSnapModal" x-cloak>
-  <div class="modal-box" @click.outside="openCloneSnapModal = false">
+<div class="modal-backdrop" x-show="openCloneSnapModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openCloneSnapModal = false)">
+  <div class="modal-box">
     <div class="modal-header">
       <h3>Clone Snapshot</h3>
       <button type="button" class="modal-close" @click="openCloneSnapModal = false">&times;</button>

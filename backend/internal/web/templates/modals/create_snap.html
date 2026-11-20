@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openCreateSnapModal" x-cloak>
-  <div class="modal-box" @click.outside="openCreateSnapModal = false">
+<div class="modal-backdrop" x-show="openCreateSnapModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openCreateSnapModal = false)">
+  <div class="modal-box">
     <div class="modal-header">
       <h3>Create Manual ZFS Snapshot</h3>
       <button type="button" class="modal-close" @click="openCreateSnapModal = false">&times;</button>

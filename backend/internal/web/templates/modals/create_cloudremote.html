@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openCloudRemoteModal" x-cloak>
-  <div class="modal-box" @click.outside="openCloudRemoteModal = false" style="max-width: 580px;">
+<div class="modal-backdrop" x-show="openCloudRemoteModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openCloudRemoteModal = false)">
+  <div class="modal-box" style="max-width: 580px;">
     <div class="modal-header">
       <h3>Add Cloud Credential (Rclone)</h3>
       <button type="button" class="modal-close" @click="openCloudRemoteModal = false">&times;</button>

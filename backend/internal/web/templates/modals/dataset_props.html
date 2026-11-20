@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openDatasetPropsModal" x-cloak>
-  <div class="modal-box" @click.outside="openDatasetPropsModal = false">
+<div class="modal-backdrop" x-show="openDatasetPropsModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openDatasetPropsModal = false)">
+  <div class="modal-box">
     <div class="modal-header">
       <h3>Dataset Properties: <span class="text-blue font-mono" x-text="datasetProps.name"></span></h3>
       <button type="button" class="modal-close" @click="openDatasetPropsModal = false">&times;</button>

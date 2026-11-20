@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openCreateDatasetModal" x-cloak>
-  <div class="modal-box" @click.outside="openCreateDatasetModal = false">
+<div class="modal-backdrop" x-show="openCreateDatasetModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openCreateDatasetModal = false)">
+  <div class="modal-box">
     <div class="modal-header">
       <h3>Create New ZFS Dataset</h3>
       <button type="button" class="modal-close" @click="openCreateDatasetModal = false">&times;</button>

@@ -1,5 +1,5 @@
-<div class="modal-backdrop" x-show="openCreatePoolModal" x-cloak>
-  <div class="modal-box" @click.outside="openCreatePoolModal = false">
+<div class="modal-backdrop" x-show="openCreatePoolModal" x-cloak @mousedown="handleBackdropMouseDown($event)" @mouseup="handleBackdropMouseUp($event, () => openCreatePoolModal = false)">
+  <div class="modal-box">
     <div class="modal-header">
       <h3>Create OpenZFS Storage Pool</h3>
       <button type="button" class="modal-close" @click="openCreatePoolModal = false">&times;</button>
